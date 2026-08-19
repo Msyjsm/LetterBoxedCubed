@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NYT Letter Boxed Cubed
 // @namespace    https://www.nytimes.com/puzzles/letter-boxed
-// @version      1.3.0
+// @version      1.4.0
 // @description  Tracks Letter Boxed words and puzzle statistics.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -32,6 +32,10 @@
     let FoundWords = new Set();
     let StorageKey = null;
 
+    let Twofers = [];
+    let TwoferKeys = new Set();
+    let FoundTwofers = new Set();
+
     async function Initialize() {
         AddStyles();
         if (!(await WaitForGame())) return;
@@ -40,6 +44,7 @@
         Dictionary = [...new Set(GameData.dictionary.map(NormalizeWord).filter(Boolean))].sort();
         StorageKey = "LetterBoxedTracker_" + String(GameData.id || GameData.printDate || "UnknownPuzzle");
         FoundWords = new Set(GM_getValue(StorageKey, []).map(NormalizeWord).filter(Boolean));
+        LoadTwofers();
         CreatePanel();
         ScanGameState(true);
 
@@ -82,6 +87,7 @@
         }
 
         if (Changed) GM_setValue(StorageKey, [...FoundWords].sort());
+        if (CheckTwofer(Chain)) Changed = true;
         if (Changed || Force) RenderPanel();
     }
 
@@ -137,6 +143,21 @@
         AddStat(StatGrid, "Longest Found", Longest || "-");
         Panel.appendChild(StatGrid);
 
+        const TwoferDetails = document.createElement("details");
+        TwoferDetails.className = "lbc-tree";
+        const TwoferSummary = document.createElement("summary");
+        TwoferSummary.textContent = `Twofers (${FoundTwofers.size} / ${Twofers.length})`;
+        TwoferDetails.appendChild(TwoferSummary);
+        const TwoferList = document.createElement("div");
+        for (const [A, B] of Twofers) {
+            const Row = document.createElement("div");
+            const Key = MakeTwoferKey(A, B);
+            Row.textContent = FoundTwofers.has(Key) ? `${A} → ${B}` : "████████ → ████████";
+            TwoferList.appendChild(Row);
+        }
+        TwoferDetails.appendChild(TwoferList);
+        Panel.appendChild(TwoferDetails);
+
         const Length = document.createElement("details");
         Length.className = "lbc-tree";
         const LengthSummary = document.createElement("summary");
@@ -186,6 +207,57 @@
         }
 
         return Details;
+    }
+
+    function MakeTwoferKey(A, B) {
+        return NormalizeWord(A) + "\u001F" + NormalizeWord(B);
+    }
+
+    function LoadTwofers() {
+        const PuzzleId = GameData.id || GameData.printDate || "UnknownPuzzle";
+        const CacheKey = `LetterBoxedCubed_TwoferCache_${PuzzleId}`;
+        const FoundKey = `LetterBoxedCubed_FoundTwofers_${PuzzleId}`;
+        const Cached = GM_getValue(CacheKey, null);
+        Twofers = Array.isArray(Cached) ? Cached : CalculateTwofers();
+        if (!Cached) GM_setValue(CacheKey, Twofers);
+        TwoferKeys = new Set(Twofers.map(Pair => MakeTwoferKey(Pair[0], Pair[1])));
+        FoundTwofers = new Set(GM_getValue(FoundKey, []).filter(Key => TwoferKeys.has(Key)));
+    }
+
+    function CalculateTwofers() {
+        const Letters = [...new Set((GameData.sides || []).join("").toUpperCase())];
+        const Bits = new Map(Letters.map((Letter, Index) => [Letter, 1 << Index]));
+        const FullMask = Letters.reduce((Mask, Letter) => Mask | Bits.get(Letter), 0);
+        const Records = Dictionary.map(Word => ({
+            Word,
+            First: Word[0],
+            Last: Word[Word.length - 1],
+            Mask: [...Word].reduce((Mask, Letter) => Mask | (Bits.get(Letter) || 0), 0)
+        }));
+        const ByFirst = new Map();
+        for (const Record of Records) {
+            if (!ByFirst.has(Record.First)) ByFirst.set(Record.First, []);
+            ByFirst.get(Record.First).push(Record);
+        }
+        const Results = [];
+        for (const First of Records) {
+            for (const Second of (ByFirst.get(First.Last) || [])) {
+                if ((First.Mask | Second.Mask) === FullMask) Results.push([First.Word, Second.Word]);
+            }
+        }
+        return Results.sort((A, B) => A[0].localeCompare(B[0]) || A[1].localeCompare(B[1]));
+    }
+
+    function CheckTwofer(Chain) {
+        if (Chain.length !== 2) return false;
+        const Key = MakeTwoferKey(Chain[0], Chain[1]);
+        if (!TwoferKeys.has(Key) || FoundTwofers.has(Key)) return false;
+        FoundTwofers.add(Key);
+        GM_setValue(
+            `LetterBoxedCubed_FoundTwofers_${GameData.id || GameData.printDate || "UnknownPuzzle"}`,
+            [...FoundTwofers]
+        );
+        return true;
     }
 
     function AddStyles() {
