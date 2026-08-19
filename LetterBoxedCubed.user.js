@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NYT Letter Boxed Cubed
 // @namespace    https://www.nytimes.com/puzzles/letter-boxed
-// @version      1.6.0
+// @version      1.6.1
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -965,19 +965,34 @@
         const List = document.createElement("div");
         List.className = "lb-cubed-potential-word-list";
 
-        const SortedWords = [...Words].sort(Alphabetically);
-        const Fragment = document.createDocumentFragment();
+        /*
+            Only reveal potential first/second words that the player has
+            already found somewhere during today's play. The x / y counter
+            still uses the total number of valid positional words, but the
+            expanded list itself must never expose unfound candidates.
+        */
+        const SortedWords = [...Words]
+            .filter(Word => FoundWords.has(Word))
+            .sort(Alphabetically);
 
-        for (const Word of SortedWords) {
-            const Item = document.createElement("div");
-            Item.className = FoundWords.has(Word)
-                ? "lb-cubed-potential-word lb-cubed-potential-word-found"
-                : "lb-cubed-potential-word";
-            Item.textContent = Word;
-            Fragment.appendChild(Item);
+        if (SortedWords.length === 0) {
+            const Empty = document.createElement("div");
+            Empty.className = "lb-cubed-potential-word-empty";
+            Empty.textContent = "None found yet.";
+            List.appendChild(Empty);
+        } else {
+            const Fragment = document.createDocumentFragment();
+
+            for (const Word of SortedWords) {
+                const Item = document.createElement("div");
+                Item.className =
+                    "lb-cubed-potential-word lb-cubed-potential-word-found";
+                Item.textContent = Word;
+                Fragment.appendChild(Item);
+            }
+
+            List.appendChild(Fragment);
         }
-
-        List.appendChild(Fragment);
         Details.appendChild(List);
         return Details;
     }
@@ -1640,17 +1655,49 @@
                 font-weight: 700;
             }
 
+            .lb-cubed-potential-word-empty {
+                padding: 7px;
+                color: rgba(48, 24, 24, 0.65);
+                font-size: 11px;
+                font-style: italic;
+                text-align: center;
+            }
+
             /* Twofers */
 
             .lb-cubed-twofer-tree {
                 margin-bottom: 8px;
             }
 
+            /*
+                The Twofers summary uses flex layout for its action controls.
+                Chrome does not reliably render the native <details> marker
+                once summary is flex, so provide our own explicit right/down
+                arrow.
+            */
             .lb-cubed-twofer-summary {
                 display: flex;
                 align-items: center;
                 justify-content: space-between;
-                gap: 12px;
+                gap: 8px;
+                list-style: none;
+            }
+
+            .lb-cubed-twofer-summary::-webkit-details-marker {
+                display: none;
+            }
+
+            .lb-cubed-twofer-summary::before {
+                content: "▸";
+                flex: 0 0 auto;
+                width: 12px;
+                font-size: 12px;
+                line-height: 1;
+                text-align: center;
+            }
+
+            .lb-cubed-twofer-tree[open] > .lb-cubed-twofer-summary::before {
+                content: "▾";
             }
 
             .lb-cubed-twofer-summary-title {
