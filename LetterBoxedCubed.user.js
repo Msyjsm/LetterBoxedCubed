@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NYT Letter Boxed Cubed
 // @namespace    https://www.nytimes.com/puzzles/letter-boxed
-// @version      1.2.0
+// @version      1.3.0
 // @description  Tracks Letter Boxed words and puzzle statistics.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -133,19 +133,22 @@
         const StatGrid = document.createElement("div");
         StatGrid.className = "lbc-stats";
 
-        AddStat(StatGrid, "Found", `${FoundList.length} / ${Dictionary.length}`);
-        AddStat(StatGrid, "Complete", `${Percent.toFixed(1)}%`);
-        AddStat(StatGrid, "Letters covered", `${Covered.size} / ${PuzzleLetters.size}`);
-        AddStat(StatGrid, "Longest found", Longest || "-");
+        AddStat(StatGrid, "Completion", `${FoundList.length} / ${Dictionary.length} (${Percent.toFixed(1)}%)`);
+        AddStat(StatGrid, "Longest Found", Longest || "-");
         Panel.appendChild(StatGrid);
 
-        const LengthHeading = document.createElement("h3");
-        LengthHeading.textContent = "Words by Length";
-        Panel.appendChild(LengthHeading);
-        Panel.appendChild(MakeLengthBody(FoundList));
+        const Length = document.createElement("details");
+        Length.className = "lbc-tree";
+        const LengthSummary = document.createElement("summary");
+        LengthSummary.textContent = "Words by Length";
+        Length.append(LengthSummary, MakeLengthBody(FoundList));
+        Panel.appendChild(Length);
 
-        Panel.appendChild(MakeWordTree(`Found Words (${FoundList.length})`, FoundList, false, true));
-        Panel.appendChild(MakeWordTree(`Unfound Words (${UnfoundList.length})`, UnfoundList, true, false));
+        const Columns = document.createElement("div");
+        Columns.className = "lbc-word-columns";
+        Columns.appendChild(MakeWordTree(`Found Words (${FoundList.length})`, FoundList, false, true));
+        Columns.appendChild(MakeWordTree(`Unfound Words (${UnfoundList.length})`, UnfoundList, true, true));
+        Panel.appendChild(Columns);
     }
 
     function AddStat(Container, Label, Value) {
@@ -209,6 +212,9 @@
 
             .lb-game-container.lbc-side-layout { position: relative !important; }
             #lbc-panel { position:absolute; right:18px; top:0; width:420px; max-height:560px; overflow:auto; }
+            .lbc-word-columns { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+            .lbc-tree { border:1px solid rgba(70,30,30,.4); margin-top:8px; }
+            .lbc-tree > summary { padding:8px; font-weight:700; cursor:pointer; }
         `;
         document.head.appendChild(Style);
     }
