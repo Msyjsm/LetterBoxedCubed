@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NYT Letter Boxed Cubed
 // @namespace    https://www.nytimes.com/puzzles/letter-boxed
-// @version      1.4.0
+// @version      1.5.0
 // @description  Tracks Letter Boxed words and puzzle statistics.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -158,6 +158,16 @@
         TwoferDetails.appendChild(TwoferList);
         Panel.appendChild(TwoferDetails);
 
+        const HintStats = GetHintStats();
+        const Hint = document.createElement("div");
+        Hint.className = "lbc-hints";
+        Hint.innerHTML =
+            `<strong>Light Hints</strong><br>` +
+            `${HintStats.HasLatent ? "✓" : "✕"} Valid solution independently found?<br>` +
+            `First words found ${HintStats.FoundFirst.length} / ${HintStats.First.size}<br>` +
+            `Second words found ${HintStats.FoundSecond.length} / ${HintStats.Second.size}`;
+        TwoferDetails.insertBefore(Hint, TwoferList);
+
         const Length = document.createElement("details");
         Length.className = "lbc-tree";
         const LengthSummary = document.createElement("summary");
@@ -258,6 +268,19 @@
             [...FoundTwofers]
         );
         return true;
+    }
+
+    function GetHintStats() {
+        const First = new Set(Twofers.map(Pair => Pair[0]));
+        const Second = new Set(Twofers.map(Pair => Pair[1]));
+        const FoundFirst = [...First].filter(Word => FoundWords.has(Word));
+        const FoundSecond = [...Second].filter(Word => FoundWords.has(Word));
+        const HasLatent = Twofers.some(([A, B]) =>
+            FoundWords.has(A) &&
+            FoundWords.has(B) &&
+            !FoundTwofers.has(MakeTwoferKey(A, B))
+        );
+        return { First, Second, FoundFirst, FoundSecond, HasLatent };
     }
 
     function AddStyles() {
