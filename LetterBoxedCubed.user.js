@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NYT Letter Boxed Cubed
 // @namespace    https://www.nytimes.com/puzzles/letter-boxed
-// @version      1.6.1
+// @version      1.6.2
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -1670,47 +1670,30 @@
             }
 
             /*
-                The Twofers summary uses flex layout for its action controls.
-                Chrome does not reliably render the native <details> marker
-                once summary is flex, so provide our own explicit right/down
-                arrow.
+                Keep Twofers as a normal <summary> so it uses exactly the same
+                native right/down disclosure marker as Hints, Words by Length,
+                Found Words, etc.
+
+                The expanded-only controls float to the right instead of
+                turning the <summary> itself into a flex container. This keeps
+                the marker and title anchored on the left in both states.
             */
             .lb-cubed-twofer-summary {
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                gap: 8px;
-                list-style: none;
-            }
-
-            .lb-cubed-twofer-summary::-webkit-details-marker {
-                display: none;
-            }
-
-            .lb-cubed-twofer-summary::before {
-                content: "▸";
-                flex: 0 0 auto;
-                width: 12px;
-                font-size: 12px;
-                line-height: 1;
-                text-align: center;
-            }
-
-            .lb-cubed-twofer-tree[open] > .lb-cubed-twofer-summary::before {
-                content: "▾";
+                display: list-item;
             }
 
             .lb-cubed-twofer-summary-title {
-                flex: 0 0 auto;
+                display: inline;
             }
 
             .lb-cubed-twofer-summary-actions {
+                float: right;
                 display: inline-flex;
-                flex: 1 1 auto;
                 align-items: center;
                 justify-content: flex-end;
                 gap: 8px;
-                min-width: 0;
+                max-width: 72%;
+                margin-left: 8px;
             }
 
             .lb-cubed-twofer-tree:not([open]) .lb-cubed-twofer-summary-actions {
