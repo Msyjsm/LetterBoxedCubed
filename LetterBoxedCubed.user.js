@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         NYT Letter Boxed - Word Tracker
+// @name         NYT Letter Boxed Cubed
 // @namespace    https://www.nytimes.com/puzzles/letter-boxed
-// @version      1.0.0
+// @version      1.1.0
 // @description  Tracks Letter Boxed words and puzzle statistics.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -102,7 +102,7 @@
         const Panel = document.getElementById(PanelId);
         const Game = document.querySelector(".lb-game-container");
         if (!Panel || !Game) return;
-        
+        Game.classList.add("lbc-side-layout");
         
     }
 
@@ -201,6 +201,7 @@
             .redacted { background:#000 !important; color:#000 !important; user-select:none; }
             .lbc-hints { margin:8px; padding:8px; background:rgba(255,255,255,.12); }
 
+            .lb-game-container.lbc-side-layout { position: relative !important; }
         `;
         document.head.appendChild(Style);
     }
