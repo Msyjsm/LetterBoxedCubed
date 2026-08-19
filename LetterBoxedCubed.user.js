@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NYT Letter Boxed Cubed
 // @namespace    https://www.nytimes.com/puzzles/letter-boxed
-// @version      1.1.0
+// @version      1.2.0
 // @description  Tracks Letter Boxed words and puzzle statistics.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -103,7 +103,13 @@
         const Game = document.querySelector(".lb-game-container");
         if (!Panel || !Game) return;
         Game.classList.add("lbc-side-layout");
-        
+        const Board = Game.querySelector(".lb-square-container");
+        if (Board) {
+            const GameRect = Game.getBoundingClientRect();
+            const BoardRect = Board.getBoundingClientRect();
+            Panel.style.left = `${Math.round(BoardRect.right - GameRect.left + 24)}px`;
+            Panel.style.right = "auto";
+        }
     }
 
     function RenderPanel() {
@@ -121,7 +127,7 @@
         Panel.replaceChildren();
 
         const Header = document.createElement("div");
-        Header.innerHTML = `<h2>Word Hunt</h2><small>${GameData.date || GameData.printDate || ""}</small>`;
+        Header.innerHTML = `<h2>Word Log</h2><small>${GameData.date || GameData.printDate || ""}</small>`;
         Panel.appendChild(Header);
 
         const StatGrid = document.createElement("div");
@@ -202,6 +208,7 @@
             .lbc-hints { margin:8px; padding:8px; background:rgba(255,255,255,.12); }
 
             .lb-game-container.lbc-side-layout { position: relative !important; }
+            #lbc-panel { position:absolute; right:18px; top:0; width:420px; max-height:560px; overflow:auto; }
         `;
         document.head.appendChild(Style);
     }
