@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed
 // @namespace    https://www.nytimes.com/puzzles/letter-boxed
-// @version      1.7.0
+// @version      1.8.0
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -23,11 +23,29 @@
     const StackedModeClass = "lb-cubed-stacked-mode";
 
     const GameGap = 24;
+    const LeftColumnGap = 16;
     const EdgePadding = 18;
-    const MinimumPanelWidth = 340;
-    const DefaultPanelWidthRatio = 0.75;
-    const ResizeHotZone = 9;
-    const PanelWidthStorageKey = "LetterBoxedCubed_PanelWidth";
+    const MinimumPanelWidth = 300;
+
+    /*
+        v1.7's automatic width was 75% of the horizontal space left after
+        placing TI and GB side-by-side. In v1.8 TI and GB are stacked, which
+        creates substantially more available width. To honor the request that
+        LBC start at about 75% of its previous visual width, we calculate the
+        old v1.7 default and then shrink that result to 75%.
+    */
+    const LegacyDefaultPanelWidthRatio = 0.75;
+    const DefaultPanelShrinkRatio = 0.75;
+
+    const ResizeHandleWidth = 16;
+    const RightResizeHandleGap = 3;
+
+    const LegacyPanelWidthStorageKey = "LetterBoxedCubed_PanelWidth";
+    const PanelWidthStorageKey = "LetterBoxedCubed_PanelWidth_v2";
+
+    const PanelContentId = "lb-cubed-panel-content";
+    const LeftResizeHandleId = "lb-cubed-resize-handle-left";
+    const RightResizeHandleId = "lb-cubed-resize-handle-right";
 
     const TwoferCacheVersion = 1;
     const TwoferSeparator = "\u001F";
@@ -190,14 +208,39 @@
             GM_getValue(PanelWidthStorageKey, NaN)
         );
 
-        PanelWidthPreference = Number.isFinite(SavedWidth) && SavedWidth > 0
-            ? SavedWidth
-            : null;
+        if (Number.isFinite(SavedWidth) && SavedWidth > 0) {
+            PanelWidthPreference = SavedWidth;
+            return;
+        }
+
+        /*
+            v1.8 changes the outer layout substantially, so it uses a new
+            preference key. If a v1.7 width exists, migrate it once at 75% so
+            existing users get the intentionally smaller new default rather
+            than inheriting the old, wider panel unchanged.
+        */
+        const LegacySavedWidth = Number(
+            GM_getValue(LegacyPanelWidthStorageKey, NaN)
+        );
+
+        if (Number.isFinite(LegacySavedWidth) && LegacySavedWidth > 0) {
+            PanelWidthPreference = Math.max(
+                MinimumPanelWidth,
+                Math.round(LegacySavedWidth * DefaultPanelShrinkRatio)
+            );
+            SavePanelWidthPreference();
+            return;
+        }
+
+        PanelWidthPreference = null;
     }
 
     function SavePanelWidthPreference() {
         if (Number.isFinite(PanelWidthPreference)) {
-            GM_setValue(PanelWidthStorageKey, Math.round(PanelWidthPreference));
+            GM_setValue(
+                PanelWidthStorageKey,
+                Math.round(PanelWidthPreference)
+            );
         }
     }
 
@@ -748,7 +791,6 @@
             return;
         }
 
-        const AvailableWidth = GameContainer.clientWidth;
         const MaximumSidePanelWidth = GetMaximumSidePanelWidth(GameContainer);
 
         if (MaximumSidePanelWidth >= MinimumPanelWidth) {
@@ -769,25 +811,85 @@
         }
     }
 
-    function GetMaximumSidePanelWidth(GameContainer) {
-        return Math.floor(
-            GameContainer.clientWidth -
-            (EdgePadding * 2) -
-            NativeWordWidth -
-            NativeSquareWidth -
-            (GameGap * 2)
+    function GetLeftColumnWidth() {
+        return Math.max(
+            NativeWordWidth,
+            NativeSquareWidth
         );
     }
 
-    function GetSidePanelWidth(MaximumSidePanelWidth) {
-        const DefaultWidth = Math.round(
-            MaximumSidePanelWidth * DefaultPanelWidthRatio
+    function GetMaximumSidePanelWidth(GameContainer) {
+        /*
+            TI and GB now share a single stacked left column, so LBC only has
+            to compete horizontally with the WIDER of those two NYT elements.
+        */
+        return Math.floor(
+            GameContainer.clientWidth -
+            (EdgePadding * 2) -
+            GetLeftColumnWidth() -
+            GameGap
         );
+    }
 
+    function GetLegacyMaximumPanelWidth(GameContainer) {
+        /*
+            This reproduces the amount of horizontal space v1.7 had available
+            when TI, GB, and LBC were three side-by-side columns. It is used
+            only to derive the new smaller default width.
+        */
+        return Math.max(
+            MinimumPanelWidth,
+            Math.floor(
+                GameContainer.clientWidth -
+                (EdgePadding * 2) -
+                NativeWordWidth -
+                NativeSquareWidth -
+                (GameGap * 2)
+            )
+        );
+    }
+
+    function GetDefaultSidePanelWidth(
+        GameContainer,
+        MaximumSidePanelWidth
+    ) {
+        const LegacyMaximumPanelWidth =
+            GetLegacyMaximumPanelWidth(GameContainer);
+
+        const LegacyDefaultWidth =
+            LegacyMaximumPanelWidth *
+            LegacyDefaultPanelWidthRatio;
+
+        const NewDefaultWidth =
+            Math.round(
+                LegacyDefaultWidth *
+                DefaultPanelShrinkRatio
+            );
+
+        return Clamp(
+            NewDefaultWidth,
+            MinimumPanelWidth,
+            MaximumSidePanelWidth
+        );
+    }
+
+    function GetSidePanelWidth(
+        GameContainer,
+        MaximumSidePanelWidth
+    ) {
         const RequestedWidth = Number.isFinite(PanelWidthPreference)
             ? PanelWidthPreference
-            : DefaultWidth;
+            : GetDefaultSidePanelWidth(
+                GameContainer,
+                MaximumSidePanelWidth
+            );
 
+        /*
+            This render-time clamp is intentionally separate from the clamp
+            applied during a manual drag. The preference represents what the
+            user chose; rendering must still adapt if the browser later becomes
+            too narrow to honor that preference temporarily.
+        */
         return Clamp(
             RequestedWidth,
             MinimumPanelWidth,
@@ -812,7 +914,10 @@
         GameContainer.classList.add(SideModeClass);
         GameContainer.classList.remove(StackedModeClass);
 
-        const PanelWidth = GetSidePanelWidth(MaximumSidePanelWidth);
+        const PanelWidth = GetSidePanelWidth(
+            GameContainer,
+            MaximumSidePanelWidth
+        );
 
         GameContainer.style.setProperty(
             "--lb-cubed-word-width",
@@ -825,11 +930,25 @@
         );
 
         GameContainer.style.setProperty(
+            "--lb-cubed-left-column-width",
+            `${GetLeftColumnWidth()}px`
+        );
+
+        GameContainer.style.setProperty(
             "--lb-cubed-panel-width",
             `${PanelWidth}px`
         );
 
-        GameContainer.style.setProperty("--lb-cubed-gap", `${GameGap}px`);
+        GameContainer.style.setProperty(
+            "--lb-cubed-gap",
+            `${GameGap}px`
+        );
+
+        GameContainer.style.setProperty(
+            "--lb-cubed-left-column-gap",
+            `${LeftColumnGap}px`
+        );
+
         GameContainer.style.setProperty(
             "--lb-cubed-edge-padding",
             `${EdgePadding}px`
@@ -838,15 +957,8 @@
         Panel.style.removeProperty("left");
         Panel.style.removeProperty("top");
         Panel.style.removeProperty("width");
-
-        const WordRect = WordContainer.getBoundingClientRect();
-        const SquareRect = SquareContainer.getBoundingClientRect();
-        const PlayTop = Math.min(WordRect.top, SquareRect.top);
-        const PlayBottom = Math.max(WordRect.bottom, SquareRect.bottom);
-        const PlayHeight = Math.ceil(PlayBottom - PlayTop);
-
-        Panel.style.height = `${PlayHeight}px`;
-        Panel.style.maxHeight = `${PlayHeight}px`;
+        Panel.style.removeProperty("height");
+        Panel.style.removeProperty("max-height");
     }
 
     function ApplyStackedLayout(
@@ -858,29 +970,87 @@
         GameContainer.classList.remove(SideModeClass);
         GameContainer.classList.add(StackedModeClass);
 
-        const GameRect = GameContainer.getBoundingClientRect();
-        const WordRect = WordContainer.getBoundingClientRect();
-        const SquareRect = SquareContainer.getBoundingClientRect();
-        const PlayTop = Math.min(WordRect.top, SquareRect.top);
-        const PlayBottom = Math.max(WordRect.bottom, SquareRect.bottom);
-        const PlayHeight = Math.ceil(PlayBottom - PlayTop);
-        const PanelTop = Math.round(PlayBottom - GameRect.top + 16);
-
         const MaximumStackedWidth = Math.max(
             280,
-            GameRect.width - (EdgePadding * 2)
+            GameContainer.clientWidth -
+            (EdgePadding * 2)
         );
 
-        const StackedWidth = Math.min(
-            MaximumStackedWidth,
-            Math.max(280, Math.round(MaximumStackedWidth * 0.9))
+        /*
+            In stacked mode the saved side-by-side preference is still useful
+            as a target width, but the panel may temporarily be clamped to the
+            narrower available space. Automatic clamping never overwrites the
+            preference.
+        */
+        const DefaultStackedWidth = Math.round(
+            MaximumStackedWidth * 0.9
         );
 
-        Panel.style.left = `${Math.round((GameRect.width - StackedWidth) / 2)}px`;
-        Panel.style.top = `${PanelTop}px`;
-        Panel.style.width = `${StackedWidth}px`;
-        Panel.style.height = `${PlayHeight}px`;
-        Panel.style.maxHeight = `${PlayHeight}px`;
+        const RequestedWidth = Number.isFinite(PanelWidthPreference)
+            ? PanelWidthPreference
+            : DefaultStackedWidth;
+
+        const StackedWidth = Clamp(
+            RequestedWidth,
+            Math.min(MinimumPanelWidth, MaximumStackedWidth),
+            MaximumStackedWidth
+        );
+
+        GameContainer.style.setProperty(
+            "--lb-cubed-word-width",
+            `${NativeWordWidth}px`
+        );
+
+        GameContainer.style.setProperty(
+            "--lb-cubed-square-width",
+            `${NativeSquareWidth}px`
+        );
+
+        GameContainer.style.setProperty(
+            "--lb-cubed-left-column-width",
+            `${GetLeftColumnWidth()}px`
+        );
+
+        GameContainer.style.setProperty(
+            "--lb-cubed-stacked-panel-width",
+            `${StackedWidth}px`
+        );
+
+        GameContainer.style.setProperty(
+            "--lb-cubed-left-column-gap",
+            `${LeftColumnGap}px`
+        );
+
+        GameContainer.style.setProperty(
+            "--lb-cubed-edge-padding",
+            `${EdgePadding}px`
+        );
+
+        /*
+            Cap LBC's height to the total height of the stacked TI + GB column.
+            The panel content owns its scrollbar.
+        */
+        requestAnimationFrame(() => {
+            const WordRect = WordContainer.getBoundingClientRect();
+            const SquareRect = SquareContainer.getBoundingClientRect();
+
+            const PlayTop = Math.min(
+                WordRect.top,
+                SquareRect.top
+            );
+
+            const PlayBottom = Math.max(
+                WordRect.bottom,
+                SquareRect.bottom
+            );
+
+            const PlayHeight = Math.ceil(
+                PlayBottom - PlayTop
+            );
+
+            Panel.style.height = `${PlayHeight}px`;
+            Panel.style.maxHeight = `${PlayHeight}px`;
+        });
     }
 
     // -------------------------------------------------------------------------
@@ -888,70 +1058,100 @@
     // -------------------------------------------------------------------------
 
     function StartPanelResizeBehavior() {
-        const Panel = document.getElementById(PanelId);
-        if (!Panel) {
-            return;
+        const Handles = [
+            document.getElementById(LeftResizeHandleId),
+            document.getElementById(RightResizeHandleId)
+        ].filter(Boolean);
+
+        for (const Handle of Handles) {
+            Handle.addEventListener(
+                "pointerdown",
+                HandlePanelPointerDown,
+                true
+            );
+
+            Handle.addEventListener(
+                "pointermove",
+                HandlePanelPointerMove,
+                true
+            );
+
+            Handle.addEventListener(
+                "pointerup",
+                EndPanelResize,
+                true
+            );
+
+            Handle.addEventListener(
+                "pointercancel",
+                EndPanelResize,
+                true
+            );
+
+            Handle.addEventListener(
+                "dblclick",
+                HandlePanelResizeDoubleClick,
+                true
+            );
         }
-
-        Panel.addEventListener("pointermove", HandlePanelPointerMove, true);
-        Panel.addEventListener("pointerdown", HandlePanelPointerDown, true);
-        Panel.addEventListener("pointerup", EndPanelResize, true);
-        Panel.addEventListener("pointercancel", EndPanelResize, true);
-        Panel.addEventListener("pointerleave", HandlePanelPointerLeave, true);
-    }
-
-    function GetResizeEdge(Event, Panel) {
-        const GameContainer = document.querySelector(".lb-game-container");
-
-        if (!GameContainer?.classList.contains(SideModeClass)) {
-            return null;
-        }
-
-        const Rect = Panel.getBoundingClientRect();
-        const LeftDistance = Math.abs(Event.clientX - Rect.left);
-        const RightDistance = Math.abs(Rect.right - Event.clientX);
-
-        if (LeftDistance <= ResizeHotZone) {
-            return "Left";
-        }
-
-        if (RightDistance <= ResizeHotZone) {
-            return "Right";
-        }
-
-        return null;
     }
 
     function HandlePanelPointerMove(Event) {
-        const Panel = document.getElementById(PanelId);
-        if (!Panel) {
+        if (!PanelResizeState) {
             return;
         }
 
-        if (PanelResizeState) {
-            const Direction = PanelResizeState.Edge === "Right" ? 1 : -1;
-            const PointerDelta = Event.clientX - PanelResizeState.StartX;
+        const GameContainer =
+            document.querySelector(".lb-game-container");
 
-            /*
-                The whole three-column group stays centered. Increasing the
-                panel by 2px therefore moves each outer edge by about 1px.
-                Doubling the pointer delta keeps the edge being dragged under
-                the pointer instead of making it feel like it moves at half
-                speed.
-            */
-            const RequestedWidth =
-                PanelResizeState.StartWidth +
-                (PointerDelta * Direction * 2);
-
-            PanelWidthPreference = RequestedWidth;
-            UpdatePanelLayout();
-
-            Event.preventDefault();
+        if (
+            !GameContainer ||
+            !GameContainer.classList.contains(SideModeClass)
+        ) {
             return;
         }
 
-        const Edge = GetResizeEdge(Event, Panel);
-        Panel.style.cursor = Edge ? "ew-resize" : "";
+        const Direction =
+            PanelResizeState.Edge === "Right"
+                ? 1
+                : -1;
+
+        const PointerDelta =
+            Event.clientX -
+            PanelResizeState.StartX;
+
+        /*
+            The complete two-column game group stays centered. Growing LBC by
+            2px moves its dragged outer edge about 1px, so the pointer delta is
+            doubled to keep the resize handle perceptually attached to the
+            cursor.
+        */
+        const RequestedWidth =
+            PanelResizeState.StartWidth +
+            (PointerDelta * Direction * 2);
+
+        const MaximumSidePanelWidth =
+            GetMaximumSidePanelWidth(
+                GameContainer
+            );
+
+        /*
+            Store only a size the user could actually see. If the pointer is
+            flung far past the min/max boundary, the preference stays clamped
+            at that visible boundary. We deliberately do NOT rebase StartX or
+            StartWidth, so reversing direction has the normal "catch back up
+            to the edge" behavior of a native resize boundary.
+        */
+        PanelWidthPreference =
+            Clamp(
+                RequestedWidth,
+                MinimumPanelWidth,
+                MaximumSidePanelWidth
+            );
+
+        UpdatePanelLayout();
+
+        Event.preventDefault();
     }
 
     function HandlePanelPointerDown(Event) {
@@ -959,34 +1159,61 @@
             return;
         }
 
-        const Panel = document.getElementById(PanelId);
-        if (!Panel) {
+        const GameContainer =
+            document.querySelector(".lb-game-container");
+
+        const Panel =
+            document.getElementById(PanelId);
+
+        const Handle =
+            Event.currentTarget;
+
+        if (
+            !GameContainer?.classList.contains(SideModeClass) ||
+            !Panel ||
+            !(Handle instanceof HTMLElement)
+        ) {
             return;
         }
 
-        const Edge = GetResizeEdge(Event, Panel);
-        if (!Edge) {
+        const Edge =
+            Handle.dataset.resizeEdge;
+
+        if (
+            Edge !== "Left" &&
+            Edge !== "Right"
+        ) {
             return;
         }
 
-        const Rect = Panel.getBoundingClientRect();
+        const Rect =
+            Panel.getBoundingClientRect();
 
         PanelResizeState = {
             Edge,
-            StartX: Event.clientX,
-            StartWidth: Rect.width,
-            PointerId: Event.pointerId
+            StartX:
+                Event.clientX,
+            StartWidth:
+                Rect.width,
+            PointerId:
+                Event.pointerId,
+            Handle
         };
 
-        Panel.classList.add("lb-cubed-resizing");
-        Panel.style.cursor = "ew-resize";
+        Panel.classList.add(
+            "lb-cubed-resizing"
+        );
 
-        if (typeof Panel.setPointerCapture === "function") {
+        if (
+            typeof Handle.setPointerCapture ===
+            "function"
+        ) {
             try {
-                Panel.setPointerCapture(Event.pointerId);
+                Handle.setPointerCapture(
+                    Event.pointerId
+                );
             } catch {
-                // Pointer capture is convenient, but resizing still works
-                // without it on browsers that reject the call.
+                // Pointer capture is convenient but not required.
             }
         }
 
@@ -999,15 +1226,24 @@
             return;
         }
 
-        const Panel = document.getElementById(PanelId);
+        const Panel =
+            document.getElementById(
+                PanelId
+            );
+
+        const Handle =
+            PanelResizeState.Handle;
 
         if (
-            Panel &&
-            typeof Panel.releasePointerCapture === "function" &&
+            Handle &&
+            typeof Handle.releasePointerCapture ===
+            "function" &&
             PanelResizeState.PointerId !== undefined
         ) {
             try {
-                Panel.releasePointerCapture(PanelResizeState.PointerId);
+                Handle.releasePointerCapture(
+                    PanelResizeState.PointerId
+                );
             } catch {
                 // Ignore browsers that already released pointer capture.
             }
@@ -1017,8 +1253,9 @@
         SavePanelWidthPreference();
 
         if (Panel) {
-            Panel.classList.remove("lb-cubed-resizing");
-            Panel.style.cursor = "";
+            Panel.classList.remove(
+                "lb-cubed-resizing"
+            );
         }
 
         QueuePanelLayoutUpdate();
@@ -1028,12 +1265,34 @@
         }
     }
 
-    function HandlePanelPointerLeave() {
-        const Panel = document.getElementById(PanelId);
+    function HandlePanelResizeDoubleClick(Event) {
+        const GameContainer =
+            document.querySelector(
+                ".lb-game-container"
+            );
 
-        if (Panel && !PanelResizeState) {
-            Panel.style.cursor = "";
+        if (
+            !GameContainer?.classList.contains(
+                SideModeClass
+            )
+        ) {
+            return;
         }
+
+        /*
+            A double-click is an explicit preference: maximize LBC to every
+            currently available horizontal pixel and persist that width.
+        */
+        PanelWidthPreference =
+            GetMaximumSidePanelWidth(
+                GameContainer
+            );
+
+        SavePanelWidthPreference();
+        UpdatePanelLayout();
+
+        Event.preventDefault();
+        Event.stopPropagation();
     }
 
     // -------------------------------------------------------------------------
@@ -1045,54 +1304,209 @@
             return;
         }
 
-        const GameContainer = document.querySelector(".lb-game-container");
+        const GameContainer =
+            document.querySelector(
+                ".lb-game-container"
+            );
+
         if (!GameContainer) {
-            console.warn("[Letter Boxed Cubed] Could not find .lb-game-container.");
+            console.warn(
+                "[Letter Boxed Cubed] Could not find .lb-game-container."
+            );
             return;
         }
 
-        GameContainer.classList.add(LayoutClass);
+        GameContainer.classList.add(
+            LayoutClass
+        );
 
-        const Panel = document.createElement("section");
-        Panel.id = PanelId;
-        GameContainer.appendChild(Panel);
+        const Panel =
+            document.createElement(
+                "section"
+            );
+
+        Panel.id =
+            PanelId;
+
+        const PanelContent =
+            document.createElement(
+                "div"
+            );
+
+        PanelContent.id =
+            PanelContentId;
+
+        const LeftHandle =
+            document.createElement(
+                "div"
+            );
+
+        LeftHandle.id =
+            LeftResizeHandleId;
+
+        LeftHandle.className =
+            "lb-cubed-resize-handle lb-cubed-resize-handle-left";
+
+        LeftHandle.dataset.resizeEdge =
+            "Left";
+
+        LeftHandle.setAttribute(
+            "aria-label",
+            "Resize Letter Boxed Cubed from the left edge"
+        );
+
+        const RightHandle =
+            document.createElement(
+                "div"
+            );
+
+        RightHandle.id =
+            RightResizeHandleId;
+
+        RightHandle.className =
+            "lb-cubed-resize-handle lb-cubed-resize-handle-right";
+
+        RightHandle.dataset.resizeEdge =
+            "Right";
+
+        RightHandle.setAttribute(
+            "aria-label",
+            "Resize Letter Boxed Cubed from the right edge"
+        );
+
+        Panel.append(
+            PanelContent,
+            LeftHandle,
+            RightHandle
+        );
+
+        GameContainer.appendChild(
+            Panel
+        );
     }
 
     function RenderPanel() {
-        const Panel = document.getElementById(PanelId);
-        if (!Panel) {
+        const Panel =
+            document.getElementById(
+                PanelId
+            );
+
+        const PanelContent =
+            document.getElementById(
+                PanelContentId
+            );
+
+        if (
+            !Panel ||
+            !PanelContent
+        ) {
             return;
         }
 
-        const PreviousOpenStates = ReadTreeOpenStates(Panel);
-        const PreviousScrollTop = Panel.scrollTop;
+        const PreviousOpenStates =
+            ReadTreeOpenStates(
+                PanelContent
+            );
 
-        const FoundDictionaryWords = Dictionary
-            .filter(Word => FoundWords.has(Word))
-            .sort(Alphabetically);
+        const PreviousScrollTop =
+            PanelContent.scrollTop;
 
-        const UnfoundWords = Dictionary
-            .filter(Word => !FoundWords.has(Word))
-            .sort(Alphabetically);
+        const FoundDictionaryWords =
+            Dictionary
+                .filter(
+                    Word =>
+                        FoundWords.has(
+                            Word
+                        )
+                )
+                .sort(
+                    Alphabetically
+                );
 
-        const Stats = CalculateStats(FoundDictionaryWords);
-        const TwoferHintStats = CalculateTwoferHintStats();
+        const UnfoundWords =
+            Dictionary
+                .filter(
+                    Word =>
+                        !FoundWords.has(
+                            Word
+                        )
+                )
+                .sort(
+                    Alphabetically
+                );
 
-        Panel.replaceChildren();
+        const Stats =
+            CalculateStats(
+                FoundDictionaryWords
+            );
 
-        RenderHeader(Panel);
-        RenderMainStats(Panel, Stats);
-        RenderHints(Panel, PreviousOpenStates, TwoferHintStats);
-        RenderTwofers(Panel, PreviousOpenStates);
-        RenderWordsByLength(Panel, PreviousOpenStates, Stats);
+        const TwoferHintStats =
+            CalculateTwoferHintStats();
+
+        PanelContent.replaceChildren();
+
+        RenderHeader(
+            PanelContent
+        );
+
+        /*
+            These are the six responsive top-level LBC elements:
+
+                1. Completion + Longest Found ("big 2")
+                2. Hints
+                3. Twofers
+                4. Words by Length
+                5. Found Words
+                6. Unfound Words
+
+            CSS container queries rearrange these based on LBC's own width,
+            not the browser viewport, so manual panel resizing participates in
+            the responsive layout naturally.
+        */
+        const DashboardGrid =
+            document.createElement(
+                "div"
+            );
+
+        DashboardGrid.className =
+            "lb-cubed-dashboard-grid";
+
+        PanelContent.appendChild(
+            DashboardGrid
+        );
+
+        RenderMainStats(
+            DashboardGrid,
+            Stats
+        );
+
+        RenderHints(
+            DashboardGrid,
+            PreviousOpenStates,
+            TwoferHintStats
+        );
+
+        RenderTwofers(
+            DashboardGrid,
+            PreviousOpenStates
+        );
+
+        RenderWordsByLength(
+            DashboardGrid,
+            PreviousOpenStates,
+            Stats
+        );
+
         RenderFoundAndUnfoundWords(
-            Panel,
+            DashboardGrid,
             PreviousOpenStates,
             FoundDictionaryWords,
             UnfoundWords
         );
 
-        Panel.scrollTop = PreviousScrollTop;
+        PanelContent.scrollTop =
+            PreviousScrollTop;
+
         QueuePanelLayoutUpdate();
     }
 
@@ -1459,15 +1873,18 @@
     }
 
     function RenderFoundAndUnfoundWords(
-        Panel,
+        Container,
         PreviousOpenStates,
         FoundDictionaryWords,
         UnfoundWords
     ) {
-        const WordColumns = document.createElement("div");
-        WordColumns.className = "lb-cubed-word-columns";
-
-        WordColumns.append(
+        /*
+            Found and Unfound are intentionally separate top-level responsive
+            grid items. At generous widths they can sit alongside other LBC
+            sections; as the panel narrows they move to their own row and
+            eventually stack individually.
+        */
+        Container.append(
             CreateWordTree(
                 "FoundWords",
                 `Found Words (${FoundDictionaryWords.length.toLocaleString()})`,
@@ -1485,8 +1902,6 @@
                 true
             )
         );
-
-        Panel.appendChild(WordColumns);
     }
 
     function CreateWordTree(
@@ -1682,16 +2097,40 @@
         Style.id = StyleId;
 
         Style.textContent = `
+            /*
+                ================================================================
+                OUTER LETTER BOXED LAYOUT
+                ================================================================
+
+                TI = NYT text-input / word column
+                GB = NYT game-board column
+                LBC = Letter Boxed Cubed
+
+                Side mode is now a TWO-column meta-layout:
+
+                    [ TI ] [     ]
+                    [ GB ] [ LBC ]
+
+                TI and GB retain their native measured widths and form the
+                centered left column. LBC forms the independently resizable
+                right column. When those two meta-columns no longer fit, the
+                entire left column stacks above LBC.
+            */
+
             .lb-game-container.${LayoutClass} {
                 box-sizing: border-box !important;
             }
 
             .lb-game-container.${SideModeClass} {
-                display: flex !important;
-                flex-direction: row !important;
+                display: grid !important;
+                grid-template-columns:
+                    var(--lb-cubed-left-column-width)
+                    var(--lb-cubed-panel-width) !important;
+                grid-template-rows: auto auto !important;
+                column-gap: var(--lb-cubed-gap, 24px) !important;
+                row-gap: var(--lb-cubed-left-column-gap, 16px) !important;
                 justify-content: center !important;
-                align-items: flex-start !important;
-                gap: var(--lb-cubed-gap, 24px) !important;
+                align-items: start !important;
                 width: 100% !important;
                 max-width: none !important;
                 padding-left: var(--lb-cubed-edge-padding, 18px) !important;
@@ -1700,121 +2139,289 @@
             }
 
             .lb-game-container.${SideModeClass} > .lb-word-container {
-                flex: 0 0 var(--lb-cubed-word-width) !important;
+                grid-column: 1 !important;
+                grid-row: 1 !important;
+                justify-self: center !important;
+                align-self: start !important;
                 width: var(--lb-cubed-word-width) !important;
                 min-width: var(--lb-cubed-word-width) !important;
                 max-width: var(--lb-cubed-word-width) !important;
             }
 
             .lb-game-container.${SideModeClass} > .lb-square-container {
-                flex: 0 0 var(--lb-cubed-square-width) !important;
+                grid-column: 1 !important;
+                grid-row: 2 !important;
+                justify-self: center !important;
+                align-self: start !important;
                 width: var(--lb-cubed-square-width) !important;
                 min-width: var(--lb-cubed-square-width) !important;
                 max-width: var(--lb-cubed-square-width) !important;
             }
 
             .lb-game-container.${SideModeClass} > #${PanelId} {
+                grid-column: 2 !important;
+                grid-row: 1 / span 2 !important;
                 position: relative;
-                flex: 0 0 var(--lb-cubed-panel-width) !important;
+                align-self: stretch;
                 width: var(--lb-cubed-panel-width) !important;
                 min-width: var(--lb-cubed-panel-width) !important;
                 max-width: var(--lb-cubed-panel-width) !important;
-                align-self: flex-start;
+                min-height: 0;
             }
 
             .lb-game-container.${StackedModeClass} {
-                position: relative !important;
+                display: grid !important;
+                grid-template-columns: minmax(0, 1fr) !important;
+                grid-template-rows: auto auto auto !important;
+                row-gap: var(--lb-cubed-left-column-gap, 16px) !important;
+                justify-items: center !important;
+                align-items: start !important;
+                width: 100% !important;
+                max-width: none !important;
+                padding-left: var(--lb-cubed-edge-padding, 18px) !important;
+                padding-right: var(--lb-cubed-edge-padding, 18px) !important;
                 overflow: visible !important;
             }
 
-            .lb-game-container.${StackedModeClass} > #${PanelId} {
-                position: absolute;
+            .lb-game-container.${StackedModeClass} > .lb-word-container {
+                grid-column: 1 !important;
+                grid-row: 1 !important;
+                justify-self: center !important;
+                width: min(var(--lb-cubed-word-width), 100%) !important;
+                max-width: 100% !important;
             }
+
+            .lb-game-container.${StackedModeClass} > .lb-square-container {
+                grid-column: 1 !important;
+                grid-row: 2 !important;
+                justify-self: center !important;
+                width: min(var(--lb-cubed-square-width), 100%) !important;
+                max-width: 100% !important;
+            }
+
+            .lb-game-container.${StackedModeClass} > #${PanelId} {
+                grid-column: 1 !important;
+                grid-row: 3 !important;
+                position: relative;
+                justify-self: center;
+                width: var(--lb-cubed-stacked-panel-width) !important;
+                min-width: 0 !important;
+                max-width: 100% !important;
+            }
+
+            /*
+                ================================================================
+                PANEL SHELL / SCROLLER / RESIZE HANDLES
+                ================================================================
+            */
 
             #${PanelId} {
                 z-index: 10;
                 box-sizing: border-box;
                 margin: 0;
-                padding: 16px;
+                padding: 0;
+                overflow: visible;
+                color: rgb(48, 24, 24);
+                font-family: Arial, Helvetica, sans-serif;
+            }
+
+            #${PanelId},
+            #${PanelId} * {
+                box-sizing: border-box;
+            }
+
+            #${PanelContentId} {
+                width: 100%;
+                height: 100%;
+                min-height: 0;
+                padding: 12px;
                 overflow-x: hidden;
                 overflow-y: auto;
                 background: rgb(216, 132, 130);
                 color: rgb(48, 24, 24);
                 border: 1px solid rgba(76, 34, 34, 0.58);
                 border-radius: 4px;
-                font-family: Arial, Helvetica, sans-serif;
                 scrollbar-width: thin;
-                scrollbar-color: rgba(76, 32, 32, 0.58) rgba(255, 255, 255, 0.13);
+                scrollbar-color:
+                    rgba(76, 32, 32, 0.58)
+                    rgba(255, 255, 255, 0.13);
+
+                /*
+                    All inner responsiveness is based on LBC's actual manually
+                    resizable width rather than the browser viewport.
+                */
+                container-type: inline-size;
+                container-name: lbc;
             }
 
-            #${PanelId} * {
-                box-sizing: border-box;
+            #${PanelContentId}::-webkit-scrollbar {
+                width: 8px;
+            }
+
+            #${PanelContentId}::-webkit-scrollbar-track {
+                background: rgba(255, 255, 255, 0.13);
+            }
+
+            #${PanelContentId}::-webkit-scrollbar-thumb {
+                background: rgba(76, 32, 32, 0.58);
+                border-radius: 4px;
+            }
+
+            .lb-cubed-resize-handle {
+                display: none;
+                position: absolute;
+                top: 0;
+                bottom: 0;
+                width: ${ResizeHandleWidth}px;
+                z-index: 30;
+                cursor: ew-resize;
+                touch-action: none;
+                user-select: none;
+                background: transparent;
             }
 
             /*
-                The outer 9px at either vertical edge act as resize grips in
-                side-by-side mode. The resize logic lives on the panel itself,
-                so no extra DOM handles are needed and the grips survive every
-                dashboard rerender.
+                Both grips have exactly the same hit width. The right grip is
+                deliberately moved fully OUTSIDE the panel, plus a small gap,
+                so it never fights with LBC's vertical scrollbar.
             */
-            .lb-game-container.${SideModeClass} > #${PanelId} {
-                touch-action: pan-y;
+            .lb-game-container.${SideModeClass}
+            > #${PanelId}
+            > .lb-cubed-resize-handle {
+                display: block;
             }
 
-            .lb-game-container.${SideModeClass} > #${PanelId}:hover {
-                border-left-color: rgba(76, 34, 34, 0.72);
-                border-right-color: rgba(76, 34, 34, 0.72);
+            .lb-cubed-resize-handle-left {
+                left: -${ResizeHandleWidth / 2}px;
+            }
+
+            .lb-cubed-resize-handle-right {
+                right: -${ResizeHandleWidth + RightResizeHandleGap}px;
+            }
+
+            .lb-cubed-resize-handle::after {
+                content: "";
+                position: absolute;
+                top: 0;
+                bottom: 0;
+                width: 2px;
+                opacity: 0;
+                background: rgba(76, 34, 34, 0.5);
+                transition: opacity 100ms ease;
+            }
+
+            .lb-cubed-resize-handle-left::after {
+                left: calc(50% - 1px);
+            }
+
+            .lb-cubed-resize-handle-right::after {
+                right: calc(50% - 1px);
+            }
+
+            .lb-cubed-resize-handle:hover::after,
+            #${PanelId}.lb-cubed-resizing
+            .lb-cubed-resize-handle::after {
+                opacity: 1;
             }
 
             #${PanelId}.lb-cubed-resizing {
                 user-select: none;
             }
 
-            #${PanelId}::-webkit-scrollbar {
-                width: 8px;
-            }
-
-            #${PanelId}::-webkit-scrollbar-track {
-                background: rgba(255, 255, 255, 0.13);
-            }
-
-            #${PanelId}::-webkit-scrollbar-thumb {
-                background: rgba(76, 32, 32, 0.58);
-                border-radius: 4px;
-            }
+            /*
+                ================================================================
+                HEADER
+                ================================================================
+            */
 
             .lb-cubed-header {
                 display: flex;
                 justify-content: space-between;
                 align-items: flex-start;
-                margin-bottom: 14px;
+                margin-bottom: 10px;
             }
 
             .lb-cubed-title {
                 margin: 0;
                 padding: 0;
                 color: rgb(48, 24, 24);
-                font-size: 24px;
+                font-size: 22px;
                 line-height: 1.1;
                 font-weight: 700;
             }
 
             .lb-cubed-subtitle {
-                margin-top: 4px;
+                margin-top: 3px;
                 color: rgba(48, 24, 24, 0.70);
-                font-size: 12px;
+                font-size: 11px;
+            }
+
+            /*
+                ================================================================
+                RESPONSIVE TOP-LEVEL LBC GRID
+                ================================================================
+
+                Narrow -> wide cascade:
+
+                - All sections stacked.
+                - Completion/Longest stay together; Found/Unfound share a row.
+                - Hints + Twofers share a row.
+                - Hints + Twofers + Words by Length share a row.
+                - Big 2 + Hints + Twofers + Length share row 1, words row 2.
+                - All six top-level elements share one row when LBC is huge.
+            */
+
+            .lb-cubed-dashboard-grid {
+                display: grid;
+                grid-template-columns: minmax(0, 1fr);
+                grid-template-areas:
+                    "stats"
+                    "hints"
+                    "twofers"
+                    "length"
+                    "found"
+                    "unfound";
+                gap: 7px;
+                align-items: start;
             }
 
             .lb-cubed-stat-grid {
+                grid-area: stats;
                 display: grid;
-                grid-template-columns: repeat(2, minmax(0, 1fr));
-                gap: 8px;
-                margin-bottom: 12px;
+                grid-template-columns: 1fr;
+                gap: 6px;
+                margin: 0;
+                min-width: 0;
+            }
+
+            .lb-cubed-hints-tree {
+                grid-area: hints;
+            }
+
+            .lb-cubed-twofer-tree {
+                grid-area: twofers;
+            }
+
+            .lb-cubed-length-tree {
+                grid-area: length;
+            }
+
+            .lb-cubed-word-tree[data-cubed-section="FoundWords"] {
+                grid-area: found;
+            }
+
+            .lb-cubed-word-tree[data-cubed-section="UnfoundWords"] {
+                grid-area: unfound;
+            }
+
+            .lb-cubed-dashboard-grid > .lb-cubed-tree,
+            .lb-cubed-dashboard-grid > .lb-cubed-stat-grid {
+                margin: 0;
             }
 
             .lb-cubed-stat {
                 min-width: 0;
-                padding: 10px 8px;
+                padding: 8px 6px;
                 background: rgba(255, 255, 255, 0.18);
                 border: 1px solid rgba(78, 34, 34, 0.32);
                 border-radius: 3px;
@@ -1823,36 +2430,37 @@
 
             .lb-cubed-stat-value {
                 color: rgb(48, 24, 24);
-                font-size: 18px;
+                font-size: 16px;
                 line-height: 1.15;
                 font-weight: 700;
                 overflow-wrap: anywhere;
             }
 
             .lb-cubed-stat-label {
-                margin-top: 4px;
+                margin-top: 3px;
                 color: rgba(48, 24, 24, 0.67);
-                font-size: 10px;
+                font-size: 9px;
                 text-transform: uppercase;
                 letter-spacing: 0.05em;
             }
 
             .lb-cubed-tree,
             .lb-cubed-nested-tree {
-                margin-top: 8px;
+                margin-top: 0;
                 border: 1px solid rgba(78, 34, 34, 0.38);
                 border-radius: 3px;
                 overflow: hidden;
+                min-width: 0;
             }
 
             .lb-cubed-tree > summary,
             .lb-cubed-nested-tree > summary {
-                padding: 9px 10px;
+                padding: 7px 8px;
                 cursor: pointer;
                 user-select: none;
                 color: rgb(48, 24, 24);
                 background: rgba(92, 37, 37, 0.11);
-                font-size: 13px;
+                font-size: 12px;
                 font-weight: 700;
             }
 
@@ -1861,37 +2469,47 @@
                 background: rgba(92, 37, 37, 0.18);
             }
 
-            /* Hints */
-
-            .lb-cubed-hints-tree {
-                margin-bottom: 8px;
+            /*
+                Found and Unfound should not greedily stretch across wide rows.
+                They remain compact and left-justified until LBC gets narrow.
+            */
+            .lb-cubed-word-tree {
+                width: 100%;
+                max-width: 220px;
+                justify-self: start;
             }
 
+            /*
+                ================================================================
+                HINTS
+                ================================================================
+            */
+
             .lb-cubed-hints-body {
-                padding: 8px;
+                padding: 5px;
             }
 
             .lb-cubed-twofer-solution-indicator {
                 display: flex;
                 align-items: center;
-                gap: 7px;
-                padding: 7px 8px;
+                gap: 6px;
+                padding: 5px 6px;
                 background: rgba(255, 255, 255, 0.12);
                 border: 1px solid rgba(78, 34, 34, 0.25);
                 border-radius: 3px;
-                font-size: 12px;
+                font-size: 11px;
             }
 
             .lb-cubed-twofer-status-icon {
                 display: inline-flex;
-                flex: 0 0 18px;
+                flex: 0 0 17px;
                 align-items: center;
                 justify-content: center;
-                width: 18px;
-                height: 18px;
+                width: 17px;
+                height: 17px;
                 border-radius: 50%;
                 color: #fff;
-                font-size: 12px;
+                font-size: 11px;
                 font-weight: 900;
                 line-height: 1;
             }
@@ -1911,8 +2529,9 @@
 
             .lb-cubed-hint-counter-grid {
                 display: grid;
-                grid-template-columns: repeat(2, minmax(0, 1fr));
-                gap: 8px;
+                grid-template-columns:
+                    repeat(auto-fit, minmax(125px, 1fr));
+                gap: 5px;
                 align-items: start;
             }
 
@@ -1923,18 +2542,18 @@
             .lb-cubed-potential-word-list {
                 display: grid;
                 grid-template-columns: 1fr;
-                gap: 4px;
-                padding: 8px;
+                gap: 2px;
+                padding: 4px;
             }
 
             .lb-cubed-potential-word {
                 min-width: 0;
-                padding: 5px 7px;
+                padding: 3px 5px;
                 background: rgba(255, 255, 255, 0.11);
                 border-radius: 2px;
                 color: rgba(48, 24, 24, 0.75);
                 font-family: Consolas, "Courier New", monospace;
-                font-size: 11px;
+                font-size: 10px;
                 overflow-wrap: anywhere;
             }
 
@@ -1945,27 +2564,22 @@
             }
 
             .lb-cubed-potential-word-empty {
-                padding: 7px;
+                padding: 5px;
                 color: rgba(48, 24, 24, 0.65);
-                font-size: 11px;
+                font-size: 10px;
                 font-style: italic;
                 text-align: center;
             }
 
-            /* Twofers */
-
-            .lb-cubed-twofer-tree {
-                margin-bottom: 8px;
-            }
+            /*
+                ================================================================
+                TWOFERS
+                ================================================================
+            */
 
             /*
-                Keep Twofers as a normal <summary> so it uses exactly the same
-                native right/down disclosure marker as Hints, Words by Length,
-                Found Words, etc.
-
-                The expanded-only controls float to the right instead of
-                turning the <summary> itself into a flex container. This keeps
-                the marker and title anchored on the left in both states.
+                Keep Twofers as a normal <summary> so Chrome supplies exactly
+                the same native disclosure marker as every other details node.
             */
             .lb-cubed-twofer-summary {
                 display: list-item;
@@ -1975,38 +2589,44 @@
                 display: inline;
             }
 
+            /*
+                Controls live on their own line when expanded. This avoids
+                fighting the native disclosure marker and works much better
+                when Twofers occupies a narrow responsive column.
+            */
             .lb-cubed-twofer-summary-actions {
-                float: right;
-                display: inline-flex;
+                float: none;
+                display: flex;
                 align-items: center;
-                justify-content: flex-end;
-                gap: 8px;
-                max-width: 72%;
-                margin-left: 8px;
+                justify-content: flex-start;
+                gap: 6px;
+                max-width: 100%;
+                margin: 5px 0 0 0;
             }
 
-            .lb-cubed-twofer-tree:not([open]) .lb-cubed-twofer-summary-actions {
+            .lb-cubed-twofer-tree:not([open])
+            .lb-cubed-twofer-summary-actions {
                 display: none;
             }
 
             .lb-cubed-twofer-disclaimer {
                 min-width: 0;
                 color: rgba(48, 24, 24, 0.66);
-                font-size: 10px;
+                font-size: 9px;
                 font-style: italic;
                 font-weight: 400;
-                text-align: right;
+                text-align: left;
             }
 
             .lb-cubed-twofer-group-button {
                 flex: 0 0 auto;
-                padding: 4px 8px;
+                padding: 3px 6px;
                 color: rgb(48, 24, 24);
                 background: rgba(255, 255, 255, 0.24);
                 border: 1px solid rgba(78, 34, 34, 0.35);
                 border-radius: 3px;
                 font: inherit;
-                font-size: 11px;
+                font-size: 10px;
                 font-weight: 700;
                 cursor: pointer;
             }
@@ -2016,20 +2636,20 @@
             }
 
             .lb-cubed-twofer-body {
-                padding: 8px;
+                padding: 4px;
             }
 
             .lb-cubed-twofer-group + .lb-cubed-twofer-group {
-                margin-top: 10px;
+                margin-top: 6px;
             }
 
             .lb-cubed-twofer-group-title {
-                margin-bottom: 5px;
-                padding: 5px 7px;
+                margin-bottom: 3px;
+                padding: 3px 5px;
                 color: rgba(48, 24, 24, 0.78);
                 background: rgba(92, 37, 37, 0.08);
                 border-radius: 2px;
-                font-size: 11px;
+                font-size: 10px;
                 font-weight: 700;
                 text-transform: uppercase;
                 letter-spacing: 0.04em;
@@ -2038,7 +2658,7 @@
             .lb-cubed-twofer-list {
                 display: grid;
                 grid-template-columns: 1fr;
-                gap: 5px;
+                gap: 2px;
             }
 
             .lb-cubed-twofer-list-ungrouped {
@@ -2046,19 +2666,22 @@
             }
 
             .lb-cubed-twofer-group-empty {
-                padding: 6px 8px;
+                padding: 4px 5px;
                 color: rgba(48, 24, 24, 0.55);
-                font-size: 11px;
+                font-size: 10px;
                 font-style: italic;
             }
 
             .lb-cubed-twofer-row {
                 display: grid;
-                grid-template-columns: minmax(0, 1fr) 20px minmax(0, 1fr);
-                gap: 6px;
+                grid-template-columns:
+                    minmax(0, 1fr)
+                    16px
+                    minmax(0, 1fr);
+                gap: 3px;
                 align-items: center;
                 min-width: 0;
-                padding: 3px;
+                padding: 1px;
                 border-radius: 3px;
             }
 
@@ -2070,10 +2693,10 @@
                 display: block;
                 min-width: 0;
                 width: 100%;
-                padding: 5px 7px;
+                padding: 3px 4px;
                 border-radius: 2px;
                 font-family: Consolas, "Courier New", monospace;
-                font-size: 11px;
+                font-size: 10px;
                 font-weight: 600;
                 text-align: center;
                 white-space: nowrap;
@@ -2084,7 +2707,7 @@
             .lb-cubed-twofer-arrow {
                 color: rgba(48, 24, 24, 0.72);
                 text-align: center;
-                font-size: 14px;
+                font-size: 12px;
                 font-weight: 700;
             }
 
@@ -2109,52 +2732,68 @@
                 border: 1px solid rgba(78, 34, 34, 0.18);
             }
 
-            /* NYT's published solution */
+            /*
+                NYT's published solution.
 
+                Every visible descendant inherits the same requested yellow
+                background. A still-redacted solution word remains black,
+                because spoiler protection outranks decoration.
+            */
             .lb-cubed-nyt-solution {
-                padding: 5px;
-                background: rgb(255, 244, 183);
-                border: 1px solid rgba(132, 103, 24, 0.38);
+                padding: 4px;
+                background-color: rgb(218, 203, 119);
+                border: 1px solid rgba(105, 88, 19, 0.45);
                 border-radius: 4px;
             }
 
             .lb-cubed-nyt-solution-label {
-                margin: 0 0 4px 2px;
-                color: rgb(88, 65, 10);
+                margin: 0 0 3px 1px;
+                color: rgb(71, 57, 8);
+                background-color: inherit !important;
                 font-size: 10px;
                 font-weight: 700;
                 line-height: 1.2;
             }
 
-            .lb-cubed-nyt-solution .lb-cubed-twofer-row {
-                background: rgba(255, 255, 255, 0.24);
+            .lb-cubed-nyt-solution .lb-cubed-twofer-row,
+            .lb-cubed-nyt-solution .lb-cubed-twofer-arrow,
+            .lb-cubed-nyt-solution .lb-cubed-twofer-revealed {
+                background-color: inherit !important;
             }
 
-            /* Words by length */
-
-            .lb-cubed-length-tree {
-                margin-bottom: 10px;
+            .lb-cubed-nyt-solution .lb-cubed-twofer-redacted {
+                background: #000 !important;
             }
 
+            /*
+                ================================================================
+                WORDS BY LENGTH
+                ================================================================
+            */
+
+            /*
+                Always vertical. This keeps the section useful even when it is
+                sitting beside Hints/Twofers in a narrow responsive row.
+            */
             .lb-cubed-length-grid {
                 display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
-                gap: 6px;
-                padding: 8px;
+                grid-template-columns: 1fr;
+                gap: 2px;
+                padding: 4px;
             }
 
             .lb-cubed-length-stat {
                 display: flex;
-                flex-direction: column;
+                flex-direction: row;
                 align-items: center;
-                justify-content: center;
+                justify-content: space-between;
                 min-width: 0;
-                padding: 7px 6px;
+                padding: 3px 5px;
                 background: rgba(255, 255, 255, 0.12);
                 border: 1px solid rgba(78, 34, 34, 0.27);
                 border-radius: 3px;
-                text-align: center;
-                font-size: 11px;
+                text-align: left;
+                font-size: 10px;
             }
 
             .lb-cubed-length-label {
@@ -2163,29 +2802,23 @@
             }
 
             .lb-cubed-length-value {
-                margin-top: 3px;
+                margin: 0 0 0 6px;
                 color: rgb(48, 24, 24);
                 font-weight: 700;
+                white-space: nowrap;
             }
 
-            /* Found / unfound words */
-
-            .lb-cubed-word-columns {
-                display: grid;
-                grid-template-columns: repeat(2, minmax(0, 1fr));
-                gap: 10px;
-                align-items: start;
-            }
-
-            .lb-cubed-word-tree {
-                min-width: 0;
-            }
+            /*
+                ================================================================
+                FOUND / UNFOUND WORDS
+                ================================================================
+            */
 
             .lb-cubed-word-grid {
                 display: grid;
                 grid-template-columns: 1fr;
-                gap: 4px;
-                padding: 8px;
+                gap: 2px;
+                padding: 4px;
                 overflow: visible;
             }
 
@@ -2193,10 +2826,10 @@
                 display: block;
                 width: 100%;
                 min-width: 0;
-                padding: 5px 7px;
+                padding: 3px 5px;
                 border-radius: 2px;
                 font-family: Consolas, "Courier New", monospace;
-                font-size: 11px;
+                font-size: 10px;
                 font-weight: 600;
                 overflow-wrap: anywhere;
             }
@@ -2222,28 +2855,129 @@
 
             .lb-cubed-empty {
                 width: 100%;
-                padding: 10px;
+                padding: 6px;
                 color: rgba(48, 24, 24, 0.70);
                 text-align: center;
+                font-size: 10px;
                 font-style: italic;
             }
 
-            @media (max-width: 900px) {
-                .lb-cubed-twofer-summary {
-                    align-items: flex-start;
-                }
+            /*
+                ================================================================
+                LBC CONTAINER-QUERY CASCADE
+                ================================================================
+            */
 
-                .lb-cubed-twofer-summary-actions {
-                    flex-direction: column-reverse;
-                    align-items: flex-end;
+            /*
+                Completion + Longest Found stop stacking once LBC has enough
+                room for two modest stat cards.
+            */
+            @container lbc (min-width: 340px) {
+                .lb-cubed-stat-grid {
+                    grid-template-columns:
+                        repeat(2, minmax(0, 1fr));
                 }
             }
 
-            @media (max-width: 700px) {
-                .lb-cubed-word-columns,
-                .lb-cubed-stat-grid,
-                .lb-cubed-hint-counter-grid {
-                    grid-template-columns: 1fr;
+            /*
+                Found and Unfound are the first sections to share a row.
+            */
+            @container lbc (min-width: 390px) {
+                .lb-cubed-dashboard-grid {
+                    grid-template-columns:
+                        repeat(2, minmax(0, 1fr));
+
+                    grid-template-areas:
+                        "stats stats"
+                        "hints hints"
+                        "twofers twofers"
+                        "length length"
+                        "found unfound";
+                }
+
+                .lb-cubed-word-tree {
+                    max-width: 220px;
+                }
+            }
+
+            /*
+                Next, Hints and Twofers can sit beside one another. Words by
+                Length remains below them.
+            */
+            @container lbc (min-width: 520px) {
+                .lb-cubed-dashboard-grid {
+                    grid-template-columns:
+                        repeat(2, minmax(0, 1fr));
+
+                    grid-template-areas:
+                        "stats stats"
+                        "hints twofers"
+                        "length length"
+                        "found unfound";
+                }
+            }
+
+            /*
+                Next stage: Hints, Twofers, and Words by Length share row 2;
+                the Big 2 own row 1 and Found/Unfound own row 3.
+            */
+            @container lbc (min-width: 650px) {
+                .lb-cubed-dashboard-grid {
+                    grid-template-columns:
+                        repeat(6, minmax(0, 1fr));
+
+                    grid-template-areas:
+                        "stats stats stats stats stats stats"
+                        "hints hints twofers twofers length length"
+                        "found found unfound unfound . .";
+                }
+            }
+
+            /*
+                At a generous width, Big 2 + Hints + Twofers + Length share the
+                first row, while the word logs move to their own second row.
+            */
+            @container lbc (min-width: 860px) {
+                .lb-cubed-dashboard-grid {
+                    grid-template-columns:
+                        minmax(250px, 2fr)
+                        minmax(135px, 1fr)
+                        minmax(220px, 1.6fr)
+                        minmax(135px, 1fr);
+
+                    grid-template-areas:
+                        "stats hints twofers length"
+                        "found unfound . .";
+                }
+            }
+
+            /*
+                Finally, when LBC itself is enormous, all six top-level
+                elements can coexist on one row.
+            */
+            @container lbc (min-width: 1180px) {
+                .lb-cubed-dashboard-grid {
+                    grid-template-columns:
+                        minmax(260px, 2fr)
+                        minmax(130px, 1fr)
+                        minmax(220px, 1.6fr)
+                        minmax(125px, 1fr)
+                        minmax(155px, 1fr)
+                        minmax(155px, 1fr);
+
+                    grid-template-areas:
+                        "stats hints twofers length found unfound";
+                }
+            }
+
+            /*
+                Below 390px the word sections have each moved to their own row,
+                so allow them to use the full available width. Below 340px the
+                stat cards also stack, completing the requested cascade.
+            */
+            @container lbc (max-width: 389px) {
+                .lb-cubed-word-tree {
+                    max-width: none;
                 }
             }
         `;
