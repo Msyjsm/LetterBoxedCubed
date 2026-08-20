@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         NYT Letter Boxed Cubed
+// @name         Letter Boxed Cubed
 // @namespace    https://www.nytimes.com/puzzles/letter-boxed
-// @version      1.6.2
+// @version      1.7.0
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -25,6 +25,9 @@
     const GameGap = 24;
     const EdgePadding = 18;
     const MinimumPanelWidth = 340;
+    const DefaultPanelWidthRatio = 0.75;
+    const ResizeHotZone = 9;
+    const PanelWidthStorageKey = "LetterBoxedCubed_PanelWidth";
 
     const TwoferCacheVersion = 1;
     const TwoferSeparator = "\u001F";
@@ -45,8 +48,13 @@
     let FoundTwofers = new Set();
     let TwofersGrouped = true;
 
+    let NytSolutionWords = null;
+    let NytSolutionKey = null;
+
     let NativeWordWidth = 0;
     let NativeSquareWidth = 0;
+    let PanelWidthPreference = null;
+    let PanelResizeState = null;
 
     let GameObserver = null;
     let LayoutObserver = null;
@@ -68,10 +76,12 @@
 
         LoadPuzzleData();
         LoadFoundWords();
+        LoadPanelWidthPreference();
         LoadOrCalculateTwofers();
         LoadFoundTwofers();
         CaptureNativeDimensions();
         CreatePanel();
+        StartPanelResizeBehavior();
         ScanGameState(true);
         StartGameObserver();
         StartSubmissionHooks();
@@ -89,6 +99,8 @@
             UniqueTwoferSecondWords: TwoferSecondWords.size,
             FoundWords: FoundWords.size,
             FoundTwofers: FoundTwofers.size,
+            NytSolution: NytSolutionWords,
+            PanelWidthPreference,
             NativeWordWidth,
             NativeSquareWidth
         });
@@ -145,6 +157,48 @@
         WordStorageKey = "LetterBoxedTracker_" + PuzzleStorageId;
         TwoferCacheKey = "LetterBoxedCubed_TwoferCache_" + PuzzleStorageId;
         FoundTwoferStorageKey = "LetterBoxedCubed_FoundTwofers_" + PuzzleStorageId;
+
+        /*
+            NYT exposes its intended answer as gameData.ourSolution.
+
+            Cubed only marks it in the Twofers list when it is itself a
+            two-word solution; longer official solutions have no corresponding
+            Twofer row to annotate.
+        */
+        const RawNytSolution = Array.isArray(GameData.ourSolution)
+            ? GameData.ourSolution.map(NormalizeWord).filter(Boolean)
+            : [];
+
+        if (RawNytSolution.length === 2) {
+            NytSolutionWords = RawNytSolution;
+            NytSolutionKey = MakeTwoferKey(
+                RawNytSolution[0],
+                RawNytSolution[1]
+            );
+        } else {
+            NytSolutionWords = null;
+            NytSolutionKey = null;
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Panel width preference
+    // -------------------------------------------------------------------------
+
+    function LoadPanelWidthPreference() {
+        const SavedWidth = Number(
+            GM_getValue(PanelWidthStorageKey, NaN)
+        );
+
+        PanelWidthPreference = Number.isFinite(SavedWidth) && SavedWidth > 0
+            ? SavedWidth
+            : null;
+    }
+
+    function SavePanelWidthPreference() {
+        if (Number.isFinite(PanelWidthPreference)) {
+            GM_setValue(PanelWidthStorageKey, Math.round(PanelWidthPreference));
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -217,6 +271,13 @@
 
         TwoferKeySet = new Set(Twofers.map(Twofer => Twofer.Key));
         RebuildTwoferWordCategories();
+
+        if (NytSolutionKey && !TwoferKeySet.has(NytSolutionKey)) {
+            console.warn(
+                "[Letter Boxed Cubed] NYT's two-word ourSolution was not found in the calculated Twofer set.",
+                NytSolutionWords
+            );
+        }
     }
 
     function RebuildTwoferWordCategories() {
@@ -688,21 +749,15 @@
         }
 
         const AvailableWidth = GameContainer.clientWidth;
-        const RequiredWidth =
-            EdgePadding +
-            NativeWordWidth +
-            GameGap +
-            NativeSquareWidth +
-            GameGap +
-            MinimumPanelWidth +
-            EdgePadding;
+        const MaximumSidePanelWidth = GetMaximumSidePanelWidth(GameContainer);
 
-        if (AvailableWidth >= RequiredWidth) {
+        if (MaximumSidePanelWidth >= MinimumPanelWidth) {
             ApplySideLayout(
                 GameContainer,
                 WordContainer,
                 SquareContainer,
-                Panel
+                Panel,
+                MaximumSidePanelWidth
             );
         } else {
             ApplyStackedLayout(
@@ -714,14 +769,50 @@
         }
     }
 
+    function GetMaximumSidePanelWidth(GameContainer) {
+        return Math.floor(
+            GameContainer.clientWidth -
+            (EdgePadding * 2) -
+            NativeWordWidth -
+            NativeSquareWidth -
+            (GameGap * 2)
+        );
+    }
+
+    function GetSidePanelWidth(MaximumSidePanelWidth) {
+        const DefaultWidth = Math.round(
+            MaximumSidePanelWidth * DefaultPanelWidthRatio
+        );
+
+        const RequestedWidth = Number.isFinite(PanelWidthPreference)
+            ? PanelWidthPreference
+            : DefaultWidth;
+
+        return Clamp(
+            RequestedWidth,
+            MinimumPanelWidth,
+            MaximumSidePanelWidth
+        );
+    }
+
+    function Clamp(Value, Minimum, Maximum) {
+        return Math.min(
+            Math.max(Value, Minimum),
+            Maximum
+        );
+    }
+
     function ApplySideLayout(
         GameContainer,
         WordContainer,
         SquareContainer,
-        Panel
+        Panel,
+        MaximumSidePanelWidth
     ) {
         GameContainer.classList.add(SideModeClass);
         GameContainer.classList.remove(StackedModeClass);
+
+        const PanelWidth = GetSidePanelWidth(MaximumSidePanelWidth);
 
         GameContainer.style.setProperty(
             "--lb-cubed-word-width",
@@ -731,6 +822,11 @@
         GameContainer.style.setProperty(
             "--lb-cubed-square-width",
             `${NativeSquareWidth}px`
+        );
+
+        GameContainer.style.setProperty(
+            "--lb-cubed-panel-width",
+            `${PanelWidth}px`
         );
 
         GameContainer.style.setProperty("--lb-cubed-gap", `${GameGap}px`);
@@ -770,14 +866,174 @@
         const PlayHeight = Math.ceil(PlayBottom - PlayTop);
         const PanelTop = Math.round(PlayBottom - GameRect.top + 16);
 
-        Panel.style.left = `${EdgePadding}px`;
-        Panel.style.top = `${PanelTop}px`;
-        Panel.style.width = `${Math.max(
+        const MaximumStackedWidth = Math.max(
             280,
             GameRect.width - (EdgePadding * 2)
-        )}px`;
+        );
+
+        const StackedWidth = Math.min(
+            MaximumStackedWidth,
+            Math.max(280, Math.round(MaximumStackedWidth * 0.9))
+        );
+
+        Panel.style.left = `${Math.round((GameRect.width - StackedWidth) / 2)}px`;
+        Panel.style.top = `${PanelTop}px`;
+        Panel.style.width = `${StackedWidth}px`;
         Panel.style.height = `${PlayHeight}px`;
         Panel.style.maxHeight = `${PlayHeight}px`;
+    }
+
+    // -------------------------------------------------------------------------
+    // Panel edge resizing
+    // -------------------------------------------------------------------------
+
+    function StartPanelResizeBehavior() {
+        const Panel = document.getElementById(PanelId);
+        if (!Panel) {
+            return;
+        }
+
+        Panel.addEventListener("pointermove", HandlePanelPointerMove, true);
+        Panel.addEventListener("pointerdown", HandlePanelPointerDown, true);
+        Panel.addEventListener("pointerup", EndPanelResize, true);
+        Panel.addEventListener("pointercancel", EndPanelResize, true);
+        Panel.addEventListener("pointerleave", HandlePanelPointerLeave, true);
+    }
+
+    function GetResizeEdge(Event, Panel) {
+        const GameContainer = document.querySelector(".lb-game-container");
+
+        if (!GameContainer?.classList.contains(SideModeClass)) {
+            return null;
+        }
+
+        const Rect = Panel.getBoundingClientRect();
+        const LeftDistance = Math.abs(Event.clientX - Rect.left);
+        const RightDistance = Math.abs(Rect.right - Event.clientX);
+
+        if (LeftDistance <= ResizeHotZone) {
+            return "Left";
+        }
+
+        if (RightDistance <= ResizeHotZone) {
+            return "Right";
+        }
+
+        return null;
+    }
+
+    function HandlePanelPointerMove(Event) {
+        const Panel = document.getElementById(PanelId);
+        if (!Panel) {
+            return;
+        }
+
+        if (PanelResizeState) {
+            const Direction = PanelResizeState.Edge === "Right" ? 1 : -1;
+            const PointerDelta = Event.clientX - PanelResizeState.StartX;
+
+            /*
+                The whole three-column group stays centered. Increasing the
+                panel by 2px therefore moves each outer edge by about 1px.
+                Doubling the pointer delta keeps the edge being dragged under
+                the pointer instead of making it feel like it moves at half
+                speed.
+            */
+            const RequestedWidth =
+                PanelResizeState.StartWidth +
+                (PointerDelta * Direction * 2);
+
+            PanelWidthPreference = RequestedWidth;
+            UpdatePanelLayout();
+
+            Event.preventDefault();
+            return;
+        }
+
+        const Edge = GetResizeEdge(Event, Panel);
+        Panel.style.cursor = Edge ? "ew-resize" : "";
+    }
+
+    function HandlePanelPointerDown(Event) {
+        if (Event.button !== 0) {
+            return;
+        }
+
+        const Panel = document.getElementById(PanelId);
+        if (!Panel) {
+            return;
+        }
+
+        const Edge = GetResizeEdge(Event, Panel);
+        if (!Edge) {
+            return;
+        }
+
+        const Rect = Panel.getBoundingClientRect();
+
+        PanelResizeState = {
+            Edge,
+            StartX: Event.clientX,
+            StartWidth: Rect.width,
+            PointerId: Event.pointerId
+        };
+
+        Panel.classList.add("lb-cubed-resizing");
+        Panel.style.cursor = "ew-resize";
+
+        if (typeof Panel.setPointerCapture === "function") {
+            try {
+                Panel.setPointerCapture(Event.pointerId);
+            } catch {
+                // Pointer capture is convenient, but resizing still works
+                // without it on browsers that reject the call.
+            }
+        }
+
+        Event.preventDefault();
+        Event.stopPropagation();
+    }
+
+    function EndPanelResize(Event) {
+        if (!PanelResizeState) {
+            return;
+        }
+
+        const Panel = document.getElementById(PanelId);
+
+        if (
+            Panel &&
+            typeof Panel.releasePointerCapture === "function" &&
+            PanelResizeState.PointerId !== undefined
+        ) {
+            try {
+                Panel.releasePointerCapture(PanelResizeState.PointerId);
+            } catch {
+                // Ignore browsers that already released pointer capture.
+            }
+        }
+
+        PanelResizeState = null;
+        SavePanelWidthPreference();
+
+        if (Panel) {
+            Panel.classList.remove("lb-cubed-resizing");
+            Panel.style.cursor = "";
+        }
+
+        QueuePanelLayoutUpdate();
+
+        if (Event) {
+            Event.preventDefault();
+        }
+    }
+
+    function HandlePanelPointerLeave() {
+        const Panel = document.getElementById(PanelId);
+
+        if (Panel && !PanelResizeState) {
+            Panel.style.cursor = "";
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -1144,7 +1400,20 @@
         );
 
         Row.append(FirstWord, Arrow, SecondWord);
-        return Row;
+
+        if (!NytSolutionKey || Twofer.Key !== NytSolutionKey) {
+            return Row;
+        }
+
+        const NytWrapper = document.createElement("div");
+        NytWrapper.className = "lb-cubed-nyt-solution";
+
+        const NytLabel = document.createElement("div");
+        NytLabel.className = "lb-cubed-nyt-solution-label";
+        NytLabel.textContent = "⭐ NYT Solution";
+
+        NytWrapper.append(NytLabel, Row);
+        return NytWrapper;
     }
 
     function CreateTwoferWordElement(Word, Visible) {
@@ -1420,7 +1689,7 @@
             .lb-game-container.${SideModeClass} {
                 display: flex !important;
                 flex-direction: row !important;
-                justify-content: flex-start !important;
+                justify-content: center !important;
                 align-items: flex-start !important;
                 gap: var(--lb-cubed-gap, 24px) !important;
                 width: 100% !important;
@@ -1445,10 +1714,11 @@
             }
 
             .lb-game-container.${SideModeClass} > #${PanelId} {
-                position: static;
-                flex: 1 1 0;
-                width: auto;
-                min-width: 0;
+                position: relative;
+                flex: 0 0 var(--lb-cubed-panel-width) !important;
+                width: var(--lb-cubed-panel-width) !important;
+                min-width: var(--lb-cubed-panel-width) !important;
+                max-width: var(--lb-cubed-panel-width) !important;
                 align-self: flex-start;
             }
 
@@ -1479,6 +1749,25 @@
 
             #${PanelId} * {
                 box-sizing: border-box;
+            }
+
+            /*
+                The outer 9px at either vertical edge act as resize grips in
+                side-by-side mode. The resize logic lives on the panel itself,
+                so no extra DOM handles are needed and the grips survive every
+                dashboard rerender.
+            */
+            .lb-game-container.${SideModeClass} > #${PanelId} {
+                touch-action: pan-y;
+            }
+
+            .lb-game-container.${SideModeClass} > #${PanelId}:hover {
+                border-left-color: rgba(76, 34, 34, 0.72);
+                border-right-color: rgba(76, 34, 34, 0.72);
+            }
+
+            #${PanelId}.lb-cubed-resizing {
+                user-select: none;
             }
 
             #${PanelId}::-webkit-scrollbar {
@@ -1818,6 +2107,27 @@
                 background: rgba(255, 255, 255, 0.25);
                 color: rgb(42, 20, 20);
                 border: 1px solid rgba(78, 34, 34, 0.18);
+            }
+
+            /* NYT's published solution */
+
+            .lb-cubed-nyt-solution {
+                padding: 5px;
+                background: rgb(255, 244, 183);
+                border: 1px solid rgba(132, 103, 24, 0.38);
+                border-radius: 4px;
+            }
+
+            .lb-cubed-nyt-solution-label {
+                margin: 0 0 4px 2px;
+                color: rgb(88, 65, 10);
+                font-size: 10px;
+                font-weight: 700;
+                line-height: 1.2;
+            }
+
+            .lb-cubed-nyt-solution .lb-cubed-twofer-row {
+                background: rgba(255, 255, 255, 0.24);
             }
 
             /* Words by length */
