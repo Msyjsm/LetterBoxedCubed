@@ -1,13 +1,14 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed
 // @namespace    https://www.nytimes.com/puzzles/letter-boxed
-// @version      1.8.0
+// @version      1.9.0
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
 // @grant        unsafeWindow
 // @grant        GM_getValue
 // @grant        GM_setValue
+// @grant        GM_listValues
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -43,6 +44,23 @@
     const LegacyPanelWidthStorageKey = "LetterBoxedCubed_PanelWidth";
     const PanelWidthStorageKey = "LetterBoxedCubed_PanelWidth_v2";
 
+    const ExportFormatName = "LetterBoxedCubedBackup";
+    const ExportFormatVersion = 1;
+    const PuzzleMetadataVersion = 1;
+    const PuzzleMetadataPrefix = "LetterBoxedCubed_PuzzleMetadata_";
+
+    const ExportStoragePrefixes = [
+        "LetterBoxedTracker_",
+        "LetterBoxedCubed_FoundTwofers_",
+        "LetterBoxedCubed_TwoferCache_",
+        PuzzleMetadataPrefix
+    ];
+
+    const ExportExactStorageKeys = [
+        LegacyPanelWidthStorageKey,
+        PanelWidthStorageKey
+    ];
+
     const PanelContentId = "lb-cubed-panel-content";
     const LeftResizeHandleId = "lb-cubed-resize-handle-left";
     const RightResizeHandleId = "lb-cubed-resize-handle-right";
@@ -58,6 +76,7 @@
     let WordStorageKey = null;
     let TwoferCacheKey = null;
     let FoundTwoferStorageKey = null;
+    let PuzzleMetadataStorageKey = null;
 
     let Twofers = [];
     let TwoferKeySet = new Set();
@@ -93,6 +112,7 @@
         }
 
         LoadPuzzleData();
+        SaveCurrentPuzzleMetadata();
         LoadFoundWords();
         LoadPanelWidthPreference();
         LoadOrCalculateTwofers();
@@ -175,6 +195,7 @@
         WordStorageKey = "LetterBoxedTracker_" + PuzzleStorageId;
         TwoferCacheKey = "LetterBoxedCubed_TwoferCache_" + PuzzleStorageId;
         FoundTwoferStorageKey = "LetterBoxedCubed_FoundTwofers_" + PuzzleStorageId;
+        PuzzleMetadataStorageKey = PuzzleMetadataPrefix + PuzzleStorageId;
 
         /*
             NYT exposes its intended answer as gameData.ourSolution.
@@ -242,6 +263,371 @@
                 Math.round(PanelWidthPreference)
             );
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Durable puzzle metadata + backup / restore
+    // -------------------------------------------------------------------------
+
+    function SaveCurrentPuzzleMetadata() {
+        GM_setValue(
+            PuzzleMetadataStorageKey,
+            {
+                Version: PuzzleMetadataVersion,
+                PuzzleId: PuzzleStorageId,
+                PrintDate: GameData.printDate || null,
+                Date: GameData.date || null,
+                Sides: Array.isArray(GameData.sides)
+                    ? [...GameData.sides]
+                    : [],
+                NytSolution: Array.isArray(GameData.ourSolution)
+                    ? GameData.ourSolution
+                        .map(NormalizeWord)
+                        .filter(Boolean)
+                    : [],
+                DictionaryCount: Dictionary.length,
+                DictionaryHash: HashString(Dictionary.join("\u001E")),
+                LastSeenAt: new Date().toISOString()
+            }
+        );
+    }
+
+    function GetExportStorageKeys() {
+        const AllKeys = typeof GM_listValues === "function"
+            ? GM_listValues()
+            : [];
+
+        return AllKeys
+            .filter(Key =>
+                ExportExactStorageKeys.includes(Key) ||
+                ExportStoragePrefixes.some(Prefix => Key.startsWith(Prefix))
+            )
+            .sort(Alphabetically);
+    }
+
+    function GetPuzzleIdFromStorageKey(Key) {
+        for (const Prefix of ExportStoragePrefixes) {
+            if (Key.startsWith(Prefix)) {
+                return Key.substring(Prefix.length);
+            }
+        }
+
+        return null;
+    }
+
+    function ParseStoredTwoferKeys(Value) {
+        if (!Array.isArray(Value)) {
+            return [];
+        }
+
+        return Value
+            .map(Key => SplitTwoferKey(Key))
+            .filter(Parts => Parts.length === 2)
+            .map(Parts => [Parts[0], Parts[1]]);
+    }
+
+    function BuildNormalizedPuzzleExport(
+        PuzzleId,
+        StorageSnapshot
+    ) {
+        const WordKey =
+            "LetterBoxedTracker_" + PuzzleId;
+
+        const FoundTwoferKey =
+            "LetterBoxedCubed_FoundTwofers_" + PuzzleId;
+
+        const TwoferCacheKeyForPuzzle =
+            "LetterBoxedCubed_TwoferCache_" + PuzzleId;
+
+        const MetadataKey =
+            PuzzleMetadataPrefix + PuzzleId;
+
+        const Metadata =
+            StorageSnapshot[MetadataKey] || null;
+
+        const Cache =
+            StorageSnapshot[TwoferCacheKeyForPuzzle] || null;
+
+        const IsCurrentPuzzle =
+            PuzzleId === PuzzleStorageId;
+
+        const FoundWordsForPuzzle = Array.isArray(
+            StorageSnapshot[WordKey]
+        )
+            ? [...StorageSnapshot[WordKey]]
+                .map(NormalizeWord)
+                .filter(Boolean)
+                .sort(Alphabetically)
+            : [];
+
+        const FoundTwofersForPuzzle =
+            ParseStoredTwoferKeys(
+                StorageSnapshot[FoundTwoferKey]
+            );
+
+        const AllTwofersForPuzzle =
+            Cache && Array.isArray(Cache.Solutions)
+                ? Cache.Solutions
+                    .filter(
+                        Solution =>
+                            Array.isArray(Solution) &&
+                            Solution.length === 2
+                    )
+                    .map(Solution => [
+                        NormalizeWord(Solution[0]),
+                        NormalizeWord(Solution[1])
+                    ])
+                : [];
+
+        const NytSolution =
+            Metadata && Array.isArray(Metadata.NytSolution)
+                ? Metadata.NytSolution
+                : IsCurrentPuzzle && Array.isArray(GameData.ourSolution)
+                    ? GameData.ourSolution
+                        .map(NormalizeWord)
+                        .filter(Boolean)
+                    : [];
+
+        return {
+            PuzzleId,
+            PrintDate:
+                Metadata?.PrintDate ||
+                Cache?.PrintDate ||
+                (IsCurrentPuzzle ? GameData.printDate || null : null),
+            Date:
+                Metadata?.Date ||
+                (IsCurrentPuzzle ? GameData.date || null : null),
+            Sides:
+                Array.isArray(Metadata?.Sides)
+                    ? Metadata.Sides
+                    : Array.isArray(Cache?.Sides)
+                        ? Cache.Sides
+                        : IsCurrentPuzzle && Array.isArray(GameData.sides)
+                            ? [...GameData.sides]
+                            : [],
+            NytSolution,
+            DictionaryCount:
+                Metadata?.DictionaryCount ??
+                Cache?.DictionaryCount ??
+                (IsCurrentPuzzle ? Dictionary.length : null),
+            DictionaryHash:
+                Metadata?.DictionaryHash ||
+                Cache?.DictionaryHash ||
+                null,
+            FoundWords: FoundWordsForPuzzle,
+            FoundTwofers: FoundTwofersForPuzzle,
+            AllTwofers: AllTwofersForPuzzle
+        };
+    }
+
+    function BuildExportData() {
+        const Keys = GetExportStorageKeys();
+        const StorageSnapshot = {};
+
+        for (const Key of Keys) {
+            StorageSnapshot[Key] = GM_getValue(Key, null);
+        }
+
+        const PuzzleIds = new Set();
+
+        for (const Key of Keys) {
+            const PuzzleId = GetPuzzleIdFromStorageKey(Key);
+
+            if (PuzzleId) {
+                PuzzleIds.add(PuzzleId);
+            }
+        }
+
+        const Puzzles = [...PuzzleIds]
+            .map(PuzzleId =>
+                BuildNormalizedPuzzleExport(
+                    PuzzleId,
+                    StorageSnapshot
+                )
+            )
+            .sort((A, B) => {
+                if (A.PrintDate && B.PrintDate) {
+                    return A.PrintDate.localeCompare(B.PrintDate);
+                }
+
+                const NumericA = Number(A.PuzzleId);
+                const NumericB = Number(B.PuzzleId);
+
+                if (
+                    Number.isFinite(NumericA) &&
+                    Number.isFinite(NumericB)
+                ) {
+                    return NumericA - NumericB;
+                }
+
+                return Alphabetically(A.PuzzleId, B.PuzzleId);
+            });
+
+        return {
+            Format: ExportFormatName,
+            FormatVersion: ExportFormatVersion,
+            ExportedAt: new Date().toISOString(),
+            CurrentPuzzleId: PuzzleStorageId,
+            PuzzleCount: Puzzles.length,
+            Puzzles,
+
+            /*
+                The normalized Puzzles collection is intended for analysis,
+                database imports, and public-data workflows.
+
+                StorageSnapshot is intentionally included as well so the same
+                file is also a lossless disaster-recovery backup for Cubed's
+                Tampermonkey data.
+            */
+            StorageSnapshot
+        };
+    }
+
+    function ExportAllData() {
+        try {
+            /*
+                Ensure today's lightweight metadata is current immediately
+                before taking the snapshot.
+            */
+            SaveCurrentPuzzleMetadata();
+
+            const ExportData = BuildExportData();
+            const Json = JSON.stringify(ExportData, null, 2);
+            const BlobData = new Blob(
+                [Json],
+                { type: "text/plain;charset=utf-8" }
+            );
+
+            const Url = URL.createObjectURL(BlobData);
+            const Link = document.createElement("a");
+
+            const Timestamp = new Date()
+                .toISOString()
+                .replace(/[:.]/g, "-");
+
+            Link.href = Url;
+            Link.download =
+                `Letter Boxed Cubed Backup ${Timestamp}.txt`;
+
+            document.body.appendChild(Link);
+            Link.click();
+            Link.remove();
+
+            setTimeout(
+                () => URL.revokeObjectURL(Url),
+                1000
+            );
+
+            console.log(
+                "[Letter Boxed Cubed] Exported backup.",
+                {
+                    PuzzleCount: ExportData.PuzzleCount,
+                    StorageKeys: Object.keys(
+                        ExportData.StorageSnapshot
+                    ).length
+                }
+            );
+        } catch (Error) {
+            console.error(
+                "[Letter Boxed Cubed] Export failed.",
+                Error
+            );
+
+            alert(
+                "Letter Boxed Cubed could not export its data. " +
+                "Check the developer console for details."
+            );
+        }
+    }
+
+    function PromptForImport() {
+        const Input = document.createElement("input");
+        Input.type = "file";
+        Input.accept = ".txt,.json,text/plain,application/json";
+        Input.style.display = "none";
+
+        Input.addEventListener(
+            "change",
+            async () => {
+                const File = Input.files?.[0];
+
+                Input.remove();
+
+                if (!File) {
+                    return;
+                }
+
+                try {
+                    const Text = await File.text();
+                    const Backup = JSON.parse(Text);
+
+                    if (
+                        !Backup ||
+                        Backup.Format !== ExportFormatName ||
+                        !Backup.StorageSnapshot ||
+                        typeof Backup.StorageSnapshot !== "object" ||
+                        Array.isArray(Backup.StorageSnapshot)
+                    ) {
+                        throw new Error(
+                            "This is not a Letter Boxed Cubed backup file."
+                        );
+                    }
+
+                    const Keys = Object.keys(
+                        Backup.StorageSnapshot
+                    );
+
+                    const Confirmed = confirm(
+                        `Import ${Keys.length.toLocaleString()} stored Letter Boxed Cubed records` +
+                        `${Backup.ExportedAt ? ` from ${Backup.ExportedAt}` : ""}?\n\n` +
+                        "Existing records with the same keys will be overwritten. " +
+                        "Other current records will be left untouched."
+                    );
+
+                    if (!Confirmed) {
+                        return;
+                    }
+
+                    for (const Key of Keys) {
+                        const IsAllowedKey =
+                            ExportExactStorageKeys.includes(Key) ||
+                            ExportStoragePrefixes.some(
+                                Prefix => Key.startsWith(Prefix)
+                            );
+
+                        if (!IsAllowedKey) {
+                            continue;
+                        }
+
+                        GM_setValue(
+                            Key,
+                            Backup.StorageSnapshot[Key]
+                        );
+                    }
+
+                    alert(
+                        "Letter Boxed Cubed backup imported successfully. " +
+                        "The page will now reload."
+                    );
+
+                    location.reload();
+                } catch (Error) {
+                    console.error(
+                        "[Letter Boxed Cubed] Import failed.",
+                        Error
+                    );
+
+                    alert(
+                        "Letter Boxed Cubed could not import that file. " +
+                        "Make sure it is an unmodified Cubed backup."
+                    );
+                }
+            },
+            { once: true }
+        );
+
+        document.body.appendChild(Input);
+        Input.click();
     }
 
     // -------------------------------------------------------------------------
@@ -1526,8 +1912,52 @@
             "Today's Letter Boxed";
 
         const HeaderText = document.createElement("div");
+        HeaderText.className = "lb-cubed-header-text";
         HeaderText.append(Title, Subtitle);
-        Header.appendChild(HeaderText);
+
+        const HeaderActions = document.createElement("div");
+        HeaderActions.className = "lb-cubed-header-actions";
+
+        const ExportButton = document.createElement("button");
+        ExportButton.type = "button";
+        ExportButton.className = "lb-cubed-header-button";
+        ExportButton.textContent = "Export";
+        ExportButton.title =
+            "Export all retained Letter Boxed Cubed puzzle/player data as a text backup";
+        ExportButton.addEventListener(
+            "click",
+            Event => {
+                Event.preventDefault();
+                Event.stopPropagation();
+                ExportAllData();
+            }
+        );
+
+        const ImportButton = document.createElement("button");
+        ImportButton.type = "button";
+        ImportButton.className = "lb-cubed-header-button";
+        ImportButton.textContent = "Import";
+        ImportButton.title =
+            "Restore or merge data from a Letter Boxed Cubed backup";
+        ImportButton.addEventListener(
+            "click",
+            Event => {
+                Event.preventDefault();
+                Event.stopPropagation();
+                PromptForImport();
+            }
+        );
+
+        HeaderActions.append(
+            ExportButton,
+            ImportButton
+        );
+
+        Header.append(
+            HeaderText,
+            HeaderActions
+        );
+
         Panel.appendChild(Header);
     }
 
@@ -2338,7 +2768,42 @@
                 display: flex;
                 justify-content: space-between;
                 align-items: flex-start;
+                gap: 8px;
                 margin-bottom: 10px;
+            }
+
+            .lb-cubed-header-text {
+                min-width: 0;
+            }
+
+            .lb-cubed-header-actions {
+                display: flex;
+                flex: 0 0 auto;
+                gap: 4px;
+                justify-content: flex-end;
+                align-items: center;
+            }
+
+            .lb-cubed-header-button {
+                appearance: none;
+                padding: 4px 7px;
+                color: rgb(48, 24, 24);
+                background: rgba(255, 255, 255, 0.18);
+                border: 1px solid rgba(78, 34, 34, 0.36);
+                border-radius: 3px;
+                font: inherit;
+                font-size: 10px;
+                font-weight: 700;
+                line-height: 1.2;
+                cursor: pointer;
+            }
+
+            .lb-cubed-header-button:hover {
+                background: rgba(255, 255, 255, 0.30);
+            }
+
+            .lb-cubed-header-button:active {
+                transform: translateY(1px);
             }
 
             .lb-cubed-title {
@@ -2978,6 +3443,14 @@
             @container lbc (max-width: 389px) {
                 .lb-cubed-word-tree {
                     max-width: none;
+                }
+
+                .lb-cubed-header {
+                    flex-direction: column;
+                }
+
+                .lb-cubed-header-actions {
+                    justify-content: flex-start;
                 }
             }
         `;
