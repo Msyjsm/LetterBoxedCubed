@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed
 // @namespace    https://www.nytimes.com/puzzles/letter-boxed
-// @version      1.9.0
+// @version      1.10.0
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -45,20 +45,27 @@
     const PanelWidthStorageKey = "LetterBoxedCubed_PanelWidth_v2";
 
     const ExportFormatName = "LetterBoxedCubedBackup";
-    const ExportFormatVersion = 1;
+    const ExportFormatVersion = 2;
     const PuzzleMetadataVersion = 1;
     const PuzzleMetadataPrefix = "LetterBoxedCubed_PuzzleMetadata_";
+
+    const CustomDictionaryStorageKey = "LetterBoxedCubed_CustomDictionary";
+    const CustomWordsPrefix = "LetterBoxedCubed_CustomWords_";
+    const LineDrawingSpeedStorageKey = "LetterBoxedCubed_LineDrawingSpeed";
 
     const ExportStoragePrefixes = [
         "LetterBoxedTracker_",
         "LetterBoxedCubed_FoundTwofers_",
         "LetterBoxedCubed_TwoferCache_",
-        PuzzleMetadataPrefix
+        PuzzleMetadataPrefix,
+        CustomWordsPrefix
     ];
 
     const ExportExactStorageKeys = [
         LegacyPanelWidthStorageKey,
-        PanelWidthStorageKey
+        PanelWidthStorageKey,
+        CustomDictionaryStorageKey,
+        LineDrawingSpeedStorageKey
     ];
 
     const PanelContentId = "lb-cubed-panel-content";
@@ -70,13 +77,16 @@
 
     let GameData = null;
     let Dictionary = [];
+    let DictionarySet = new Set();
     let FoundWords = new Set();
+    let PuzzleSideByLetter = new Map();
 
     let PuzzleStorageId = null;
     let WordStorageKey = null;
     let TwoferCacheKey = null;
     let FoundTwoferStorageKey = null;
     let PuzzleMetadataStorageKey = null;
+    let CustomWordsStorageKey = null;
 
     let Twofers = [];
     let TwoferKeySet = new Set();
@@ -92,6 +102,14 @@
     let NativeSquareWidth = 0;
     let PanelWidthPreference = null;
     let PanelResizeState = null;
+
+    let CustomDictionary = new Map();
+    let CustomWordsForCurrentPuzzle = new Set();
+    let LastInvalidWord = null;
+
+    let LineDrawingSpeed = 1.0;
+    let NativeRequestAnimationFrame = null;
+    let LineAnimationAcceleration = null;
 
     let GameObserver = null;
     let LayoutObserver = null;
@@ -112,8 +130,11 @@
         }
 
         LoadPuzzleData();
-        SaveCurrentPuzzleMetadata();
+        UpdateCurrentPuzzleMetadata();
         LoadFoundWords();
+        LoadCustomDictionary();
+        LoadLineDrawingSpeed();
+        InstallLineDrawingSpeedHook();
         LoadPanelWidthPreference();
         LoadOrCalculateTwofers();
         LoadFoundTwofers();
@@ -138,6 +159,9 @@
             FoundWords: FoundWords.size,
             FoundTwofers: FoundTwofers.size,
             NytSolution: NytSolutionWords,
+            CustomDictionaryWords: CustomDictionary.size,
+            CustomWordsForCurrentPuzzle: CustomWordsForCurrentPuzzle.size,
+            LineDrawingSpeed,
             PanelWidthPreference,
             NativeWordWidth,
             NativeSquareWidth
@@ -185,6 +209,15 @@
                 .filter(Boolean)
         )].sort(Alphabetically);
 
+        DictionarySet = new Set(Dictionary);
+
+        PuzzleSideByLetter = new Map();
+        for (let SideIndex = 0; SideIndex < (GameData.sides || []).length; SideIndex++) {
+            for (const Letter of String(GameData.sides[SideIndex]).toUpperCase()) {
+                PuzzleSideByLetter.set(Letter, SideIndex);
+            }
+        }
+
         PuzzleStorageId = String(
             GameData.id ||
             GameData.printDate ||
@@ -196,6 +229,7 @@
         TwoferCacheKey = "LetterBoxedCubed_TwoferCache_" + PuzzleStorageId;
         FoundTwoferStorageKey = "LetterBoxedCubed_FoundTwofers_" + PuzzleStorageId;
         PuzzleMetadataStorageKey = PuzzleMetadataPrefix + PuzzleStorageId;
+        CustomWordsStorageKey = CustomWordsPrefix + PuzzleStorageId;
 
         /*
             NYT exposes its intended answer as gameData.ourSolution.
@@ -269,27 +303,326 @@
     // Durable puzzle metadata + backup / restore
     // -------------------------------------------------------------------------
 
-    function SaveCurrentPuzzleMetadata() {
+    function UpdateCurrentPuzzleMetadata() {
+        /*
+            Migration and enrichment are deliberately separate concepts:
+
+            - A future migration will change an older stored object's SHAPE.
+            - This enrichment pass refreshes canonical facts we can authoritatively
+              recover from today's gameData, even when the instance already exists.
+
+            That means a metadata record created before NytSolution was tracked can
+            self-heal the next time that same puzzle is loaded. Player-history data
+            is intentionally not reconstructed here.
+        */
+        const Existing = GM_getValue(
+            PuzzleMetadataStorageKey,
+            {}
+        );
+
+        const Updated = {
+            ...(Existing && typeof Existing === "object" && !Array.isArray(Existing)
+                ? Existing
+                : {}),
+            Version: PuzzleMetadataVersion,
+            PuzzleId: PuzzleStorageId,
+            PrintDate: GameData.printDate || null,
+            Date: GameData.date || null,
+            Sides: Array.isArray(GameData.sides)
+                ? [...GameData.sides]
+                : [],
+            NytSolution: Array.isArray(GameData.ourSolution)
+                ? GameData.ourSolution
+                    .map(NormalizeWord)
+                    .filter(Boolean)
+                : [],
+            DictionaryCount: Dictionary.length,
+            DictionaryHash: HashString(Dictionary.join("\u001E")),
+            LastSeenAt: new Date().toISOString()
+        };
+
         GM_setValue(
             PuzzleMetadataStorageKey,
-            {
-                Version: PuzzleMetadataVersion,
-                PuzzleId: PuzzleStorageId,
-                PrintDate: GameData.printDate || null,
-                Date: GameData.date || null,
-                Sides: Array.isArray(GameData.sides)
-                    ? [...GameData.sides]
-                    : [],
-                NytSolution: Array.isArray(GameData.ourSolution)
-                    ? GameData.ourSolution
-                        .map(NormalizeWord)
-                        .filter(Boolean)
-                    : [],
-                DictionaryCount: Dictionary.length,
-                DictionaryHash: HashString(Dictionary.join("\u001E")),
-                LastSeenAt: new Date().toISOString()
-            }
+            Updated
         );
+    }
+
+    // -------------------------------------------------------------------------
+    // Custom dictionary
+    // -------------------------------------------------------------------------
+
+    function LoadCustomDictionary() {
+        const SavedDictionary = GM_getValue(
+            CustomDictionaryStorageKey,
+            []
+        );
+
+        CustomDictionary = new Map();
+
+        if (Array.isArray(SavedDictionary)) {
+            for (const RawEntry of SavedDictionary) {
+                const Entry = NormalizeCustomDictionaryEntry(RawEntry);
+
+                if (Entry) {
+                    CustomDictionary.set(Entry.Word, Entry);
+                }
+            }
+        }
+
+        const SavedPuzzleWords = GM_getValue(
+            CustomWordsStorageKey,
+            []
+        );
+
+        CustomWordsForCurrentPuzzle = new Set(
+            Array.isArray(SavedPuzzleWords)
+                ? SavedPuzzleWords
+                    .map(NormalizeWord)
+                    .filter(Boolean)
+                : []
+        );
+    }
+
+    function NormalizeCustomDictionaryEntry(RawEntry) {
+        if (typeof RawEntry === "string") {
+            const Word = NormalizeWord(RawEntry);
+
+            return Word
+                ? {
+                    Word,
+                    Provenance: "User",
+                    AddedAt: null,
+                    FirstAddedPuzzleId: null,
+                    FirstAddedPrintDate: null
+                }
+                : null;
+        }
+
+        if (!RawEntry || typeof RawEntry !== "object" || Array.isArray(RawEntry)) {
+            return null;
+        }
+
+        const Word = NormalizeWord(RawEntry.Word);
+
+        if (!Word) {
+            return null;
+        }
+
+        return {
+            ...RawEntry,
+            Word,
+            Provenance: RawEntry.Provenance || "User",
+            AddedAt: RawEntry.AddedAt || null,
+            FirstAddedPuzzleId: RawEntry.FirstAddedPuzzleId || null,
+            FirstAddedPrintDate: RawEntry.FirstAddedPrintDate || null
+        };
+    }
+
+    function SaveCustomDictionary() {
+        const Entries = [...CustomDictionary.values()]
+            .sort((A, B) => Alphabetically(A.Word, B.Word));
+
+        GM_setValue(
+            CustomDictionaryStorageKey,
+            Entries
+        );
+    }
+
+    function SaveCustomWordsForCurrentPuzzle() {
+        GM_setValue(
+            CustomWordsStorageKey,
+            [...CustomWordsForCurrentPuzzle].sort(Alphabetically)
+        );
+    }
+
+    function AddLastInvalidWordToCustomDictionary() {
+        const Word = NormalizeWord(LastInvalidWord);
+
+        if (!Word) {
+            return;
+        }
+
+        if (!CustomDictionary.has(Word)) {
+            CustomDictionary.set(
+                Word,
+                {
+                    Word,
+                    Provenance: "User",
+                    AddedAt: new Date().toISOString(),
+                    FirstAddedPuzzleId: PuzzleStorageId,
+                    FirstAddedPrintDate: GameData.printDate || null
+                }
+            );
+
+            SaveCustomDictionary();
+        }
+
+        CustomWordsForCurrentPuzzle.add(Word);
+        SaveCustomWordsForCurrentPuzzle();
+
+        console.log(
+            "[Letter Boxed Cubed] Added custom dictionary word:",
+            Word
+        );
+
+        RenderPanel();
+    }
+
+    function IsStructurallyValidLetterBoxedWord(Word) {
+        const Normalized = NormalizeWord(Word);
+
+        if (Normalized.length < 3) {
+            return false;
+        }
+
+        let PreviousSide = null;
+
+        for (const Letter of Normalized) {
+            const Side = PuzzleSideByLetter.get(Letter);
+
+            if (Side === undefined || Side === PreviousSide) {
+                return false;
+            }
+
+            PreviousSide = Side;
+        }
+
+        return true;
+    }
+
+    function TrackPotentialCustomDictionaryWord(Word) {
+        const Normalized = NormalizeWord(Word);
+
+        if (
+            !Normalized ||
+            DictionarySet.has(Normalized) ||
+            !IsStructurallyValidLetterBoxedWord(Normalized)
+        ) {
+            return;
+        }
+
+        LastInvalidWord = Normalized;
+
+        /*
+            If the user has already declared this word valid globally, merely
+            attempting it on today's board is enough to retain the puzzle-level
+            provenance as well.
+        */
+        if (CustomDictionary.has(Normalized)) {
+            CustomWordsForCurrentPuzzle.add(Normalized);
+            SaveCustomWordsForCurrentPuzzle();
+        }
+
+        RenderPanel();
+    }
+
+    // -------------------------------------------------------------------------
+    // Line drawing speed
+    // -------------------------------------------------------------------------
+
+    function LoadLineDrawingSpeed() {
+        const Saved = Number(
+            GM_getValue(
+                LineDrawingSpeedStorageKey,
+                1.0
+            )
+        );
+
+        LineDrawingSpeed = Number.isFinite(Saved)
+            ? Clamp(Saved, 0, 1)
+            : 1.0;
+    }
+
+    function SaveLineDrawingSpeed() {
+        GM_setValue(
+            LineDrawingSpeedStorageKey,
+            Number(LineDrawingSpeed.toFixed(2))
+        );
+    }
+
+    function InstallLineDrawingSpeedHook() {
+        if (NativeRequestAnimationFrame) {
+            return;
+        }
+
+        /*
+            The Letter Boxed board is a canvas, so its line drawing is not a
+            CSS transition we can simply shorten. This hook accelerates the
+            timestamp supplied to requestAnimationFrame during the short window
+            immediately after a likely-valid word submission.
+
+            1.0 = NYT's normal timing.
+            0.5 = approximately half-duration.
+            0.0 = advance the animation clock far enough to collapse to its end.
+
+            This is intentionally scoped to submission animations rather than
+            globally speeding every animation on the NYT page.
+        */
+        try {
+            NativeRequestAnimationFrame =
+                PageWindow.requestAnimationFrame.bind(PageWindow);
+
+            PageWindow.requestAnimationFrame = Callback =>
+                NativeRequestAnimationFrame(RealTimestamp => {
+                    const Active =
+                        LineAnimationAcceleration &&
+                        RealTimestamp <= LineAnimationAcceleration.RealEnd;
+
+                    if (!Active || LineDrawingSpeed >= 0.999) {
+                        return Callback(RealTimestamp);
+                    }
+
+                    const SpeedScale = LineDrawingSpeed <= 0.001
+                        ? 0.0001
+                        : LineDrawingSpeed;
+
+                    const VirtualTimestamp =
+                        LineAnimationAcceleration.RealStart +
+                        (
+                            (RealTimestamp - LineAnimationAcceleration.RealStart) /
+                            SpeedScale
+                        );
+
+                    return Callback(VirtualTimestamp);
+                });
+        } catch (Error) {
+            NativeRequestAnimationFrame = null;
+
+            console.warn(
+                "[Letter Boxed Cubed] Could not install line-drawing animation hook.",
+                Error
+            );
+        }
+    }
+
+    function BeginLineDrawingAcceleration() {
+        if (LineDrawingSpeed >= 0.999) {
+            LineAnimationAcceleration = null;
+            return;
+        }
+
+        const Now = PageWindow.performance.now();
+
+        LineAnimationAcceleration = {
+            RealStart: Now,
+            RealEnd: Now + 2500
+        };
+    }
+
+    function IsLikelyAcceptedSubmission(CurrentChain, InputWord) {
+        const Word = NormalizeWord(InputWord);
+
+        if (!DictionarySet.has(Word)) {
+            return false;
+        }
+
+        if (!CurrentChain.length) {
+            return true;
+        }
+
+        const PreviousWord = CurrentChain[CurrentChain.length - 1];
+
+        return PreviousWord.slice(-1) === Word[0];
     }
 
     function GetExportStorageKeys() {
@@ -342,6 +675,9 @@
         const MetadataKey =
             PuzzleMetadataPrefix + PuzzleId;
 
+        const CustomWordsKey =
+            CustomWordsPrefix + PuzzleId;
+
         const Metadata =
             StorageSnapshot[MetadataKey] || null;
 
@@ -378,6 +714,15 @@
                         NormalizeWord(Solution[1])
                     ])
                 : [];
+
+        const CustomWordsForPuzzle = Array.isArray(
+            StorageSnapshot[CustomWordsKey]
+        )
+            ? [...StorageSnapshot[CustomWordsKey]]
+                .map(NormalizeWord)
+                .filter(Boolean)
+                .sort(Alphabetically)
+            : [];
 
         const NytSolution =
             Metadata && Array.isArray(Metadata.NytSolution)
@@ -416,7 +761,8 @@
                 null,
             FoundWords: FoundWordsForPuzzle,
             FoundTwofers: FoundTwofersForPuzzle,
-            AllTwofers: AllTwofersForPuzzle
+            AllTwofers: AllTwofersForPuzzle,
+            CustomWords: CustomWordsForPuzzle
         };
     }
 
@@ -470,6 +816,11 @@
             CurrentPuzzleId: PuzzleStorageId,
             PuzzleCount: Puzzles.length,
             Puzzles,
+            CustomDictionary: Array.isArray(
+                StorageSnapshot[CustomDictionaryStorageKey]
+            )
+                ? StorageSnapshot[CustomDictionaryStorageKey]
+                : [],
 
             /*
                 The normalized Puzzles collection is intended for analysis,
@@ -489,7 +840,7 @@
                 Ensure today's lightweight metadata is current immediately
                 before taking the snapshot.
             */
-            SaveCurrentPuzzleMetadata();
+            UpdateCurrentPuzzleMetadata();
 
             const ExportData = BuildExportData();
             const Json = JSON.stringify(ExportData, null, 2);
@@ -540,6 +891,68 @@
         }
     }
 
+    function MigrateBackupToCurrent(RawBackup) {
+        if (
+            !RawBackup ||
+            RawBackup.Format !== ExportFormatName
+        ) {
+            throw new Error(
+                "This is not a Letter Boxed Cubed backup file."
+            );
+        }
+
+        let Backup = structuredClone(RawBackup);
+
+        while (Backup.FormatVersion < ExportFormatVersion) {
+            const Migration = BackupMigrations[Backup.FormatVersion];
+
+            if (!Migration) {
+                throw new Error(
+                    `No migration exists from backup schema v${Backup.FormatVersion}.`
+                );
+            }
+
+            Backup = Migration(Backup);
+        }
+
+        if (Backup.FormatVersion > ExportFormatVersion) {
+            throw new Error(
+                `This backup uses newer schema v${Backup.FormatVersion}; this script supports v${ExportFormatVersion}.`
+            );
+        }
+
+        return Backup;
+    }
+
+    const BackupMigrations = {
+        1: MigrateBackupV1ToV2
+    };
+
+    function MigrateBackupV1ToV2(V1) {
+        /*
+            Backup schema v2 adds user-defined custom dictionary data.
+
+            v1 had no such concept, so the honest migration is an empty custom
+            dictionary and an empty CustomWords collection on every historical
+            puzzle. No custom words are inferred from ordinary FoundWords.
+        */
+        return {
+            ...V1,
+            FormatVersion: 2,
+            Puzzles: Array.isArray(V1.Puzzles)
+                ? V1.Puzzles.map(Puzzle => ({
+                    ...Puzzle,
+                    CustomWords: Array.isArray(Puzzle.CustomWords)
+                        ? Puzzle.CustomWords
+                        : []
+                }))
+                : [],
+            CustomDictionary: Array.isArray(V1.CustomDictionary)
+                ? V1.CustomDictionary
+                : []
+        };
+    }
+
     function PromptForImport() {
         const Input = document.createElement("input");
         Input.type = "file";
@@ -559,11 +972,10 @@
 
                 try {
                     const Text = await File.text();
-                    const Backup = JSON.parse(Text);
+                    const RawBackup = JSON.parse(Text);
+                    const Backup = MigrateBackupToCurrent(RawBackup);
 
                     if (
-                        !Backup ||
-                        Backup.Format !== ExportFormatName ||
                         !Backup.StorageSnapshot ||
                         typeof Backup.StorageSnapshot !== "object" ||
                         Array.isArray(Backup.StorageSnapshot)
@@ -1018,6 +1430,7 @@
                 return;
             }
 
+            HandleSubmissionAttempt();
             CheckProspectiveTwofer();
             QueuePostSubmissionScans();
         }, true);
@@ -1027,9 +1440,25 @@
                 return;
             }
 
+            HandleSubmissionAttempt();
             CheckProspectiveTwofer();
             QueuePostSubmissionScans();
         }, true);
+    }
+
+    function HandleSubmissionAttempt() {
+        const CurrentChain = ReadCurrentChain();
+        const InputWord = ReadCurrentInputWord();
+
+        if (!InputWord) {
+            return;
+        }
+
+        TrackPotentialCustomDictionaryWord(InputWord);
+
+        if (IsLikelyAcceptedSubmission(CurrentChain, InputWord)) {
+            BeginLineDrawingAcceleration();
+        }
     }
 
     function QueuePostSubmissionScans() {
@@ -1918,6 +2347,96 @@
         const HeaderActions = document.createElement("div");
         HeaderActions.className = "lb-cubed-header-actions";
 
+        // Last NYT-invalid, structurally valid submission.
+        const InvalidControl = document.createElement("div");
+        InvalidControl.className = "lb-cubed-invalid-control";
+
+        const InvalidWord = document.createElement("span");
+        InvalidWord.className = "lb-cubed-invalid-word";
+        InvalidWord.textContent = LastInvalidWord || "No invalid word";
+        InvalidWord.title = LastInvalidWord
+            ? "Last submitted word that obeys the board rules but is absent from NYT's dictionary"
+            : "No structurally valid NYT-dictionary rejection has been captured yet";
+
+        const AddDictionaryButton = document.createElement("button");
+        AddDictionaryButton.type = "button";
+        AddDictionaryButton.className = "lb-cubed-header-button";
+
+        const InvalidAlreadyAdded =
+            LastInvalidWord &&
+            CustomDictionary.has(LastInvalidWord);
+
+        AddDictionaryButton.textContent = InvalidAlreadyAdded
+            ? "Added"
+            : "Add to dictionary";
+
+        AddDictionaryButton.disabled = !LastInvalidWord || InvalidAlreadyAdded;
+        AddDictionaryButton.title = LastInvalidWord
+            ? InvalidAlreadyAdded
+                ? `${LastInvalidWord} is already in your custom dictionary`
+                : `Record ${LastInvalidWord} as a user-approved custom dictionary word`
+            : "Submit a structurally valid word that NYT does not recognize first";
+
+        AddDictionaryButton.addEventListener(
+            "click",
+            Event => {
+                Event.preventDefault();
+                Event.stopPropagation();
+                AddLastInvalidWordToCustomDictionary();
+            }
+        );
+
+        InvalidControl.append(
+            InvalidWord,
+            AddDictionaryButton
+        );
+
+        // Experimental canvas-animation speed control.
+        const LineSpeedControl = document.createElement("label");
+        LineSpeedControl.className = "lb-cubed-line-speed-control";
+        LineSpeedControl.title =
+            "Scale the Letter Boxed canvas line-drawing duration: 1.0 = NYT normal, 0.0 = effectively instant";
+
+        const LineSpeedLabel = document.createElement("span");
+        LineSpeedLabel.className = "lb-cubed-line-speed-label";
+        LineSpeedLabel.textContent = "Line Drawing";
+
+        const LineSpeedSlider = document.createElement("input");
+        LineSpeedSlider.className = "lb-cubed-line-speed-slider";
+        LineSpeedSlider.type = "range";
+        LineSpeedSlider.min = "0";
+        LineSpeedSlider.max = "1";
+        LineSpeedSlider.step = "0.1";
+        LineSpeedSlider.value = String(LineDrawingSpeed);
+
+        const LineSpeedValue = document.createElement("span");
+        LineSpeedValue.className = "lb-cubed-line-speed-value";
+        LineSpeedValue.textContent = LineDrawingSpeed.toFixed(1);
+
+        LineSpeedSlider.addEventListener(
+            "input",
+            Event => {
+                LineDrawingSpeed = Clamp(
+                    Number(Event.currentTarget.value),
+                    0,
+                    1
+                );
+
+                LineSpeedValue.textContent = LineDrawingSpeed.toFixed(1);
+            }
+        );
+
+        LineSpeedSlider.addEventListener(
+            "change",
+            () => SaveLineDrawingSpeed()
+        );
+
+        LineSpeedControl.append(
+            LineSpeedLabel,
+            LineSpeedSlider,
+            LineSpeedValue
+        );
+
         const ExportButton = document.createElement("button");
         ExportButton.type = "button";
         ExportButton.className = "lb-cubed-header-button";
@@ -1949,6 +2468,8 @@
         );
 
         HeaderActions.append(
+            InvalidControl,
+            LineSpeedControl,
             ExportButton,
             ImportButton
         );
@@ -2778,10 +3299,58 @@
 
             .lb-cubed-header-actions {
                 display: flex;
-                flex: 0 0 auto;
-                gap: 4px;
+                flex: 0 1 auto;
+                flex-wrap: wrap;
+                gap: 5px;
                 justify-content: flex-end;
                 align-items: center;
+            }
+
+            .lb-cubed-invalid-control,
+            .lb-cubed-line-speed-control {
+                display: inline-flex;
+                align-items: center;
+                gap: 4px;
+                min-height: 24px;
+                padding: 2px 4px;
+                background: rgba(255, 255, 255, 0.10);
+                border: 1px solid rgba(78, 34, 34, 0.20);
+                border-radius: 3px;
+            }
+
+            .lb-cubed-invalid-word {
+                display: inline-block;
+                max-width: 115px;
+                overflow: hidden;
+                color: rgb(48, 24, 24);
+                font-family: Consolas, "Courier New", monospace;
+                font-size: 10px;
+                font-weight: 700;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+
+            .lb-cubed-line-speed-label {
+                color: rgba(48, 24, 24, 0.78);
+                font-size: 9px;
+                font-weight: 700;
+                white-space: nowrap;
+            }
+
+            .lb-cubed-line-speed-slider {
+                width: 74px;
+                min-width: 55px;
+                accent-color: rgb(92, 37, 37);
+                cursor: pointer;
+            }
+
+            .lb-cubed-line-speed-value {
+                min-width: 22px;
+                color: rgb(48, 24, 24);
+                font-family: Consolas, "Courier New", monospace;
+                font-size: 9px;
+                font-weight: 700;
+                text-align: right;
             }
 
             .lb-cubed-header-button {
@@ -2798,11 +3367,16 @@
                 cursor: pointer;
             }
 
-            .lb-cubed-header-button:hover {
+            .lb-cubed-header-button:hover:not(:disabled) {
                 background: rgba(255, 255, 255, 0.30);
             }
 
-            .lb-cubed-header-button:active {
+            .lb-cubed-header-button:disabled {
+                opacity: 0.48;
+                cursor: default;
+            }
+
+            .lb-cubed-header-button:active:not(:disabled) {
                 transform: translateY(1px);
             }
 
@@ -3450,7 +4024,17 @@
                 }
 
                 .lb-cubed-header-actions {
+                    width: 100%;
                     justify-content: flex-start;
+                }
+
+                .lb-cubed-line-speed-control {
+                    flex: 1 1 180px;
+                }
+
+                .lb-cubed-line-speed-slider {
+                    flex: 1 1 auto;
+                    width: auto;
                 }
             }
         `;
