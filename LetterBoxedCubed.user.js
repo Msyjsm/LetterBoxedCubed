@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed
 // @namespace    https://www.nytimes.com/puzzles/letter-boxed
-// @version      1.10.1
+// @version      1.10.2
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -35,7 +35,7 @@
         close to the entry area; the page can still scroll if a very long
         chain eventually outgrows it.
     */
-    const StableWordAreaHeight = 300;
+    const StableWordAreaHeight = 250;
 
     /*
         v1.7's automatic width was 75% of the horizontal space left after
@@ -60,6 +60,7 @@
 
     const CustomDictionaryStorageKey = "LetterBoxedCubed_CustomDictionary";
     const CustomWordsPrefix = "LetterBoxedCubed_CustomWords_";
+    const HideParStorageKey = "LetterBoxedCubed_HidePar";
     const LineDrawingSpeedStorageKey = "LetterBoxedCubed_LineDrawingSpeed";
 
     const ExportStoragePrefixes = [
@@ -74,6 +75,7 @@
         LegacyPanelWidthStorageKey,
         PanelWidthStorageKey,
         CustomDictionaryStorageKey,
+        HideParStorageKey,
         LineDrawingSpeedStorageKey
     ];
 
@@ -117,6 +119,7 @@
     let CustomWordsForCurrentPuzzle = new Set();
     let LastInvalidWord = null;
 
+    let HidePar = false;
     let LineDrawingSpeed = 1.0;
     let NativeRequestAnimationFrame = null;
     let LineAnimationAcceleration = null;
@@ -143,12 +146,15 @@
         UpdateCurrentPuzzleMetadata();
         LoadFoundWords();
         LoadCustomDictionary();
+        LoadHideParPreference();
+        ApplyHideParPreference();
         LoadLineDrawingSpeed();
         InstallLineDrawingSpeedHook();
         LoadPanelWidthPreference();
         LoadOrCalculateTwofers();
         LoadFoundTwofers();
         CaptureNativeDimensions();
+        NormalizeWordAreaFeedbackLayout();
         CreatePanel();
         StartPanelResizeBehavior();
         ScanGameState(true);
@@ -171,6 +177,7 @@
             NytSolution: NytSolutionWords,
             CustomDictionaryWords: CustomDictionary.size,
             CustomWordsForCurrentPuzzle: CustomWordsForCurrentPuzzle.size,
+            HidePar,
             LineDrawingSpeed,
             PanelWidthPreference,
             NativeWordWidth,
@@ -528,7 +535,42 @@
     }
 
     // -------------------------------------------------------------------------
-    // Line drawing speed
+    // Display preferences
+    // -------------------------------------------------------------------------
+
+    function LoadHideParPreference() {
+        HidePar = Boolean(
+            GM_getValue(
+                HideParStorageKey,
+                false
+            )
+        );
+    }
+
+    function SaveHideParPreference() {
+        GM_setValue(
+            HideParStorageKey,
+            HidePar
+        );
+    }
+
+    function ApplyHideParPreference() {
+        const GameContainer = document.querySelector(
+            ".lb-game-container"
+        );
+
+        if (!GameContainer) {
+            return;
+        }
+
+        GameContainer.classList.toggle(
+            "lb-cubed-hide-par",
+            HidePar
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // Animation speed (NYT line drawing)
     // -------------------------------------------------------------------------
 
     function LoadLineDrawingSpeed() {
@@ -1423,6 +1465,7 @@
                     reflow the TI/GB meta-column. GB's vertical position is
                     intentionally stable until an actual viewport resize.
                 */
+                NormalizeWordAreaFeedbackLayout();
                 ScanGameState();
             }, 30);
         });
@@ -1432,6 +1475,45 @@
             subtree: true,
             characterData: true
         });
+    }
+
+    function NormalizeWordAreaFeedbackLayout() {
+        const WordContainer = document.querySelector(
+            ".lb-game-container .lb-word-container"
+        );
+
+        if (!WordContainer) {
+            return;
+        }
+
+        /*
+            NYT's normal TI has three direct children: the active text field,
+            accepted-word list, and par text. Praise/error popups are injected
+            as additional transient children. Mark those extras so Cubed can
+            place them AFTER the par text instead of allowing NYT's responsive
+            positioning to overlap the two.
+
+            Keeping this structural rather than matching words such as
+            "Genius!" also handles NYT's other feedback messages.
+        */
+        for (const Child of WordContainer.children) {
+            const IsKnownTiChild =
+                Child.classList.contains("lb-text-field-wrapper") ||
+                Child.classList.contains("lb-list-container") ||
+                Child.classList.contains("lb-par");
+
+            if (IsKnownTiChild) {
+                continue;
+            }
+
+            const Text = String(Child.textContent || "").trim();
+
+            if (Text) {
+                Child.classList.add(
+                    "lb-cubed-nyt-feedback"
+                );
+            }
+        }
     }
 
     function StartSubmissionHooks() {
@@ -2387,6 +2469,33 @@
         const HeaderActions = document.createElement("div");
         HeaderActions.className = "lb-cubed-header-actions";
 
+        // Global display preference for NYT's par text.
+        const HideParControl = document.createElement("label");
+        HideParControl.className = "lb-cubed-display-option";
+        HideParControl.title =
+            "Hide NYT's 'Try to solve in X words' par text";
+
+        const HideParCheckbox = document.createElement("input");
+        HideParCheckbox.type = "checkbox";
+        HideParCheckbox.checked = HidePar;
+
+        const HideParLabel = document.createElement("span");
+        HideParLabel.textContent = "Hide Par";
+
+        HideParCheckbox.addEventListener(
+            "change",
+            Event => {
+                HidePar = Boolean(Event.currentTarget.checked);
+                SaveHideParPreference();
+                ApplyHideParPreference();
+            }
+        );
+
+        HideParControl.append(
+            HideParCheckbox,
+            HideParLabel
+        );
+
         // Last NYT-invalid, structurally valid submission.
         const InvalidControl = document.createElement("div");
         InvalidControl.className = "lb-cubed-invalid-control";
@@ -2439,7 +2548,7 @@
 
         const LineSpeedLabel = document.createElement("span");
         LineSpeedLabel.className = "lb-cubed-line-speed-label";
-        LineSpeedLabel.textContent = "Line Drawing";
+        LineSpeedLabel.textContent = "Animation Speed";
 
         const LineSpeedSlider = document.createElement("input");
         LineSpeedSlider.className = "lb-cubed-line-speed-slider";
@@ -2508,6 +2617,7 @@
         );
 
         HeaderActions.append(
+            HideParControl,
             InvalidControl,
             LineSpeedControl,
             ExportButton,
@@ -3126,7 +3236,7 @@
                     LBC's height completely.
                 */
                 grid-template-rows:
-                    var(--lb-cubed-word-area-height, 300px)
+                    var(--lb-cubed-word-area-height, 250px)
                     var(--lb-cubed-square-height, auto) !important;
                 column-gap: var(--lb-cubed-gap, 24px) !important;
                 row-gap: var(--lb-cubed-left-column-gap, 16px) !important;
@@ -3147,9 +3257,9 @@
                 width: var(--lb-cubed-word-width) !important;
                 min-width: var(--lb-cubed-word-width) !important;
                 max-width: var(--lb-cubed-word-width) !important;
-                height: var(--lb-cubed-word-area-height, 300px) !important;
-                min-height: var(--lb-cubed-word-area-height, 300px) !important;
-                max-height: var(--lb-cubed-word-area-height, 300px) !important;
+                height: var(--lb-cubed-word-area-height, 250px) !important;
+                min-height: var(--lb-cubed-word-area-height, 250px) !important;
+                max-height: var(--lb-cubed-word-area-height, 250px) !important;
             }
 
             .lb-game-container.${SideModeClass} > .lb-square-container {
@@ -3180,7 +3290,7 @@
                 display: grid !important;
                 grid-template-columns: minmax(0, 1fr) !important;
                 grid-template-rows:
-                    var(--lb-cubed-word-area-height, 300px)
+                    var(--lb-cubed-word-area-height, 250px)
                     var(--lb-cubed-square-height, auto)
                     auto !important;
                 row-gap: var(--lb-cubed-left-column-gap, 16px) !important;
@@ -3199,9 +3309,9 @@
                 justify-self: center !important;
                 width: min(var(--lb-cubed-word-width), 100%) !important;
                 max-width: 100% !important;
-                height: var(--lb-cubed-word-area-height, 300px) !important;
-                min-height: var(--lb-cubed-word-area-height, 300px) !important;
-                max-height: var(--lb-cubed-word-area-height, 300px) !important;
+                height: var(--lb-cubed-word-area-height, 250px) !important;
+                min-height: var(--lb-cubed-word-area-height, 250px) !important;
+                max-height: var(--lb-cubed-word-area-height, 250px) !important;
             }
 
             .lb-game-container.${StackedModeClass} > .lb-square-container {
@@ -3223,6 +3333,67 @@
                 width: var(--lb-cubed-stacked-panel-width) !important;
                 min-width: 0 !important;
                 max-width: 100% !important;
+            }
+
+            /*
+                ================================================================
+                TI INTERNAL FLOW
+                ================================================================
+
+                NYT's own responsive rules spread the par text and transient
+                praise popup through the available TI height. Cubed instead
+                keeps the normal TI contents packed toward the top, leaving GB
+                in its fixed row and ensuring feedback appears below the par.
+            */
+
+            .lb-game-container.${LayoutClass} > .lb-word-container {
+                display: flex !important;
+                flex-direction: column !important;
+                justify-content: flex-start !important;
+                overflow: visible !important;
+            }
+
+            .lb-game-container.${LayoutClass}
+            > .lb-word-container
+            > .lb-text-field-wrapper {
+                order: 1;
+                flex: 0 0 auto;
+            }
+
+            .lb-game-container.${LayoutClass}
+            > .lb-word-container
+            > .lb-list-container {
+                order: 2;
+                flex: 0 0 auto;
+            }
+
+            .lb-game-container.${LayoutClass}
+            > .lb-word-container
+            > .lb-par {
+                order: 3;
+                position: static !important;
+                flex: 0 0 auto;
+                margin-top: 10px !important;
+                margin-bottom: 0 !important;
+                transform: none !important;
+            }
+
+            .lb-game-container.${LayoutClass}.lb-cubed-hide-par
+            > .lb-word-container
+            > .lb-par {
+                display: none !important;
+            }
+
+            .lb-game-container.${LayoutClass}
+            > .lb-word-container
+            > .lb-cubed-nyt-feedback {
+                order: 4;
+                position: static !important;
+                flex: 0 0 auto;
+                align-self: center !important;
+                margin: 8px auto 0 !important;
+                inset: auto !important;
+                transform: none !important;
             }
 
             /*
@@ -3371,6 +3542,7 @@
                 align-items: center;
             }
 
+            .lb-cubed-display-option,
             .lb-cubed-invalid-control,
             .lb-cubed-line-speed-control {
                 display: inline-flex;
@@ -3381,6 +3553,20 @@
                 background: rgba(255, 255, 255, 0.10);
                 border: 1px solid rgba(78, 34, 34, 0.20);
                 border-radius: 3px;
+            }
+
+            .lb-cubed-display-option {
+                color: rgba(48, 24, 24, 0.78);
+                font-size: 9px;
+                font-weight: 700;
+                white-space: nowrap;
+                cursor: pointer;
+            }
+
+            .lb-cubed-display-option input {
+                margin: 0;
+                accent-color: rgb(92, 37, 37);
+                cursor: pointer;
             }
 
             .lb-cubed-invalid-word {
