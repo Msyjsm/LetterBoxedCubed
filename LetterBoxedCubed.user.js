@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed
 // @namespace    https://www.nytimes.com/puzzles/letter-boxed
-// @version      1.10.0
+// @version      1.10.1
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -27,6 +27,15 @@
     const LeftColumnGap = 16;
     const EdgePadding = 18;
     const MinimumPanelWidth = 300;
+
+    /*
+        TI and GB are stacked in Cubed's left meta-column. Give TI a stable
+        vertical slot so accepting words cannot move GB up or down. The slot
+        is intentionally roomy enough for the active chain while keeping GB
+        close to the entry area; the page can still scroll if a very long
+        chain eventually outgrows it.
+    */
+    const StableWordAreaHeight = 300;
 
     /*
         v1.7's automatic width was 75% of the horizontal space left after
@@ -100,6 +109,7 @@
 
     let NativeWordWidth = 0;
     let NativeSquareWidth = 0;
+    let NativeSquareHeight = 0;
     let PanelWidthPreference = null;
     let PanelResizeState = null;
 
@@ -164,7 +174,8 @@
             LineDrawingSpeed,
             PanelWidthPreference,
             NativeWordWidth,
-            NativeSquareWidth
+            NativeSquareWidth,
+            NativeSquareHeight
         });
     }
 
@@ -1407,8 +1418,12 @@
         GameObserver = new MutationObserver(() => {
             clearTimeout(ScanTimer);
             ScanTimer = setTimeout(() => {
+                /*
+                    Gameplay mutations update player data, but they must not
+                    reflow the TI/GB meta-column. GB's vertical position is
+                    intentionally stable until an actual viewport resize.
+                */
                 ScanGameState();
-                QueuePanelLayoutUpdate();
             }, 30);
         });
 
@@ -1564,8 +1579,15 @@
             WordContainer.getBoundingClientRect().width
         );
 
+        const SquareRect =
+            SquareContainer.getBoundingClientRect();
+
         NativeSquareWidth = Math.ceil(
-            SquareContainer.getBoundingClientRect().width
+            SquareRect.width
+        );
+
+        NativeSquareHeight = Math.ceil(
+            SquareRect.height
         );
     }
 
@@ -1745,6 +1767,16 @@
         );
 
         GameContainer.style.setProperty(
+            "--lb-cubed-square-height",
+            `${NativeSquareHeight}px`
+        );
+
+        GameContainer.style.setProperty(
+            "--lb-cubed-word-area-height",
+            `${StableWordAreaHeight}px`
+        );
+
+        GameContainer.style.setProperty(
             "--lb-cubed-left-column-width",
             `${GetLeftColumnWidth()}px`
         );
@@ -1819,6 +1851,16 @@
         GameContainer.style.setProperty(
             "--lb-cubed-square-width",
             `${NativeSquareWidth}px`
+        );
+
+        GameContainer.style.setProperty(
+            "--lb-cubed-square-height",
+            `${NativeSquareHeight}px`
+        );
+
+        GameContainer.style.setProperty(
+            "--lb-cubed-word-area-height",
+            `${StableWordAreaHeight}px`
         );
 
         GameContainer.style.setProperty(
@@ -2321,8 +2363,6 @@
 
         PanelContent.scrollTop =
             PreviousScrollTop;
-
-        QueuePanelLayoutUpdate();
     }
 
     function RenderHeader(Panel) {
@@ -3077,7 +3117,17 @@
                 grid-template-columns:
                     var(--lb-cubed-left-column-width)
                     var(--lb-cubed-panel-width) !important;
-                grid-template-rows: auto auto !important;
+                /*
+                    Explicit track heights are the key to keeping GB static.
+                    Because LBC spans both rows, auto-sized rows allowed its
+                    height to participate in grid sizing; accepting a word
+                    could therefore redistribute vertical space and make GB
+                    jump upward. Fixed TI + GB tracks decouple the game from
+                    LBC's height completely.
+                */
+                grid-template-rows:
+                    var(--lb-cubed-word-area-height, 300px)
+                    var(--lb-cubed-square-height, auto) !important;
                 column-gap: var(--lb-cubed-gap, 24px) !important;
                 row-gap: var(--lb-cubed-left-column-gap, 16px) !important;
                 justify-content: center !important;
@@ -3097,6 +3147,9 @@
                 width: var(--lb-cubed-word-width) !important;
                 min-width: var(--lb-cubed-word-width) !important;
                 max-width: var(--lb-cubed-word-width) !important;
+                height: var(--lb-cubed-word-area-height, 300px) !important;
+                min-height: var(--lb-cubed-word-area-height, 300px) !important;
+                max-height: var(--lb-cubed-word-area-height, 300px) !important;
             }
 
             .lb-game-container.${SideModeClass} > .lb-square-container {
@@ -3107,6 +3160,9 @@
                 width: var(--lb-cubed-square-width) !important;
                 min-width: var(--lb-cubed-square-width) !important;
                 max-width: var(--lb-cubed-square-width) !important;
+                height: var(--lb-cubed-square-height) !important;
+                min-height: var(--lb-cubed-square-height) !important;
+                max-height: var(--lb-cubed-square-height) !important;
             }
 
             .lb-game-container.${SideModeClass} > #${PanelId} {
@@ -3123,7 +3179,10 @@
             .lb-game-container.${StackedModeClass} {
                 display: grid !important;
                 grid-template-columns: minmax(0, 1fr) !important;
-                grid-template-rows: auto auto auto !important;
+                grid-template-rows:
+                    var(--lb-cubed-word-area-height, 300px)
+                    var(--lb-cubed-square-height, auto)
+                    auto !important;
                 row-gap: var(--lb-cubed-left-column-gap, 16px) !important;
                 justify-items: center !important;
                 align-items: start !important;
@@ -3140,6 +3199,9 @@
                 justify-self: center !important;
                 width: min(var(--lb-cubed-word-width), 100%) !important;
                 max-width: 100% !important;
+                height: var(--lb-cubed-word-area-height, 300px) !important;
+                min-height: var(--lb-cubed-word-area-height, 300px) !important;
+                max-height: var(--lb-cubed-word-area-height, 300px) !important;
             }
 
             .lb-game-container.${StackedModeClass} > .lb-square-container {
@@ -3148,6 +3210,9 @@
                 justify-self: center !important;
                 width: min(var(--lb-cubed-square-width), 100%) !important;
                 max-width: 100% !important;
+                height: var(--lb-cubed-square-height) !important;
+                min-height: var(--lb-cubed-square-height) !important;
+                max-height: var(--lb-cubed-square-height) !important;
             }
 
             .lb-game-container.${StackedModeClass} > #${PanelId} {
