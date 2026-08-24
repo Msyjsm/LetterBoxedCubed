@@ -1,0 +1,35 @@
+# Architecture
+
+## Runtime sources
+
+LBC reads canonical puzzle facts from `unsafeWindow.gameData` and live player state from the rendered Letter Boxed DOM. `ourSolution` is used only for official-solution annotation, not as a general spoiler source.
+
+## Terminology
+
+- **TI:** text-input / accepted-word area.
+- **GB:** game-board area.
+- **LBC:** Letter Boxed Cubed companion area.
+
+## State distinctions
+
+- `FoundWords`: any NYT-accepted dictionary word observed during play.
+- `FoundTwofers`: exact ordered two-word chains actually completed.
+- Custom dictionary entries: user-approved vocabulary outside NYT's dictionary, with provenance.
+
+Finding both words independently is not equivalent to solving that Twofer.
+
+## Twofers
+
+Twofers are calculated from NYT's puzzle dictionary and cached per puzzle. Candidate pairs require word 1's last letter to equal word 2's first letter and their combined letter masks to cover all puzzle letters.
+
+## Responsive layout
+
+The outer page treats TI+GB as a left meta-column beside LBC where space permits, then stacks the meta-columns when necessary. Inside LBC, CSS **container queries** respond to LBC's own manually resizable width rather than merely the viewport width.
+
+## Panel-width preference
+
+Drag-time clamping prevents impossible cursor positions from becoming hidden future preferences. Render-time clamping separately ensures a valid saved preference can temporarily shrink when the environment is smaller and return when room becomes available.
+
+## Animation speed
+
+The board is canvas-rendered, so the current Animation Speed mechanism is experimental and may require DevTools Performance telemetry for a more exact hook.
