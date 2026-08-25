@@ -43,4 +43,4 @@ See `docs/Architecture.md` and `docs/DataModel.md`.
 
 ## License
 
-The userscript is already published on Greasy Fork under a copyleft license. The exact license identifier/text was not available while this package was assembled, so it has intentionally not been guessed. Add the exact Greasy Fork license before publishing this GitHub repository publicly.
+Letter Boxed Cubed is licensed under **GPL-3.0-or-later**, matching its Greasy Fork publication. See `LICENSE` for the GPLv3 license text. You may redistribute and/or modify the project under GPL version 3 or, at your option, any later version.
