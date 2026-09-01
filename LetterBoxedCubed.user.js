@@ -5,6 +5,7 @@
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
+// @license      GPL-3.0-or-later
 // @grant        unsafeWindow
 // @grant        GM_getValue
 // @grant        GM_setValue
