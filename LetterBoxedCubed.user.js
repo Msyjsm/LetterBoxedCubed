@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed
-// @namespace    https://www.nytimes.com/puzzles/letter-boxed
+// @namespace    https://nathanburgdorff.com/userscripts/
 // @version      1.10.3
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
