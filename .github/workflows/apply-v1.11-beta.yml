@@ -1,0 +1,36 @@
+name: Apply LBC v1.11 beta source patch
+
+on:
+  push:
+    branches:
+      - feature/issues-2-3-cloud-gui-state
+    paths:
+      - '.feature-bootstrap/READY'
+
+permissions:
+  contents: write
+
+jobs:
+  apply-patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out feature branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply verified source patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 --decode .feature-bootstrap/lbc-1.11.patch.gz.b64 | gzip -d > /tmp/lbc-1.11.patch
+          git apply --check /tmp/lbc-1.11.patch
+          git apply /tmp/lbc-1.11.patch
+          rm -rf .feature-bootstrap
+          rm -f .github/workflows/apply-v1.11-beta.yml
+
+          git config user.name "Nathan Burgdorff + Ari (ChatGPT)"
+          git config user.email "6709230+Msyjsm@users.noreply.github.com"
+          git add -A
+          git commit -m "Implement merge-safe GUI state and Google Drive sync beta"
+          git push origin HEAD:feature/issues-2-3-cloud-gui-state
