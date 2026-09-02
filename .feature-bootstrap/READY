@@ -1,1 +1,1 @@
-Apply the staged v1.11.0-beta.1 userscript patch, then remove the temporary patch/workflow files.
+Retry v1.11.0-beta.1 source patch with repository-relative paths.
