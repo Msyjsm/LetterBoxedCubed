@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.11.0-beta.1
+- Added merge-safe import semantics so independent device histories converge instead of overwriting same-day player data.
+- Added backup schema v3 and versioned portable GUI state for Hide Par, Animation Speed, Twofer grouping, and expandable/collapsed sections.
+- Added per-setting/per-section timestamps for conflict-safe GUI merging across devices.
+- Added Google Drive synchronization through a user-owned Google Apps Script bridge, including revision-conflict retry.
+- Kept physical panel width and cloud credentials device-local.
+- Added merge regression tests, including the 10 + 23 disjoint found-word case.
+
 ## 1.10.2
 - Tightened TI spacing, added Hide Par, renamed Animation Speed, and repaired feedback/par alignment.
 ## 1.10.1
