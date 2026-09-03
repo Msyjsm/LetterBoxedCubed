@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed
 // @namespace    https://nathanburgdorff.com/userscripts/
-// @version      1.10.3
+// @version      1.11.0-beta.1
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -10,6 +10,9 @@
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_listValues
+// @grant        GM_xmlhttpRequest
+// @connect      script.google.com
+// @connect      script.googleusercontent.com
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -81,7 +84,7 @@
     const PanelWidthStorageKey = "LetterBoxedCubed_PanelWidth_v2";
 
     const ExportFormatName = "LetterBoxedCubedBackup";
-    const ExportFormatVersion = 2;
+    const ExportFormatVersion = 3;
     const PuzzleMetadataVersion = 1;
     const PuzzleMetadataPrefix = "LetterBoxedCubed_PuzzleMetadata_";
 
@@ -89,6 +92,19 @@
     const CustomWordsPrefix = "LetterBoxedCubed_CustomWords_";
     const HideParStorageKey = "LetterBoxedCubed_HidePar";
     const LineDrawingSpeedStorageKey = "LetterBoxedCubed_LineDrawingSpeed";
+    const GuiStateStorageKey = "LetterBoxedCubed_GuiState";
+    const GuiStateVersion = 1;
+
+    /*
+        Cloud connection credentials are deliberately local-only. They are not
+        included in exports or cloud payloads, so a backup can never leak the
+        Google Apps Script endpoint's shared secret.
+    */
+    const GoogleDriveConfigStorageKey = "LetterBoxedCubed_GoogleDriveConfig";
+    const GoogleDriveConfigVersion = 1;
+    const GoogleDriveButtonId = "lb-cubed-google-drive-button";
+    const CloudSyncDebounceMs = 2500;
+    const CloudSyncProtocolVersion = 1;
 
     const ExportStoragePrefixes = [
         "LetterBoxedTracker_",
@@ -103,7 +119,13 @@
         PanelWidthStorageKey,
         CustomDictionaryStorageKey,
         HideParStorageKey,
-        LineDrawingSpeedStorageKey
+        LineDrawingSpeedStorageKey,
+        GuiStateStorageKey
+    ];
+
+    const DeviceLocalStorageKeys = [
+        LegacyPanelWidthStorageKey,
+        PanelWidthStorageKey
     ];
 
     const PanelContentId = "lb-cubed-panel-content";
@@ -148,6 +170,16 @@
 
     let HidePar = false;
     let LineDrawingSpeed = 1.0;
+    let GuiState = null;
+
+    let GoogleDriveConfig = null;
+    let CloudSyncTimer = null;
+    let CloudSyncInFlight = false;
+    let CloudSyncPending = false;
+    let CloudSyncStatus = "Off";
+    let LastCloudSyncAt = null;
+    let LastCloudSyncError = null;
+
     let NativeRequestAnimationFrame = null;
     let LineAnimationAcceleration = null;
 
@@ -173,6 +205,8 @@
         UpdateCurrentPuzzleMetadata();
         LoadFoundWords();
         LoadCustomDictionary();
+        LoadGoogleDriveConfig();
+        LoadGuiState();
         LoadHideParPreference();
         ApplyHideParPreference();
         LoadLineDrawingSpeed();
@@ -192,6 +226,10 @@
 
         window.addEventListener("resize", QueuePanelLayoutUpdate);
 
+        if (GoogleDriveConfig?.Enabled) {
+            ScheduleCloudSync(750);
+        }
+
         console.log("[Letter Boxed Cubed] Initialized.", {
             PuzzleId: GameData.id,
             Date: GameData.printDate,
@@ -206,6 +244,9 @@
             CustomWordsForCurrentPuzzle: CustomWordsForCurrentPuzzle.size,
             HidePar,
             LineDrawingSpeed,
+            TwofersGrouped,
+            GuiState,
+            GoogleDriveConfigured: Boolean(GoogleDriveConfig?.Enabled),
             PanelWidthPreference,
             NativeWordWidth,
             NativeSquareWidth,
@@ -471,6 +512,8 @@
             CustomDictionaryStorageKey,
             Entries
         );
+
+        ScheduleCloudSync();
     }
 
     function SaveCustomWordsForCurrentPuzzle() {
@@ -478,6 +521,8 @@
             CustomWordsStorageKey,
             [...CustomWordsForCurrentPuzzle].sort(Alphabetically)
         );
+
+        ScheduleCloudSync();
     }
 
     function AddLastInvalidWordToCustomDictionary() {
@@ -562,21 +607,230 @@
     }
 
     // -------------------------------------------------------------------------
+    // Portable GUI state
+    // -------------------------------------------------------------------------
+
+    function CreateEmptyGuiState() {
+        return {
+            Version: GuiStateVersion,
+            Settings: {},
+            Sections: {}
+        };
+    }
+
+    function NormalizeTimestamp(Value) {
+        if (!Value) {
+            return null;
+        }
+
+        const Parsed = Date.parse(Value);
+
+        return Number.isFinite(Parsed)
+            ? new Date(Parsed).toISOString()
+            : null;
+    }
+
+    function NormalizeGuiState(RawState) {
+        const Result = CreateEmptyGuiState();
+
+        if (!RawState || typeof RawState !== "object" || Array.isArray(RawState)) {
+            return Result;
+        }
+
+        const RawSettings =
+            RawState.Settings &&
+            typeof RawState.Settings === "object" &&
+            !Array.isArray(RawState.Settings)
+                ? RawState.Settings
+                : {};
+
+        for (const [Name, RawEntry] of Object.entries(RawSettings)) {
+            if (
+                !RawEntry ||
+                typeof RawEntry !== "object" ||
+                Array.isArray(RawEntry) ||
+                !Object.prototype.hasOwnProperty.call(RawEntry, "Value")
+            ) {
+                continue;
+            }
+
+            Result.Settings[Name] = {
+                Value: structuredClone(RawEntry.Value),
+                UpdatedAt: NormalizeTimestamp(RawEntry.UpdatedAt)
+            };
+        }
+
+        const RawSections =
+            RawState.Sections &&
+            typeof RawState.Sections === "object" &&
+            !Array.isArray(RawState.Sections)
+                ? RawState.Sections
+                : {};
+
+        for (const [Name, RawEntry] of Object.entries(RawSections)) {
+            if (
+                !RawEntry ||
+                typeof RawEntry !== "object" ||
+                Array.isArray(RawEntry) ||
+                !Object.prototype.hasOwnProperty.call(RawEntry, "Open")
+            ) {
+                continue;
+            }
+
+            Result.Sections[Name] = {
+                Open: Boolean(RawEntry.Open),
+                UpdatedAt: NormalizeTimestamp(RawEntry.UpdatedAt)
+            };
+        }
+
+        return Result;
+    }
+
+    function LoadGuiState() {
+        const Existing = GM_getValue(
+            GuiStateStorageKey,
+            null
+        );
+
+        GuiState = NormalizeGuiState(Existing);
+
+        /*
+            v1.11 consolidates portable GUI preferences into one versioned
+            object. Existing values are migrated without inventing timestamps:
+            we know their values, but not when the user chose them.
+        */
+        if (!Existing || typeof Existing !== "object" || Array.isArray(Existing)) {
+            const ExistingKeys = typeof GM_listValues === "function"
+                ? new Set(GM_listValues())
+                : new Set();
+
+            if (ExistingKeys.has(HideParStorageKey)) {
+                GuiState.Settings.HidePar = {
+                    Value: Boolean(GM_getValue(HideParStorageKey, false)),
+                    UpdatedAt: null
+                };
+            }
+
+            if (ExistingKeys.has(LineDrawingSpeedStorageKey)) {
+                const SavedSpeed = Number(
+                    GM_getValue(LineDrawingSpeedStorageKey, 1.0)
+                );
+
+                if (Number.isFinite(SavedSpeed)) {
+                    GuiState.Settings.AnimationSpeed = {
+                        Value: Clamp(SavedSpeed, 0, 1),
+                        UpdatedAt: null
+                    };
+                }
+            }
+
+            SaveGuiState(false);
+        }
+
+        TwofersGrouped = Boolean(
+            GetGuiSetting(
+                "TwofersGrouped",
+                true
+            )
+        );
+    }
+
+    function SaveGuiState(QueueSync = true) {
+        if (!GuiState) {
+            GuiState = CreateEmptyGuiState();
+        }
+
+        GM_setValue(
+            GuiStateStorageKey,
+            GuiState
+        );
+
+        if (QueueSync) {
+            ScheduleCloudSync();
+        }
+    }
+
+    function GetGuiSetting(Name, DefaultValue) {
+        const Entry = GuiState?.Settings?.[Name];
+
+        return Entry && Object.prototype.hasOwnProperty.call(Entry, "Value")
+            ? Entry.Value
+            : DefaultValue;
+    }
+
+    function SetGuiSetting(Name, Value) {
+        if (!GuiState) {
+            GuiState = CreateEmptyGuiState();
+        }
+
+        GuiState.Settings[Name] = {
+            Value: structuredClone(Value),
+            UpdatedAt: new Date().toISOString()
+        };
+
+        SaveGuiState();
+    }
+
+    function GetGuiSectionOpen(Name) {
+        const Entry = GuiState?.Sections?.[Name];
+
+        return Entry && Object.prototype.hasOwnProperty.call(Entry, "Open")
+            ? Boolean(Entry.Open)
+            : null;
+    }
+
+    function SetGuiSectionOpen(Name, Open) {
+        if (!GuiState) {
+            GuiState = CreateEmptyGuiState();
+        }
+
+        const Existing = GuiState.Sections[Name];
+        const NormalizedOpen = Boolean(Open);
+
+        if (Existing && Boolean(Existing.Open) === NormalizedOpen) {
+            return;
+        }
+
+        GuiState.Sections[Name] = {
+            Open: NormalizedOpen,
+            UpdatedAt: new Date().toISOString()
+        };
+
+        SaveGuiState();
+    }
+
+    function SaveTwofersGroupedPreference() {
+        SetGuiSetting(
+            "TwofersGrouped",
+            TwofersGrouped
+        );
+    }
+
+    // -------------------------------------------------------------------------
     // Display preferences
     // -------------------------------------------------------------------------
 
     function LoadHideParPreference() {
         HidePar = Boolean(
-            GM_getValue(
-                HideParStorageKey,
-                false
+            GetGuiSetting(
+                "HidePar",
+                GM_getValue(
+                    HideParStorageKey,
+                    false
+                )
             )
         );
     }
 
     function SaveHideParPreference() {
+        /* Legacy write-through keeps rollback compatibility. */
         GM_setValue(
             HideParStorageKey,
+            HidePar
+        );
+
+        SetGuiSetting(
+            "HidePar",
             HidePar
         );
     }
@@ -602,9 +856,12 @@
 
     function LoadLineDrawingSpeed() {
         const Saved = Number(
-            GM_getValue(
-                LineDrawingSpeedStorageKey,
-                1.0
+            GetGuiSetting(
+                "AnimationSpeed",
+                GM_getValue(
+                    LineDrawingSpeedStorageKey,
+                    1.0
+                )
             )
         );
 
@@ -614,9 +871,19 @@
     }
 
     function SaveLineDrawingSpeed() {
+        const SavedValue = Number(
+            LineDrawingSpeed.toFixed(2)
+        );
+
+        /* Legacy write-through keeps rollback compatibility. */
         GM_setValue(
             LineDrawingSpeedStorageKey,
-            Number(LineDrawingSpeed.toFixed(2))
+            SavedValue
+        );
+
+        SetGuiSetting(
+            "AnimationSpeed",
+            SavedValue
         );
     }
 
@@ -896,6 +1163,9 @@
             CurrentPuzzleId: PuzzleStorageId,
             PuzzleCount: Puzzles.length,
             Puzzles,
+            GuiState: NormalizeGuiState(
+                StorageSnapshot[GuiStateStorageKey]
+            ),
             CustomDictionary: Array.isArray(
                 StorageSnapshot[CustomDictionaryStorageKey]
             )
@@ -1005,7 +1275,8 @@
     }
 
     const BackupMigrations = {
-        1: MigrateBackupV1ToV2
+        1: MigrateBackupV1ToV2,
+        2: MigrateBackupV2ToV3
     };
 
     function MigrateBackupV1ToV2(V1) {
@@ -1030,6 +1301,485 @@
             CustomDictionary: Array.isArray(V1.CustomDictionary)
                 ? V1.CustomDictionary
                 : []
+        };
+    }
+
+
+    function MigrateBackupV2ToV3(V2) {
+        /*
+            Backup schema v3 introduces portable GUI state.
+
+            Older backups may contain legacy Hide Par / Animation Speed values
+            in StorageSnapshot, but they contain no trustworthy timestamps and
+            no persisted tree/group state. Preserve only what was actually
+            known and leave UpdatedAt null rather than manufacturing history.
+        */
+        const Snapshot =
+            V2.StorageSnapshot &&
+            typeof V2.StorageSnapshot === "object" &&
+            !Array.isArray(V2.StorageSnapshot)
+                ? structuredClone(V2.StorageSnapshot)
+                : {};
+
+        const MigratedGuiState = CreateEmptyGuiState();
+
+        if (Object.prototype.hasOwnProperty.call(Snapshot, HideParStorageKey)) {
+            MigratedGuiState.Settings.HidePar = {
+                Value: Boolean(Snapshot[HideParStorageKey]),
+                UpdatedAt: null
+            };
+        }
+
+        if (Object.prototype.hasOwnProperty.call(Snapshot, LineDrawingSpeedStorageKey)) {
+            const SavedSpeed = Number(
+                Snapshot[LineDrawingSpeedStorageKey]
+            );
+
+            if (Number.isFinite(SavedSpeed)) {
+                MigratedGuiState.Settings.AnimationSpeed = {
+                    Value: Clamp(SavedSpeed, 0, 1),
+                    UpdatedAt: null
+                };
+            }
+        }
+
+        Snapshot[GuiStateStorageKey] = MigratedGuiState;
+
+        return {
+            ...V2,
+            FormatVersion: 3,
+            GuiState: MigratedGuiState,
+            StorageSnapshot: Snapshot
+        };
+    }
+
+    function IsAllowedExportStorageKey(Key) {
+        return (
+            ExportExactStorageKeys.includes(Key) ||
+            ExportStoragePrefixes.some(
+                Prefix => Key.startsWith(Prefix)
+            )
+        );
+    }
+
+    function CloneValue(Value) {
+        return Value === undefined
+            ? undefined
+            : structuredClone(Value);
+    }
+
+    function ValuesEqual(A, B) {
+        return JSON.stringify(A) === JSON.stringify(B);
+    }
+
+    function MergeUniqueWords(LocalValue, IncomingValue) {
+        return [...new Set([
+            ...(Array.isArray(LocalValue) ? LocalValue : []),
+            ...(Array.isArray(IncomingValue) ? IncomingValue : [])
+        ]
+            .map(NormalizeWord)
+            .filter(Boolean))]
+            .sort(Alphabetically);
+    }
+
+    function MergeUniqueStrings(LocalValue, IncomingValue) {
+        return [...new Set([
+            ...(Array.isArray(LocalValue) ? LocalValue : []),
+            ...(Array.isArray(IncomingValue) ? IncomingValue : [])
+        ]
+            .map(Value => String(Value || ""))
+            .filter(Boolean))]
+            .sort(Alphabetically);
+    }
+
+    function GetTimestampMilliseconds(Value) {
+        if (!Value) {
+            return null;
+        }
+
+        const Parsed = Date.parse(Value);
+        return Number.isFinite(Parsed) ? Parsed : null;
+    }
+
+    function MergeStampedEntry(LocalEntry, IncomingEntry, ValueProperty) {
+        if (!LocalEntry) {
+            return CloneValue(IncomingEntry);
+        }
+
+        if (!IncomingEntry) {
+            return CloneValue(LocalEntry);
+        }
+
+        const LocalTime = GetTimestampMilliseconds(LocalEntry.UpdatedAt);
+        const IncomingTime = GetTimestampMilliseconds(IncomingEntry.UpdatedAt);
+
+        if (
+            IncomingTime !== null &&
+            (LocalTime === null || IncomingTime > LocalTime)
+        ) {
+            return CloneValue(IncomingEntry);
+        }
+
+        if (
+            LocalTime !== null &&
+            (IncomingTime === null || LocalTime >= IncomingTime)
+        ) {
+            return CloneValue(LocalEntry);
+        }
+
+        /*
+            Both timestamps are unknown. Prefer the local value so importing an
+            old backup cannot silently change an equally old local preference.
+        */
+        return Object.prototype.hasOwnProperty.call(LocalEntry, ValueProperty)
+            ? CloneValue(LocalEntry)
+            : CloneValue(IncomingEntry);
+    }
+
+    function MergeGuiStates(LocalValue, IncomingValue) {
+        const Local = NormalizeGuiState(LocalValue);
+        const Incoming = NormalizeGuiState(IncomingValue);
+        const Result = CreateEmptyGuiState();
+
+        const SettingNames = new Set([
+            ...Object.keys(Local.Settings),
+            ...Object.keys(Incoming.Settings)
+        ]);
+
+        for (const Name of SettingNames) {
+            const Merged = MergeStampedEntry(
+                Local.Settings[Name],
+                Incoming.Settings[Name],
+                "Value"
+            );
+
+            if (Merged) {
+                Result.Settings[Name] = Merged;
+            }
+        }
+
+        const SectionNames = new Set([
+            ...Object.keys(Local.Sections),
+            ...Object.keys(Incoming.Sections)
+        ]);
+
+        for (const Name of SectionNames) {
+            const Merged = MergeStampedEntry(
+                Local.Sections[Name],
+                Incoming.Sections[Name],
+                "Open"
+            );
+
+            if (Merged) {
+                Result.Sections[Name] = Merged;
+            }
+        }
+
+        return Result;
+    }
+
+    function MergeCustomDictionaryValues(LocalValue, IncomingValue) {
+        const Entries = new Map();
+
+        const MergeEntry = Entry => {
+            const Existing = Entries.get(Entry.Word);
+
+            if (!Existing) {
+                Entries.set(Entry.Word, Entry);
+                return;
+            }
+
+            const ExistingTime = GetTimestampMilliseconds(Existing.AddedAt);
+            const EntryTime = GetTimestampMilliseconds(Entry.AddedAt);
+
+            let AddedAt = null;
+            let FirstAddedPuzzleId = null;
+            let FirstAddedPrintDate = null;
+
+            if (ExistingTime !== null && EntryTime !== null) {
+                const Earlier = EntryTime < ExistingTime
+                    ? Entry
+                    : Existing;
+
+                AddedAt = Earlier.AddedAt;
+                FirstAddedPuzzleId = Earlier.FirstAddedPuzzleId || null;
+                FirstAddedPrintDate = Earlier.FirstAddedPrintDate || null;
+            } else if (ExistingTime === null && EntryTime === null) {
+                /*
+                    Both timestamps are historically unknown. Preserve any
+                    explicit first-puzzle provenance we do have, but do not
+                    fabricate a timestamp.
+                */
+                FirstAddedPuzzleId =
+                    Existing.FirstAddedPuzzleId ||
+                    Entry.FirstAddedPuzzleId ||
+                    null;
+
+                FirstAddedPrintDate =
+                    Existing.FirstAddedPrintDate ||
+                    Entry.FirstAddedPrintDate ||
+                    null;
+            } else {
+                /*
+                    One record predates timestamp tracking. We cannot prove the
+                    timestamped record was the first addition, so the merged
+                    first-addition timestamp/provenance remains unknown unless
+                    the older unknown-time record itself carries provenance.
+                */
+                const UnknownTimeEntry = ExistingTime === null
+                    ? Existing
+                    : Entry;
+
+                FirstAddedPuzzleId =
+                    UnknownTimeEntry.FirstAddedPuzzleId ||
+                    null;
+
+                FirstAddedPrintDate =
+                    UnknownTimeEntry.FirstAddedPrintDate ||
+                    null;
+            }
+
+            Entries.set(
+                Entry.Word,
+                {
+                    ...Existing,
+                    ...Entry,
+                    Word: Entry.Word,
+                    Provenance:
+                        Existing.Provenance ||
+                        Entry.Provenance ||
+                        "User",
+                    AddedAt,
+                    FirstAddedPuzzleId,
+                    FirstAddedPrintDate
+                }
+            );
+        };
+
+        const AddEntries = Value => {
+            if (!Array.isArray(Value)) {
+                return;
+            }
+
+            for (const RawEntry of Value) {
+                const Entry = NormalizeCustomDictionaryEntry(RawEntry);
+
+                if (Entry) {
+                    MergeEntry(Entry);
+                }
+            }
+        };
+
+        AddEntries(LocalValue);
+        AddEntries(IncomingValue);
+
+        return [...Entries.values()]
+            .sort((A, B) => Alphabetically(A.Word, B.Word));
+    }
+
+    function HasUsefulValue(Value) {
+        if (Value === null || Value === undefined || Value === "") {
+            return false;
+        }
+
+        if (Array.isArray(Value)) {
+            return Value.length > 0;
+        }
+
+        return true;
+    }
+
+    function MergePuzzleMetadataValues(LocalValue, IncomingValue) {
+        if (!LocalValue || typeof LocalValue !== "object" || Array.isArray(LocalValue)) {
+            return CloneValue(IncomingValue);
+        }
+
+        if (!IncomingValue || typeof IncomingValue !== "object" || Array.isArray(IncomingValue)) {
+            return CloneValue(LocalValue);
+        }
+
+        const LocalTime = GetTimestampMilliseconds(LocalValue.LastSeenAt) ?? -1;
+        const IncomingTime = GetTimestampMilliseconds(IncomingValue.LastSeenAt) ?? -1;
+        const Newer = IncomingTime > LocalTime ? IncomingValue : LocalValue;
+        const Older = Newer === IncomingValue ? LocalValue : IncomingValue;
+
+        const Result = {
+            ...Older,
+            ...Newer,
+            Version: Math.max(
+                Number(LocalValue.Version) || 0,
+                Number(IncomingValue.Version) || 0
+            )
+        };
+
+        for (const Key of [
+            "PuzzleId",
+            "PrintDate",
+            "Date",
+            "Sides",
+            "NytSolution",
+            "DictionaryCount",
+            "DictionaryHash"
+        ]) {
+            if (!HasUsefulValue(Result[Key]) && HasUsefulValue(Older[Key])) {
+                Result[Key] = CloneValue(Older[Key]);
+            }
+        }
+
+        const LastSeenTimes = [
+            LocalValue.LastSeenAt,
+            IncomingValue.LastSeenAt
+        ]
+            .map(Value => ({
+                Value,
+                Time: GetTimestampMilliseconds(Value)
+            }))
+            .filter(Item => Item.Time !== null)
+            .sort((A, B) => B.Time - A.Time);
+
+        Result.LastSeenAt = LastSeenTimes[0]?.Value || null;
+
+        return Result;
+    }
+
+    function MergeTwoferCacheValues(LocalValue, IncomingValue) {
+        if (!LocalValue || typeof LocalValue !== "object" || Array.isArray(LocalValue)) {
+            return CloneValue(IncomingValue);
+        }
+
+        if (!IncomingValue || typeof IncomingValue !== "object" || Array.isArray(IncomingValue)) {
+            return CloneValue(LocalValue);
+        }
+
+        const LocalSolutions = Array.isArray(LocalValue.Solutions)
+            ? LocalValue.Solutions.length
+            : 0;
+
+        const IncomingSolutions = Array.isArray(IncomingValue.Solutions)
+            ? IncomingValue.Solutions.length
+            : 0;
+
+        const LocalVersion = Number(LocalValue.Version) || 0;
+        const IncomingVersion = Number(IncomingValue.Version) || 0;
+
+        if (IncomingVersion > LocalVersion) {
+            return CloneValue(IncomingValue);
+        }
+
+        if (LocalVersion > IncomingVersion) {
+            return CloneValue(LocalValue);
+        }
+
+        return IncomingSolutions > LocalSolutions
+            ? CloneValue(IncomingValue)
+            : CloneValue(LocalValue);
+    }
+
+    function MergeStorageValue(Key, LocalValue, IncomingValue) {
+        if (LocalValue === null || LocalValue === undefined) {
+            return CloneValue(IncomingValue);
+        }
+
+        if (IncomingValue === null || IncomingValue === undefined) {
+            return CloneValue(LocalValue);
+        }
+
+        if (
+            Key.startsWith("LetterBoxedTracker_") ||
+            Key.startsWith(CustomWordsPrefix)
+        ) {
+            return MergeUniqueWords(LocalValue, IncomingValue);
+        }
+
+        if (Key.startsWith("LetterBoxedCubed_FoundTwofers_")) {
+            return MergeUniqueStrings(LocalValue, IncomingValue);
+        }
+
+        if (Key === CustomDictionaryStorageKey) {
+            return MergeCustomDictionaryValues(LocalValue, IncomingValue);
+        }
+
+        if (Key === GuiStateStorageKey) {
+            return MergeGuiStates(LocalValue, IncomingValue);
+        }
+
+        if (Key.startsWith(PuzzleMetadataPrefix)) {
+            return MergePuzzleMetadataValues(LocalValue, IncomingValue);
+        }
+
+        if (Key.startsWith("LetterBoxedCubed_TwoferCache_")) {
+            return MergeTwoferCacheValues(LocalValue, IncomingValue);
+        }
+
+        if (DeviceLocalStorageKeys.includes(Key)) {
+            /*
+                Physical layout preferences are local to a device/window. Keep
+                an existing local value; only restore one if this device has no
+                preference yet.
+            */
+            return CloneValue(LocalValue);
+        }
+
+        /*
+            Legacy portable settings are superseded by GuiState in v3. Keep a
+            local copy when both exist; GuiState determines the effective value.
+        */
+        if (
+            Key === HideParStorageKey ||
+            Key === LineDrawingSpeedStorageKey
+        ) {
+            return CloneValue(LocalValue);
+        }
+
+        return CloneValue(LocalValue);
+    }
+
+    function MergeBackupIntoStorage(
+        RawBackup,
+        { IncludeDeviceState = true } = {}
+    ) {
+        const Backup = MigrateBackupToCurrent(RawBackup);
+        const Snapshot = Backup.StorageSnapshot;
+
+        if (!Snapshot || typeof Snapshot !== "object" || Array.isArray(Snapshot)) {
+            throw new Error(
+                "This is not a Letter Boxed Cubed backup file."
+            );
+        }
+
+        let ChangedKeys = 0;
+        let ConsideredKeys = 0;
+
+        for (const Key of Object.keys(Snapshot)) {
+            if (!IsAllowedExportStorageKey(Key)) {
+                continue;
+            }
+
+            if (!IncludeDeviceState && DeviceLocalStorageKeys.includes(Key)) {
+                continue;
+            }
+
+            ConsideredKeys++;
+
+            const LocalValue = GM_getValue(Key, null);
+            const MergedValue = MergeStorageValue(
+                Key,
+                LocalValue,
+                Snapshot[Key]
+            );
+
+            if (!ValuesEqual(LocalValue, MergedValue)) {
+                GM_setValue(
+                    Key,
+                    MergedValue
+                );
+                ChangedKeys++;
+            }
+        }
+
+        return {
+            ConsideredKeys,
+            ChangedKeys
         };
     }
 
@@ -1070,35 +1820,25 @@
                     );
 
                     const Confirmed = confirm(
-                        `Import ${Keys.length.toLocaleString()} stored Letter Boxed Cubed records` +
+                        `Merge ${Keys.length.toLocaleString()} stored Letter Boxed Cubed records` +
                         `${Backup.ExportedAt ? ` from ${Backup.ExportedAt}` : ""}?\n\n` +
-                        "Existing records with the same keys will be overwritten. " +
-                        "Other current records will be left untouched."
+                        "Discovery data is combined rather than overwritten: found words, " +
+                        "solved twofers, custom words, and custom dictionary entries are unioned. " +
+                        "Portable GUI settings use their per-setting timestamps."
                     );
 
                     if (!Confirmed) {
                         return;
                     }
 
-                    for (const Key of Keys) {
-                        const IsAllowedKey =
-                            ExportExactStorageKeys.includes(Key) ||
-                            ExportStoragePrefixes.some(
-                                Prefix => Key.startsWith(Prefix)
-                            );
-
-                        if (!IsAllowedKey) {
-                            continue;
-                        }
-
-                        GM_setValue(
-                            Key,
-                            Backup.StorageSnapshot[Key]
-                        );
-                    }
+                    const MergeStats = MergeBackupIntoStorage(
+                        Backup,
+                        { IncludeDeviceState: true }
+                    );
 
                     alert(
-                        "Letter Boxed Cubed backup imported successfully. " +
+                        "Letter Boxed Cubed backup merged successfully. " +
+                        `${MergeStats.ChangedKeys.toLocaleString()} stored record(s) changed. ` +
                         "The page will now reload."
                     );
 
@@ -1123,6 +1863,367 @@
     }
 
     // -------------------------------------------------------------------------
+    // Google Drive cloud sync (via user-owned Apps Script bridge)
+    // -------------------------------------------------------------------------
+
+    function LoadGoogleDriveConfig() {
+        const Saved = GM_getValue(
+            GoogleDriveConfigStorageKey,
+            null
+        );
+
+        GoogleDriveConfig = NormalizeGoogleDriveConfig(Saved);
+        CloudSyncStatus = GoogleDriveConfig?.Enabled
+            ? "Ready"
+            : "Off";
+    }
+
+    function NormalizeGoogleDriveConfig(RawConfig) {
+        if (!RawConfig || typeof RawConfig !== "object" || Array.isArray(RawConfig)) {
+            return null;
+        }
+
+        const Endpoint = String(RawConfig.Endpoint || "").trim();
+        const Secret = String(RawConfig.Secret || "").trim();
+
+        if (!Endpoint || !Secret) {
+            return null;
+        }
+
+        return {
+            Version: GoogleDriveConfigVersion,
+            Endpoint,
+            Secret,
+            Enabled: RawConfig.Enabled !== false
+        };
+    }
+
+    function SaveGoogleDriveConfig() {
+        GM_setValue(
+            GoogleDriveConfigStorageKey,
+            GoogleDriveConfig
+        );
+    }
+
+    function ConfigureGoogleDriveSync() {
+        const ExistingEndpoint = GoogleDriveConfig?.Endpoint || "";
+        const EndpointInput = prompt(
+            "Google Drive sync uses a small Google Apps Script bridge that you own.\\n\\n" +
+            "Paste its deployed Web App URL (/exec) here. Leave this blank to disconnect Drive sync.",
+            ExistingEndpoint
+        );
+
+        if (EndpointInput === null) {
+            return;
+        }
+
+        const Endpoint = EndpointInput.trim();
+
+        if (!Endpoint) {
+            if (
+                GoogleDriveConfig &&
+                confirm("Disconnect Google Drive sync on this browser?")
+            ) {
+                GoogleDriveConfig = null;
+                SaveGoogleDriveConfig();
+                CloudSyncStatus = "Off";
+                LastCloudSyncError = null;
+                UpdateGoogleDriveButton();
+            }
+            return;
+        }
+
+        if (!/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec(?:\?.*)?$/i.test(Endpoint)) {
+            alert(
+                "That does not look like a deployed Google Apps Script Web App URL. " +
+                "It should begin with https://script.google.com/macros/s/ and end with /exec."
+            );
+            return;
+        }
+
+        const SecretInput = prompt(
+            "Paste the LBC sync secret printed by the bridge's Setup() function.",
+            GoogleDriveConfig?.Secret || ""
+        );
+
+        if (SecretInput === null) {
+            return;
+        }
+
+        const Secret = SecretInput.trim();
+
+        if (!Secret) {
+            alert("A non-empty sync secret is required.");
+            return;
+        }
+
+        GoogleDriveConfig = {
+            Version: GoogleDriveConfigVersion,
+            Endpoint,
+            Secret,
+            Enabled: true
+        };
+
+        SaveGoogleDriveConfig();
+        CloudSyncStatus = "Ready";
+        LastCloudSyncError = null;
+        UpdateGoogleDriveButton();
+
+        SyncWithGoogleDrive({ Manual: true });
+    }
+
+    function ScheduleCloudSync(DelayMs = CloudSyncDebounceMs) {
+        if (!GoogleDriveConfig?.Enabled) {
+            return;
+        }
+
+        if (CloudSyncTimer) {
+            clearTimeout(CloudSyncTimer);
+        }
+
+        CloudSyncTimer = setTimeout(
+            () => {
+                CloudSyncTimer = null;
+                SyncWithGoogleDrive();
+            },
+            Math.max(0, DelayMs)
+        );
+    }
+
+    function BuildCloudSyncData() {
+        UpdateCurrentPuzzleMetadata();
+
+        const Data = BuildExportData();
+
+        /*
+            Manual backups retain device-local layout preferences. Cloud sync
+            deliberately omits them so a laptop cannot rewrite a desktop's
+            preferred physical panel width (and vice versa).
+        */
+        for (const Key of DeviceLocalStorageKeys) {
+            delete Data.StorageSnapshot[Key];
+        }
+
+        return Data;
+    }
+
+    function GoogleDriveBridgeRequest(Action, Payload = {}) {
+        if (
+            !GoogleDriveConfig?.Enabled ||
+            typeof GM_xmlhttpRequest !== "function"
+        ) {
+            return Promise.reject(
+                new Error("Google Drive sync is not configured.")
+            );
+        }
+
+        return new Promise((Resolve, Reject) => {
+            GM_xmlhttpRequest({
+                method: "POST",
+                url: GoogleDriveConfig.Endpoint,
+                headers: {
+                    "Content-Type": "text/plain;charset=UTF-8"
+                },
+                data: JSON.stringify({
+                    ProtocolVersion: CloudSyncProtocolVersion,
+                    Secret: GoogleDriveConfig.Secret,
+                    Action,
+                    ...Payload
+                }),
+                timeout: 30000,
+                onload: Response => {
+                    try {
+                        if (Response.status < 200 || Response.status >= 300) {
+                            throw new Error(
+                                `Google Drive bridge returned HTTP ${Response.status}.`
+                            );
+                        }
+
+                        const Parsed = JSON.parse(Response.responseText);
+
+                        if (!Parsed || typeof Parsed !== "object") {
+                            throw new Error(
+                                "Google Drive bridge returned an invalid response."
+                            );
+                        }
+
+                        if (Parsed.Status === "error") {
+                            throw new Error(
+                                Parsed.Message || "Google Drive bridge reported an error."
+                            );
+                        }
+
+                        Resolve(Parsed);
+                    } catch (Error) {
+                        Reject(Error);
+                    }
+                },
+                onerror: () => Reject(
+                    new Error("Could not reach the Google Drive sync bridge.")
+                ),
+                ontimeout: () => Reject(
+                    new Error("Google Drive sync timed out.")
+                )
+            });
+        });
+    }
+
+    async function SyncWithGoogleDrive({ Manual = false } = {}) {
+        if (!GoogleDriveConfig?.Enabled) {
+            if (Manual) {
+                ConfigureGoogleDriveSync();
+            }
+            return;
+        }
+
+        if (CloudSyncInFlight) {
+            CloudSyncPending = true;
+            return;
+        }
+
+        CloudSyncInFlight = true;
+        CloudSyncPending = false;
+        CloudSyncStatus = "Syncing";
+        LastCloudSyncError = null;
+        UpdateGoogleDriveButton();
+
+        try {
+            let Completed = false;
+
+            for (let Attempt = 0; Attempt < 3 && !Completed; Attempt++) {
+                const Remote = await GoogleDriveBridgeRequest("Read");
+                const RemoteRevision = Number(Remote.Revision) || 0;
+                let RemoteChangedLocal = false;
+
+                if (Remote.Data) {
+                    const RemoteBackup = MigrateBackupToCurrent(Remote.Data);
+                    const MergeStats = MergeBackupIntoStorage(
+                        RemoteBackup,
+                        { IncludeDeviceState: false }
+                    );
+
+                    RemoteChangedLocal = MergeStats.ChangedKeys > 0;
+                }
+
+                if (RemoteChangedLocal) {
+                    ReloadRuntimeStateFromStorage();
+                }
+
+                const LocalData = BuildCloudSyncData();
+                const Write = await GoogleDriveBridgeRequest(
+                    "Write",
+                    {
+                        ExpectedRevision: RemoteRevision,
+                        Data: LocalData
+                    }
+                );
+
+                if (Write.Status === "conflict") {
+                    continue;
+                }
+
+                if (Write.Status !== "ok") {
+                    throw new Error(
+                        Write.Message || "Google Drive sync write failed."
+                    );
+                }
+
+                Completed = true;
+                LastCloudSyncAt = new Date().toISOString();
+            }
+
+            if (!Completed) {
+                throw new Error(
+                    "Google Drive changed repeatedly during sync. Please try again."
+                );
+            }
+
+            CloudSyncStatus = "Synced";
+        } catch (Error) {
+            CloudSyncStatus = "Error";
+            LastCloudSyncError = Error;
+
+            console.error(
+                "[Letter Boxed Cubed] Google Drive sync failed.",
+                Error
+            );
+
+            if (Manual) {
+                alert(
+                    "Google Drive sync failed: " +
+                    (Error?.message || String(Error))
+                );
+            }
+        } finally {
+            CloudSyncInFlight = false;
+            UpdateGoogleDriveButton();
+
+            if (CloudSyncPending) {
+                CloudSyncPending = false;
+                ScheduleCloudSync(250);
+            }
+        }
+    }
+
+    function ReloadRuntimeStateFromStorage() {
+        LoadGuiState();
+        LoadFoundWords();
+        LoadCustomDictionary();
+        LoadHideParPreference();
+        ApplyHideParPreference();
+        LoadLineDrawingSpeed();
+        LoadFoundTwofers();
+        RenderPanel();
+        QueuePanelLayoutUpdate();
+    }
+
+    function UpdateGoogleDriveButton() {
+        const Button = document.getElementById(
+            GoogleDriveButtonId
+        );
+
+        if (!Button) {
+            return;
+        }
+
+        if (!GoogleDriveConfig?.Enabled) {
+            Button.textContent = "Drive: Setup";
+            Button.title =
+                "Configure automatic Google Drive sync";
+            return;
+        }
+
+        const TextByStatus = {
+            Ready: "Drive: Sync",
+            Syncing: "Drive: Syncing…",
+            Synced: "Drive: ✓",
+            Error: "Drive: Error"
+        };
+
+        Button.textContent =
+            TextByStatus[CloudSyncStatus] ||
+            "Drive: Sync";
+
+        const StatusParts = [
+            "Click to sync now. Shift-click to reconfigure or disconnect."
+        ];
+
+        if (LastCloudSyncAt) {
+            StatusParts.push(
+                `Last synced: ${new Date(LastCloudSyncAt).toLocaleString()}`
+            );
+        }
+
+        if (LastCloudSyncError) {
+            StatusParts.push(
+                `Last error: ${LastCloudSyncError.message || LastCloudSyncError}`
+            );
+        }
+
+        Button.title = StatusParts.join("\\n");
+    }
+
+    // -------------------------------------------------------------------------
     // Found words
     // -------------------------------------------------------------------------
 
@@ -1141,6 +2242,8 @@
             WordStorageKey,
             [...FoundWords].sort(Alphabetically)
         );
+
+        ScheduleCloudSync();
     }
 
     // -------------------------------------------------------------------------
@@ -1351,6 +2454,8 @@
             FoundTwoferStorageKey,
             [...FoundTwofers].sort(Alphabetically)
         );
+
+        ScheduleCloudSync();
     }
 
     function MarkTwoferFound(First, Second) {
@@ -2613,6 +3718,25 @@
             LineSpeedValue
         );
 
+        const GoogleDriveButton = document.createElement("button");
+        GoogleDriveButton.id = GoogleDriveButtonId;
+        GoogleDriveButton.type = "button";
+        GoogleDriveButton.className = "lb-cubed-header-button";
+        GoogleDriveButton.addEventListener(
+            "click",
+            Event => {
+                Event.preventDefault();
+                Event.stopPropagation();
+
+                if (!GoogleDriveConfig?.Enabled || Event.shiftKey) {
+                    ConfigureGoogleDriveSync();
+                    return;
+                }
+
+                SyncWithGoogleDrive({ Manual: true });
+            }
+        );
+
         const ExportButton = document.createElement("button");
         ExportButton.type = "button";
         ExportButton.className = "lb-cubed-header-button";
@@ -2647,6 +3771,7 @@
             HideParControl,
             InvalidControl,
             LineSpeedControl,
+            GoogleDriveButton,
             ExportButton,
             ImportButton
         );
@@ -2657,6 +3782,7 @@
         );
 
         Panel.appendChild(Header);
+        UpdateGoogleDriveButton();
     }
 
     function RenderMainStats(Panel, Stats) {
@@ -2838,6 +3964,7 @@
         GroupButton.addEventListener("click", Event => {
             StopSummaryToggle(Event);
             TwofersGrouped = !TwofersGrouped;
+            SaveTwofersGroupedPreference();
             RenderPanel();
         });
 
@@ -3108,11 +4235,20 @@
     ) {
         Details.dataset.cubedSection = Name;
 
+        const SavedOpen = GetGuiSectionOpen(Name);
+
         if (Object.prototype.hasOwnProperty.call(PreviousOpenStates, Name)) {
             Details.open = PreviousOpenStates[Name];
+        } else if (SavedOpen !== null) {
+            Details.open = SavedOpen;
         } else {
             Details.open = DefaultOpen;
         }
+
+        Details.addEventListener(
+            "toggle",
+            () => SetGuiSectionOpen(Name, Details.open)
+        );
     }
 
     function AddStat(Container, Label, Value) {
