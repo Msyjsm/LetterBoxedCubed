@@ -1,0 +1,5 @@
+Generated userscript preview. Do not edit this branch directly.
+Source branch: feature/issues-2-3-cloud-gui-state
+Source commit: eb644fd903fc5cb8043477d2b5da442a00ef7386
+Workflow run: 33757475062
+Preview selector: #lbc-preview
