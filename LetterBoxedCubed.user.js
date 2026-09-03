@@ -16,6 +16,32 @@
 (function () {
     "use strict";
 
+
+    // PREVIEW_CHANNEL_ROUTING
+    // Tampermonkey's URL matcher ignores hash fragments, so both installed
+    // copies match the page. This runtime gate makes exactly one copy active
+    // and reloads when the preview hash is toggled.
+    const UserscriptBuildChannel = "production"; // PREVIEW_CHANNEL_MARKER
+    const UserscriptPreviewHash = "#lbc-preview";
+    const UserscriptPreviewRequested =
+        location.hash.toLowerCase() === UserscriptPreviewHash;
+
+    window.addEventListener("hashchange", () => {
+        const PreviewRequestedNow =
+            location.hash.toLowerCase() === UserscriptPreviewHash;
+
+        if (PreviewRequestedNow !== UserscriptPreviewRequested) {
+            location.reload();
+        }
+    });
+
+    if (
+        (UserscriptBuildChannel === "preview") !==
+        UserscriptPreviewRequested
+    ) {
+        return;
+    }
+
     const PageWindow = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
 
     const PanelId = "lb-cubed-panel";
