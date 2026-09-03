@@ -23,9 +23,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          base64 --decode .feature-bootstrap/lbc-1.11.patch.gz.b64 | gzip -d > /tmp/lbc-1.11.patch
-          git apply --check /tmp/lbc-1.11.patch
-          git apply /tmp/lbc-1.11.patch
+
+          # The beta patch is split into small text chunks because the connector
+          # is much more reliable with several small writes than one large one.
+          cat .feature-bootstrap/chunk-* > /tmp/lbc.patch.gz.b64
+
+          test "$(wc -c < /tmp/lbc.patch.gz.b64)" -eq 12268
+          echo "0580d6299d7862aa2bd817831ec7786f3fc61b6c97e044f940420e6d7d10dfb6  /tmp/lbc.patch.gz.b64" | sha256sum -c -
+
+          base64 --decode /tmp/lbc.patch.gz.b64 | gzip -d > /tmp/lbc.patch
+          echo "09abd1e64075139cedcace90b9cd1935168d66dceef4b8008b151077ac265e19  /tmp/lbc.patch" | sha256sum -c -
+
+          git apply --check /tmp/lbc.patch
+          git apply /tmp/lbc.patch
+
+          # Temporary bootstrap artifacts should not survive in the feature.
           rm -rf .feature-bootstrap
           rm -f .github/workflows/apply-v1.11-beta.yml
 
