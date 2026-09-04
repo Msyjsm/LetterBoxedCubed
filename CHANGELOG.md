@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.11.0-beta.2
+- Added Browse History, which reads the synced Google Drive backup and renders prior puzzle data in an LBC-style found-only history viewer.
+- Added first/previous/next/last history navigation and defaulted the viewer to the most recent retained puzzle before the current day.
+- Kept history spoiler-safe by omitting unfound/partially found data and not exposing the stored NYT solution merely because it exists in the cloud backup.
+- Fixed UI strings that accidentally displayed escaped `\n` text instead of real line breaks.
+- Documented that production and Preview userscripts have separate Tampermonkey GM-storage scopes.
+
 ## 1.11.0-beta.1
 - Added merge-safe import semantics so independent device histories converge instead of overwriting same-day player data.
 - Added backup schema v3 and versioned portable GUI state for Hide Par, Animation Speed, Twofer grouping, and expandable/collapsed sections.
