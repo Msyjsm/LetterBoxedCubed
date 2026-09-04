@@ -1,0 +1,36 @@
+name: Apply LBC v1.11 beta.2 history browser
+
+on:
+  push:
+    branches:
+      - feature/issues-2-3-cloud-gui-state
+    paths:
+      - '.feature-beta2/READY'
+
+permissions:
+  contents: write
+
+jobs:
+  apply-beta2:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out feature branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply beta.2 source changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python .feature-beta2/apply_beta2.py
+          node --check LetterBoxedCubed.user.js
+
+          rm -rf .feature-beta2
+          rm -f .github/workflows/apply-v1.11-beta2.yml
+
+          git config user.name "Nathan Burgdorff + Ari (ChatGPT)"
+          git config user.email "6709230+Msyjsm@users.noreply.github.com"
+          git add -A
+          git commit -m "Add cloud history browser and fix UI newlines"
+          git push origin HEAD:feature/issues-2-3-cloud-gui-state
