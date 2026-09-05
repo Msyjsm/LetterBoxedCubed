@@ -74,3 +74,5 @@ jobs:
           git add LetterBoxedCubed.user.js README.md CHANGELOG.md docs/GoogleDriveSync.md versions/v1.11.0.user.js workplace-copy/LetterBoxedCubed.txt
           git commit -m "Release v1.11.0"
           git push origin HEAD:feature/issues-2-3-cloud-gui-state
+
+# retrigger after merge-test harness fix
