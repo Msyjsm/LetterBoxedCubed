@@ -37,6 +37,18 @@ The URL fragment (`#lbc-preview`) is client-side state; browsers do not send it 
 
 Each workflow run appends the monotonically increasing `github.run_number` to the source version. For example, source `1.10.3` may become preview `1.10.3.22`. This means every pushed test build has a newer Tampermonkey version even when the production `@version` has not yet been bumped.
 
+## Automated source commits and stale previews
+
+A normal push to the active development branch triggers the preview workflow automatically. There is one important GitHub Actions edge case: if another workflow commits a source change using the repository's built-in `GITHUB_TOKEN`, GitHub intentionally does not start a second `push` workflow from that generated commit. That prevents accidental workflow recursion, but it also means a preview can become one commit stale after a workflow-authored source patch.
+
+Our rule is therefore:
+
+- Direct human/API commits to the source branch rely on the normal `push` trigger.
+- Any workflow that itself commits a source-code change must explicitly dispatch the preview workflow afterward, or the preview must otherwise be rebuilt from the new branch head.
+- `PREVIEW_SOURCE.txt` is the audit trail. Its `Source commit` should equal the active source branch head after the preview workflow finishes.
+
+If Tampermonkey says "no updates found" while the source branch contains a newer change, first compare `PREVIEW_SOURCE.txt` with the branch head. In that case Tampermonkey may be completely correct: it is already running the newest file on the `preview` branch, while the `preview` branch itself is stale.
+
 ## What the `preview` branch is
 
 The `preview` branch is a generated distribution branch. Do not develop on it and do not merge it into `main`. It contains only:
