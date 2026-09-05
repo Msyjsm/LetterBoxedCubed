@@ -1,0 +1,66 @@
+name: Apply history modal top anchor
+
+on:
+  push:
+    paths:
+      - '.github/workflows/apply-history-top-anchor.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Patch history modal layout
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('LetterBoxedCubed.user.js')
+          s = p.read_text()
+          old = '''            #${HistoryOverlayId} {
+                position: fixed;
+                inset: 0;
+                z-index: 100000;
+                display: flex;
+                align-items: center;
+                justify-content: center;'''
+          new = '''            #${HistoryOverlayId} {
+                position: fixed;
+                inset: 0;
+                z-index: 100000;
+                display: flex;
+                align-items: flex-start;
+                justify-content: center;
+                padding: 12px;'''
+          if old not in s:
+              raise SystemExit('history overlay block not found')
+          s = s.replace(old, new, 1)
+          s = s.replace('max-height: min(820px, 90vh);', 'max-height: calc(100vh - 24px);', 1)
+          s = s.replace('''                #${HistoryOverlayId} {
+                    padding: 8px;
+                }
+
+                .lb-cubed-history-modal {
+                    max-height: 94vh;
+                }''', '''                #${HistoryOverlayId} {
+                    padding: 12px;
+                }
+
+                .lb-cubed-history-modal {
+                    max-height: calc(100vh - 24px);
+                }''', 1)
+          p.write_text(s)
+          PY
+          node --check LetterBoxedCubed.user.js
+      - name: Commit patch and remove one-shot workflow
+        run: |
+          git config user.name "Nathan Burgdorff + Ari (ChatGPT)"
+          git config user.email "6709230+Msyjsm@users.noreply.github.com"
+          git rm .github/workflows/apply-history-top-anchor.yml
+          git add LetterBoxedCubed.user.js
+          git commit -m "Anchor cloud history browser to viewport top"
+          git push origin HEAD:feature/issues-2-3-cloud-gui-state
