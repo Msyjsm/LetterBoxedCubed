@@ -75,4 +75,4 @@ jobs:
           git commit -m "Release v1.11.0"
           git push origin HEAD:feature/issues-2-3-cloud-gui-state
 
-# retrigger after merge-test harness fix
+# retrigger after test harness stubs were completed
