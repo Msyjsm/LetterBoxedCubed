@@ -11,7 +11,7 @@ source = source.replace(
 );
 
 const Store = new Map();
-global.window = {};
+global.window = { addEventListener: () => {} };
 global.unsafeWindow = {};
 global.GM_getValue = (k, d) => Store.has(k) ? structuredClone(Store.get(k)) : d;
 global.GM_setValue = (k, v) => Store.set(k, structuredClone(v));
