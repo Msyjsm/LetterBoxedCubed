@@ -5534,8 +5534,9 @@
                 inset: 0;
                 z-index: 100000;
                 display: flex;
-                align-items: center;
+                align-items: flex-start;
                 justify-content: center;
+                padding: 12px;
                 padding: 24px;
                 background: rgba(0, 0, 0, 0.55);
                 color: rgb(48, 24, 24);
@@ -5551,7 +5552,7 @@
                 display: flex;
                 flex-direction: column;
                 width: min(920px, 100%);
-                max-height: min(820px, 90vh);
+                max-height: calc(100vh - 24px);
                 overflow: hidden;
                 background: rgb(216, 132, 130);
                 border: 1px solid rgba(76, 34, 34, 0.78);
@@ -5722,11 +5723,11 @@
 
             @media (max-width: 600px) {
                 #${HistoryOverlayId} {
-                    padding: 8px;
+                    padding: 12px;
                 }
 
                 .lb-cubed-history-modal {
-                    max-height: 94vh;
+                    max-height: calc(100vh - 24px);
                 }
 
                 .lb-cubed-history-navigation {
