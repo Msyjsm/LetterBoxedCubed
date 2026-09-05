@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed [PREVIEW]
 // @namespace    https://nathanburgdorff.com/userscripts/preview/
-// @version      1.11.0-beta.2.21
+// @version      1.11.0.22
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -2689,7 +2689,9 @@
     }
 
     function BuildCloudSyncData() {
-        UpdateCurrentPuzzleMetadata();
+        if (GameData && PuzzleMetadataStorageKey) {
+            UpdateCurrentPuzzleMetadata();
+        }
 
         const Data = BuildExportData();
 
