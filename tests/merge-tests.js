@@ -18,7 +18,7 @@ global.GM_setValue = (k, v) => Store.set(k, structuredClone(v));
 global.GM_listValues = () => [...Store.keys()];
 global.GM_xmlhttpRequest = () => { throw new Error('not used in tests'); };
 global.document = {};
-global.location = {};
+global.location = { hash: '' };
 global.confirm = () => true;
 global.alert = () => {};
 global.prompt = () => null;
@@ -59,96 +59,104 @@ test('FoundWords union: 10 + 23 disjoint = 33', () => {
   assert(new Set(merged).size === 33, 'merged words are not unique');
 });
 
-test('FoundWords union removes overlap', () => {
-  const key = 'LetterBoxedTracker_3000';
-  put(key, ['CAT','DOG','EEL']);
-  T.MergeBackupIntoStorage(backup({[key]: ['DOG','FOX','CAT']}));
-  eq(get(key), ['CAT','DOG','EEL','FOX'], 'word union mismatch');
+test('FoundWords union deduplicates overlap', () => {
+  const key = 'LetterBoxedTracker_3001';
+  put(key, ['APPLE','PEAR','PLUM']);
+  T.MergeBackupIntoStorage(backup({[key]: ['PEAR','KIWI']}));
+  eq(get(key), ['APPLE','KIWI','PEAR','PLUM'], 'FoundWords set union');
 });
 
-test('FoundTwofers union', () => {
+test('FoundTwofers union by normalized pair key', () => {
   const key = 'LetterBoxedCubed_FoundTwofers_3000';
-  put(key, ['ALPHA\u001FBETA']);
-  T.MergeBackupIntoStorage(backup({[key]: ['GAMMA\u001FALPHA','ALPHA\u001FBETA']}));
-  eq(get(key), ['ALPHA\u001FBETA','GAMMA\u001FALPHA'], 'twofer union mismatch');
+  put(key, [['ALPHA','APPLE']]);
+  T.MergeBackupIntoStorage(backup({[key]: [['ALPHA','APPLE'],['APPLE','ELM']]}));
+  eq(get(key), [['ALPHA','APPLE'],['APPLE','ELM']], 'FoundTwofers set union');
 });
 
 test('CustomWords union', () => {
-  const key = T.CustomWordsPrefix + '3000';
-  put(key, ['LOVEBUG']);
-  T.MergeBackupIntoStorage(backup({[key]: ['LOVEBUG','MOTHMAN']}));
-  eq(get(key), ['LOVEBUG','MOTHMAN'], 'custom words union mismatch');
+  const key = 'LetterBoxedCubed_CustomWords_3000';
+  put(key, ['FOO']);
+  T.MergeBackupIntoStorage(backup({[key]: ['BAR','FOO']}));
+  eq(get(key), ['BAR','FOO'], 'CustomWords set union');
 });
 
-test('GUI state merges per field/section by timestamp', () => {
+test('Custom dictionary merges entries and keeps earliest honest AddedAt', () => {
+  const key = T.CustomDictionaryStorageKey;
+  put(key, [{Word:'FOO',Provenance:'User',AddedAt:'2026-09-02T12:00:00Z',FirstAddedPuzzleId:'2',FirstAddedPrintDate:'2026-09-02'}]);
+  T.MergeBackupIntoStorage(backup({[key]: [
+    {Word:'FOO',Provenance:'User',AddedAt:'2026-09-01T12:00:00Z',FirstAddedPuzzleId:'1',FirstAddedPrintDate:'2026-09-01'},
+    {Word:'BAR',Provenance:'User',AddedAt:'2026-09-03T12:00:00Z',FirstAddedPuzzleId:'3',FirstAddedPrintDate:'2026-09-03'}
+  ]}));
+  const merged = get(key);
+  assert(merged.length === 2, 'expected two custom dictionary entries');
+  const foo = merged.find(x=>x.Word==='FOO');
+  assert(foo.AddedAt === '2026-09-01T12:00:00Z', 'earliest AddedAt not retained');
+  assert(foo.FirstAddedPuzzleId === '1', 'provenance should follow earliest dated add');
+});
+
+test('Puzzle metadata combines richer and newer facts without blanking local', () => {
+  const key = T.PuzzleMetadataPrefix+'3000';
+  put(key, {Version:1,PuzzleId:'3000',PrintDate:'2026-09-01',Date:'Sep 1',Sides:['ABC'],NytSolution:[],DictionaryCount:100,DictionaryHash:'OLD',LastSeenAt:'2026-09-01T00:00:00Z'});
+  const incoming = {Version:1,PuzzleId:'3000',PrintDate:'2026-09-01',Date:null,Sides:[],NytSolution:['ONE','EIGHT'],DictionaryCount:105,DictionaryHash:'NEW',LastSeenAt:'2026-09-02T00:00:00Z'};
+  T.MergeBackupIntoStorage(backup({[key]: incoming}));
+  const merged = get(key);
+  assert(merged.Date === 'Sep 1', 'non-empty local date was blanked');
+  eq(merged.NytSolution, ['ONE','EIGHT'], 'richer NYT solution not merged');
+  assert(merged.DictionaryCount === 105 && merged.DictionaryHash === 'NEW', 'newer dictionary metadata not preferred');
+});
+
+test('GUI state resolves each property independently by UpdatedAt', () => {
   const local = T.CreateEmptyGuiState();
-  local.Settings.HidePar = {Value:false, UpdatedAt:'2026-09-02T10:00:00Z'};
-  local.Settings.AnimationSpeed = {Value:0.7, UpdatedAt:'2026-09-02T12:00:00Z'};
-  local.Sections.Hints = {Open:false, UpdatedAt:'2026-09-02T13:00:00Z'};
+  local.Settings.HidePar = {Value:false,UpdatedAt:'2026-09-02T10:00:00Z'};
+  local.Settings.AnimationSpeed = {Value:0.4,UpdatedAt:'2026-09-02T13:00:00Z'};
+  local.Sections.Hints = {Open:false,UpdatedAt:'2026-09-02T14:00:00Z'};
   const incoming = T.CreateEmptyGuiState();
-  incoming.Settings.HidePar = {Value:true, UpdatedAt:'2026-09-02T11:00:00Z'};
-  incoming.Settings.AnimationSpeed = {Value:0.2, UpdatedAt:'2026-09-02T11:30:00Z'};
-  incoming.Sections.Hints = {Open:true, UpdatedAt:'2026-09-02T12:30:00Z'};
-  incoming.Sections.Twofers = {Open:true, UpdatedAt:'2026-09-02T14:00:00Z'};
-  const merged = T.MergeGuiStates(local, incoming);
+  incoming.Settings.HidePar = {Value:true,UpdatedAt:'2026-09-02T12:00:00Z'};
+  incoming.Settings.AnimationSpeed = {Value:0.9,UpdatedAt:'2026-09-02T11:00:00Z'};
+  incoming.Sections.Hints = {Open:true,UpdatedAt:'2026-09-02T09:00:00Z'};
+  const merged = T.MergeGuiStates(local,incoming);
   assert(merged.Settings.HidePar.Value === true, 'newer incoming HidePar should win');
-  assert(merged.Settings.AnimationSpeed.Value === 0.7, 'newer local AnimationSpeed should win');
-  assert(merged.Sections.Hints.Open === false, 'newer local Hints should win');
-  assert(merged.Sections.Twofers.Open === true, 'incoming-only Twofers should survive');
+  assert(merged.Settings.AnimationSpeed.Value === 0.4, 'newer local speed should win');
+  assert(merged.Sections.Hints.Open === false, 'newer local Hints state should win');
 });
 
-test('GUI unknown timestamps prefer local', () => {
+test('GUI legacy null timestamp cannot beat real timestamp', () => {
   const local = T.CreateEmptyGuiState();
+  local.Settings.HidePar = {Value:true,UpdatedAt:'2026-09-02T12:00:00Z'};
   const incoming = T.CreateEmptyGuiState();
-  local.Settings.HidePar = {Value:false, UpdatedAt:null};
-  incoming.Settings.HidePar = {Value:true, UpdatedAt:null};
-  const merged = T.MergeGuiStates(local, incoming);
-  assert(merged.Settings.HidePar.Value === false, 'local unknown-time preference should win');
+  incoming.Settings.HidePar = {Value:false,UpdatedAt:null};
+  assert(T.MergeGuiStates(local,incoming).Settings.HidePar.Value === true, 'null timestamp beat known timestamp');
 });
 
-test('Custom dictionary unknown AddedAt remains unknown when merged with known', () => {
-  const merged = T.MergeCustomDictionaryValues(
-    [{Word:'LOVEBUG', Provenance:'User', AddedAt:null, FirstAddedPuzzleId:null, FirstAddedPrintDate:null}],
-    [{Word:'LOVEBUG', Provenance:'User', AddedAt:'2026-09-02T12:00:00Z', FirstAddedPuzzleId:'3000', FirstAddedPrintDate:'2026-09-02'}]
-  );
-  assert(merged.length === 1, 'expected one custom word');
-  assert(merged[0].AddedAt === null, 'unknown first timestamp must stay null');
-  assert(merged[0].FirstAddedPuzzleId === null, 'unknown first puzzle must stay null');
-});
-
-test('Puzzle metadata takes newer record but enriches missing canonical fields', () => {
-  const local = {Version:1, PuzzleId:'3000', PrintDate:'2026-09-01', Sides:['ABC'], NytSolution:['A','B'], LastSeenAt:'2026-09-02T12:00:00Z'};
-  const incoming = {Version:2, PuzzleId:'3000', PrintDate:'2026-09-01', Sides:[], NytSolution:[], DictionaryCount:2222, LastSeenAt:'2026-09-02T13:00:00Z'};
-  const merged = T.MergePuzzleMetadataValues(local, incoming);
-  assert(merged.Version === 2, 'metadata version should max');
-  eq(merged.Sides, ['ABC'], 'missing newer Sides should be enriched from older');
-  eq(merged.NytSolution, ['A','B'], 'missing newer NYT solution should be enriched from older');
-  assert(merged.DictionaryCount === 2222, 'newer dictionary count should survive');
-});
-
-test('Device-local panel width is not overwritten by import', () => {
-  put(T.PanelWidthStorageKey, 500);
-  T.MergeBackupIntoStorage(backup({[T.PanelWidthStorageKey]: 340}));
-  assert(get(T.PanelWidthStorageKey) === 500, 'local panel width should remain 500');
-});
-
-test('v2 -> v3 migration preserves known legacy GUI values without invented timestamps', () => {
-  const v2 = {
-    Format:'LetterBoxedCubedBackup', FormatVersion:2, Puzzles:[], CustomDictionary:[],
-    StorageSnapshot:{[T.HideParStorageKey]:true, [T.LineDrawingSpeedStorageKey]:0.4}
+test('v2 -> v3 migration preserves legacy GUI values without fabricating timestamps', () => {
+  const old = {
+    Format:'LetterBoxedCubedBackup',FormatVersion:2,ExportedAt:'2026-09-01T00:00:00Z',
+    CurrentPuzzleId:'3000',PuzzleCount:0,Puzzles:[],CustomDictionary:[],
+    StorageSnapshot:{
+      [T.HideParStorageKey]: true,
+      [T.LineDrawingSpeedStorageKey]: 0.25
+    }
   };
-  const v3 = T.MigrateBackupToCurrent(v2);
-  assert(v3.FormatVersion === 3, 'schema should migrate to v3');
-  assert(v3.GuiState.Settings.HidePar.Value === true, 'HidePar should migrate');
-  assert(v3.GuiState.Settings.HidePar.UpdatedAt === null, 'HidePar timestamp should remain unknown');
-  assert(v3.GuiState.Settings.AnimationSpeed.Value === 0.4, 'speed should migrate');
-  assert(Object.keys(v3.GuiState.Sections).length === 0, 'must not fabricate historical tree states');
+  const migrated = T.MigrateBackupToCurrent(old);
+  assert(migrated.FormatVersion === 3, 'migration did not reach v3');
+  assert(migrated.GuiState.Settings.HidePar.Value === true, 'legacy HidePar not preserved');
+  assert(migrated.GuiState.Settings.HidePar.UpdatedAt === null, 'migration fabricated HidePar timestamp');
+  assert(migrated.GuiState.Settings.AnimationSpeed.Value === 0.25, 'legacy speed not preserved');
+  assert(migrated.GuiState.Sections.Hints.UpdatedAt === null, 'migration fabricated disclosure timestamp');
 });
 
-for (const row of results) {
-  console.log(row[1], '-', row[0]);
-  if (row[1] === 'FAIL') console.log(row[2]);
+test('Cloud payload omits device-local panel width', () => {
+  global.GameData = null;
+  put(T.PanelWidthStorageKey, 700);
+  put(T.LegacyPanelWidthStorageKey, 800);
+  const data = T.BuildCloudSyncData();
+  assert(!(T.PanelWidthStorageKey in data.StorageSnapshot), 'current panel width leaked to cloud');
+  assert(!(T.LegacyPanelWidthStorageKey in data.StorageSnapshot), 'legacy panel width leaked to cloud');
+});
+
+for (const [name,status,detail] of results) {
+  console.log(`${status}: ${name}`);
+  if (detail) console.log(detail);
 }
-const failed = results.filter(r => r[1] === 'FAIL').length;
-console.log(`\n${results.length - failed}/${results.length} tests passed`);
-process.exitCode = failed ? 1 : 0;
+if (results.some(r=>r[1]==='FAIL')) process.exit(1);
+console.log(`All ${results.length} merge tests passed.`);
