@@ -22,7 +22,7 @@ A Tampermonkey userscript that augments The New York Times' Letter Boxed with pe
 - Persistent portable GUI state for controls and expandable sections.
 - User custom dictionary/provenance.
 - Experimental Animation Speed and Hide Par controls.
-- Google Drive synchronization via a user-owned Google Apps Script bridge (currently in v1.11 beta development).
+- Google Drive synchronization via a user-owned Google Apps Script bridge.
 
 ## Install
 
@@ -30,7 +30,7 @@ Copy `LetterBoxedCubed.user.js` into Tampermonkey (or a compatible userscript ma
 
 ## Google Drive sync
 
-The v1.11 development branch can keep player data and portable GUI state synchronized through a small Google Apps Script bridge that runs under the player's own Google account. The bridge writes a visible `Letter Boxed Cubed/LetterBoxedCubedCloudBackup.json` file in Google Drive.
+LBC v1.11 and later can keep player data and portable GUI state synchronized through a small Google Apps Script bridge that runs under the player's own Google account. The bridge writes a visible `Letter Boxed Cubed/LetterBoxedCubedCloudBackup.json` file in Google Drive.
 
 See `docs/GoogleDriveSync.md` for setup and security details.
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.11.0
+- Added Google Drive synchronization through a user-owned Apps Script bridge with startup sync, read-merge-write semantics, revision-conflict retry, and local-only credentials.
+- Made manual import and cloud sync merge-safe so independent devices union Found Words, solved Twofers, custom words, and compatible metadata instead of overwriting one another.
+- Added portable GUI-state persistence and per-setting/per-section timestamps for conflict-safe multi-device merging; physical panel width remains device-local.
+- Added Browse History for spoiler-safe, found-only cloud history with first/previous/next/last navigation and top-of-viewport modal anchoring.
+- Fixed escaped newline text in dialogs and alerts.
+- Added backup schema v3, migration support, regression tests, Drive documentation, preview-channel tooling, and release documentation.
+
 ## 1.11.0-beta.2
 - Added Browse History, which reads the synced Google Drive backup and renders prior puzzle data in an LBC-style found-only history viewer.
 - Added first/previous/next/last history navigation and defaulted the viewer to the most recent retained puzzle before the current day.

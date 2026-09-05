@@ -1,6 +1,6 @@
 # Google Drive Sync
 
-> Beta status: the Drive sync implementation is currently available through the LBC preview channel (`#lbc-preview`) while issues #2 and #3 are under joint testing.
+> Google Drive sync is available in LBC v1.11 and later.
 
 Letter Boxed Cubed can synchronize its portable player data and GUI state through a small Google Apps Script bridge owned by the user. The actual cloud backup is stored as a visible JSON file in a `Letter Boxed Cubed` folder in the user's Google Drive.
 

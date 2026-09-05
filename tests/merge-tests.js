@@ -68,9 +68,12 @@ test('FoundWords union deduplicates overlap', () => {
 
 test('FoundTwofers union by normalized pair key', () => {
   const key = 'LetterBoxedCubed_FoundTwofers_3000';
-  put(key, [['ALPHA','APPLE']]);
-  T.MergeBackupIntoStorage(backup({[key]: [['ALPHA','APPLE'],['APPLE','ELM']]}));
-  eq(get(key), [['ALPHA','APPLE'],['APPLE','ELM']], 'FoundTwofers set union');
+  const separator = '\u001F';
+  const first = `ALPHA${separator}APPLE`;
+  const second = `APPLE${separator}ELM`;
+  put(key, [first]);
+  T.MergeBackupIntoStorage(backup({[key]: [first, second]}));
+  eq(get(key), [first, second], 'FoundTwofers set union');
 });
 
 test('CustomWords union', () => {
@@ -142,7 +145,7 @@ test('v2 -> v3 migration preserves legacy GUI values without fabricating timesta
   assert(migrated.GuiState.Settings.HidePar.Value === true, 'legacy HidePar not preserved');
   assert(migrated.GuiState.Settings.HidePar.UpdatedAt === null, 'migration fabricated HidePar timestamp');
   assert(migrated.GuiState.Settings.AnimationSpeed.Value === 0.25, 'legacy speed not preserved');
-  assert(migrated.GuiState.Sections.Hints.UpdatedAt === null, 'migration fabricated disclosure timestamp');
+  assert(!Object.prototype.hasOwnProperty.call(migrated.GuiState.Sections, 'Hints'), 'migration fabricated disclosure state');
 });
 
 test('Cloud payload omits device-local panel width', () => {
