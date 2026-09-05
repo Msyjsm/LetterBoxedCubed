@@ -19,40 +19,34 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import re
           p = Path('LetterBoxedCubed.user.js')
           s = p.read_text()
-          old = '''            #${HistoryOverlayId} {
-                position: fixed;
-                inset: 0;
-                z-index: 100000;
-                display: flex;
-                align-items: center;
-                justify-content: center;'''
-          new = '''            #${HistoryOverlayId} {
-                position: fixed;
-                inset: 0;
-                z-index: 100000;
-                display: flex;
-                align-items: flex-start;
-                justify-content: center;
-                padding: 12px;'''
-          if old not in s:
-              raise SystemExit('history overlay block not found')
-          s = s.replace(old, new, 1)
-          s = s.replace('max-height: min(820px, 90vh);', 'max-height: calc(100vh - 24px);', 1)
-          s = s.replace('''                #${HistoryOverlayId} {
-                    padding: 8px;
-                }
 
-                .lb-cubed-history-modal {
-                    max-height: 94vh;
-                }''', '''                #${HistoryOverlayId} {
-                    padding: 12px;
-                }
+          pattern = r'(#\$\{HistoryOverlayId\}\s*\{.*?display:\s*flex;\s*)align-items:\s*center;(\s*justify-content:\s*center;)'
+          s, count = re.subn(pattern, r'\1align-items: flex-start;\2\n                padding: 12px;', s, count=1, flags=re.S)
+          if count != 1:
+              raise SystemExit(f'overlay alignment replacement count={count}')
 
-                .lb-cubed-history-modal {
-                    max-height: calc(100vh - 24px);
-                }''', 1)
+          s, count = re.subn(r'max-height:\s*min\(820px,\s*90vh\);', 'max-height: calc(100vh - 24px);', s, count=1)
+          if count != 1:
+              raise SystemExit(f'modal max-height replacement count={count}')
+
+          s = re.sub(
+              r'(#\$\{HistoryOverlayId\}\s*\{\s*)padding:\s*8px;',
+              r'\1padding: 12px;',
+              s,
+              count=1,
+              flags=re.S
+          )
+          s = re.sub(
+              r'(\.lb-cubed-history-modal\s*\{\s*)max-height:\s*94vh;',
+              r'\1max-height: calc(100vh - 24px);',
+              s,
+              count=1,
+              flags=re.S
+          )
+
           p.write_text(s)
           PY
           node --check LetterBoxedCubed.user.js
