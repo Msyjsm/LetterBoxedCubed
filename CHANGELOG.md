@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.12.0-beta.1
+- Moved Hide Par, animation controls, Google Drive actions, Export, and Import into a compact Settings menu; added a lightweight Drive status beside Word Log.
+- Added an optional draggable TI-to-GB layout-gap handle with a stored precise gap setting.
+- Added per-word solved/total Twofer progress to First/Second Hints and strike-through when a positional word is fully exhausted.
+- Added configurable chartreuse fade highlights for newly found words and solved Twofers, including the matching Words by Length row.
+- Added proportional resize/hide controls and on-page drag handles for NYT's global header and Letter Boxed title area.
+- Added Settings toggles to place the byline and a Yesterday proxy beside the date.
+
 ## 1.11.0
 - Added Google Drive synchronization through a user-owned Apps Script bridge with startup sync, read-merge-write semantics, revision-conflict retry, and local-only credentials.
 - Made manual import and cloud sync merge-safe so independent devices union Found Words, solved Twofers, custom words, and compatible metadata instead of overwriting one another.
