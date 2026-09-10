@@ -37,6 +37,18 @@ The URL fragment (`#lbc-preview`) is client-side state; browsers do not send it 
 
 Each workflow run appends the monotonically increasing `github.run_number` to the source version. For example, source `1.10.3` may become preview `1.10.3.22`. This means every pushed test build has a newer Tampermonkey version even when the production `@version` has not yet been bumped.
 
+## v1.12 QoL bundle checks
+
+The `feature/qol-4-10-12-13-14` preview bundles issues #4, #10, #12, #13, and #14 as `1.12.0-beta.1`.
+
+- The main LBC header should contain only the custom-dictionary control, **Browse History**, and **Settings**. Google Drive state should appear as light-gray text beside **Word Log**.
+- Settings should contain Hide Par, Animation Speed, Google Drive controls, Export/Import, the **Adjust layout gap** toggle and precise gap value, highlight duration, NYT header/title size controls, and the byline/Yesterday layout toggles.
+- **Adjust layout gap** should reveal a horizontal drag grip between TI and GB; dragging it or editing the numeric gap should persist the new spacing.
+- First/Second Hint entries should show solved/total Twofer progress for that word in that position, and completed entries should be struck through.
+- Newly discovered words should briefly fade from chartreuse in Found Words and Hints. Because Words by Length currently contains aggregate count rows rather than individual words, the corresponding length-count row is highlighted and its tooltip identifies the newly found word. Newly solved Twofers should receive the same effect.
+- The NYT global header and Letter Boxed title area should each have an on-page vertical resize grip. Their Settings values are percentages of native size; 0% hides the region and Reset returns it to 100%.
+- The byline toggle should place the byline beside the date. The Yesterday toggle should place an equivalent Yesterday control on that same line, right-justified, while preserving NYT's actual button behavior.
+
 ## Automated source commits and stale previews
 
 A normal push to the active development branch triggers the preview workflow automatically. There is one important GitHub Actions edge case: if another workflow commits a source change using the repository's built-in `GITHUB_TOKEN`, GitHub intentionally does not start a second `push` workflow from that generated commit. That prevents accidental workflow recursion, but it also means a preview can become one commit stale after a workflow-authored source patch.
