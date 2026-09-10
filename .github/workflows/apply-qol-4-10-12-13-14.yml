@@ -1,0 +1,37 @@
+name: Apply QoL bundle
+
+on:
+  push:
+    paths:
+      - '.github/workflows/apply-qol-4-10-12-13-14.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply QoL changes and validate
+        run: |
+          python tools/apply_qol_4_10_12_13_14.py
+          node --check LetterBoxedCubed.user.js
+          node tests/merge-tests.js
+          grep -Fq '// @version      1.12.0-beta.1' LetterBoxedCubed.user.js
+          grep -Fq '⚙ Settings' LetterBoxedCubed.user.js
+          grep -Fq 'New-item highlight' LetterBoxedCubed.user.js
+          grep -Fq 'Put Yesterday next to date' LetterBoxedCubed.user.js
+
+      - name: Commit implementation and remove one-shot tooling
+        run: |
+          git config user.name "Nathan Burgdorff + Ari (ChatGPT)"
+          git config user.email "6709230+Msyjsm@users.noreply.github.com"
+          git rm tools/apply_qol_4_10_12_13_14.py
+          git rm .github/workflows/apply-qol-4-10-12-13-14.yml
+          git add LetterBoxedCubed.user.js CHANGELOG.md
+          git commit -m "Implement QoL enhancements #4 #10 #12 #13 #14"
+          git push origin HEAD:feature/qol-4-10-12-13-14
