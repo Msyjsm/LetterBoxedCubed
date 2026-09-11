@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed [PREVIEW]
 // @namespace    https://nathanburgdorff.com/userscripts/preview/
-// @version      1.12.0-beta.1.29
+// @version      1.12.0-beta.2.30
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -195,8 +195,8 @@
     let LayoutGapPx = LeftColumnGap;
     let NytHeaderScale = 1.0;
     let NytTitleScale = 1.0;
-    let BylineNextToDate = false;
-    let YesterdayNextToDate = false;
+    let CompactTitleLayout = false;
+    let HideYesterdayHelpRow = false;
 
     const RecentWordHighlights = new Map();
     const RecentTwoferHighlights = new Map();
@@ -291,8 +291,8 @@
             LayoutGapPx,
             NytHeaderScale,
             NytTitleScale,
-            BylineNextToDate,
-            YesterdayNextToDate,
+            CompactTitleLayout,
+            HideYesterdayHelpRow,
             TwofersGrouped,
             GuiState,
             GoogleDriveConfigured: Boolean(GoogleDriveConfig?.Enabled),
@@ -981,12 +981,12 @@
             MaximumNytPageScale
         );
 
-        BylineNextToDate = Boolean(
-            GetGuiSetting("BylineNextToDate", false)
+        CompactTitleLayout = Boolean(
+            GetGuiSetting("CompactTitleLayout", false)
         );
 
-        YesterdayNextToDate = Boolean(
-            GetGuiSetting("YesterdayNextToDate", false)
+        HideYesterdayHelpRow = Boolean(
+            GetGuiSetting("HideYesterdayHelpRow", false)
         );
     }
 
@@ -1090,6 +1090,34 @@
         if (RecentWords.length) {
             Element.title = `Recently found: ${RecentWords.sort(Alphabetically).join(", ")}`;
         }
+    }
+
+    function ApplyRecentWordGroupHighlight(Element, Predicate) {
+        let LatestExpiry = 0;
+        const Now = Date.now();
+
+        for (const [Word, ExpiresAt] of RecentWordHighlights) {
+            if (ExpiresAt <= Now) {
+                RecentWordHighlights.delete(Word);
+                continue;
+            }
+
+            if (Predicate(Word)) {
+                LatestExpiry = Math.max(LatestExpiry, ExpiresAt);
+            }
+        }
+
+        if (!LatestExpiry) {
+            return false;
+        }
+
+        Element.classList.add("lb-cubed-new-highlight");
+        Element.style.setProperty(
+            "--lb-cubed-highlight-duration",
+            `${Math.max(1, Math.round(LatestExpiry - Now))}ms`
+        );
+
+        return true;
     }
 
     function CreateSettingsSection(TitleText) {
@@ -1245,50 +1273,10 @@
         const Menu = document.createElement("div");
         Menu.className = "lb-cubed-settings-panel";
 
-        const DisplaySection = CreateSettingsSection("Display");
-        DisplaySection.append(
-            CreateSettingsCheckbox(
-                "Hide Par",
-                HidePar,
-                Checked => {
-                    HidePar = Checked;
-                    SaveHideParPreference();
-                    ApplyHideParPreference();
-                },
-                "Hide NYT's 'Try to solve in X words' par text"
-            ),
-            CreateSettingsCheckbox(
-                "Adjust layout gap",
-                AdjustLayoutGap,
-                Checked => {
-                    AdjustLayoutGap = Checked;
-                    SetGuiSetting("AdjustLayoutGap", AdjustLayoutGap);
-                    UpdateLayoutGapHandleVisibility();
-                    PositionLayoutGapResizeHandle();
-                },
-                "Show a draggable bar between the word-entry area and puzzle box"
-            ),
-            CreateSettingsNumberWithReset(
-                "Layout gap",
-                Math.round(LayoutGapPx),
-                MinimumLayoutGap,
-                MaximumLayoutGap,
-                1,
-                "px",
-                LeftColumnGap,
-                "LayoutGapPx",
-                Value => {
-                    LayoutGapPx = Value;
-                    SetGuiSetting("LayoutGapPx", LayoutGapPx);
-                    UpdatePanelLayout();
-                }
-            )
-        );
-
         const AnimationSection = CreateSettingsSection("Feedback & animation");
         AnimationSection.append(
             CreateSettingsRange(
-                "Animation Speed",
+                "Line animation speed",
                 LineDrawingSpeed,
                 0,
                 1,
@@ -1303,7 +1291,7 @@
                 }
             ),
             CreateSettingsRange(
-                "New-item highlight",
+                "New word highlight",
                 NewItemHighlightSeconds,
                 MinimumNewItemHighlightSeconds,
                 MaximumNewItemHighlightSeconds,
@@ -1330,8 +1318,8 @@
             )
         );
 
-        const NytSection = CreateSettingsSection("NYT page layout");
-        NytSection.append(
+        const DisplaySection = CreateSettingsSection("Display");
+        DisplaySection.append(
             CreateSettingsNumberWithReset(
                 "Header size",
                 Math.round(NytHeaderScale * 100),
@@ -1363,26 +1351,75 @@
                 }
             ),
             CreateSettingsCheckbox(
-                "Put byline next to date",
-                BylineNextToDate,
+                "Compact title layout",
+                CompactTitleLayout,
                 Checked => {
-                    BylineNextToDate = Checked;
-                    SetGuiSetting("BylineNextToDate", BylineNextToDate);
+                    CompactTitleLayout = Checked;
+                    SetGuiSetting("CompactTitleLayout", CompactTitleLayout);
                     ApplyNytPagePreferences();
                 }
             ),
             CreateSettingsCheckbox(
-                "Put Yesterday next to date",
-                YesterdayNextToDate,
+                "Hide Yesterday/Help row",
+                HideYesterdayHelpRow,
                 Checked => {
-                    YesterdayNextToDate = Checked;
-                    SetGuiSetting("YesterdayNextToDate", YesterdayNextToDate);
+                    HideYesterdayHelpRow = Checked;
+                    SetGuiSetting("HideYesterdayHelpRow", HideYesterdayHelpRow);
                     ApplyNytPagePreferences();
+                }
+            ),
+            CreateSettingsCheckbox(
+                "Hide par",
+                HidePar,
+                Checked => {
+                    HidePar = Checked;
+                    SaveHideParPreference();
+                    ApplyHideParPreference();
+                },
+                "Hide NYT's 'Try to solve in X words' par text"
+            )
+        );
+
+        const GapGroup = document.createElement("div");
+        GapGroup.className = "lb-cubed-settings-subgroup";
+
+        const GapHeading = document.createElement("div");
+        GapHeading.className = "lb-cubed-settings-subgroup-title";
+        GapHeading.textContent = "Adjust layout gap between text input and letter box:";
+
+        GapGroup.append(
+            GapHeading,
+            CreateSettingsCheckbox(
+                "Enable draggable grip line",
+                AdjustLayoutGap,
+                Checked => {
+                    AdjustLayoutGap = Checked;
+                    SetGuiSetting("AdjustLayoutGap", AdjustLayoutGap);
+                    UpdateLayoutGapHandleVisibility();
+                    PositionLayoutGapResizeHandle();
+                },
+                "Show a draggable horizontal grip that adjusts the same gap value as the manual input"
+            ),
+            CreateSettingsNumberWithReset(
+                "Manually set gap",
+                Math.round(LayoutGapPx),
+                MinimumLayoutGap,
+                MaximumLayoutGap,
+                1,
+                "px",
+                LeftColumnGap,
+                "LayoutGapPx",
+                Value => {
+                    LayoutGapPx = Value;
+                    SetGuiSetting("LayoutGapPx", LayoutGapPx);
+                    UpdatePanelLayout();
                 }
             )
         );
 
-        const DataSection = CreateSettingsSection("Data");
+        DisplaySection.appendChild(GapGroup);
+
+        const SyncSection = CreateSettingsSection("Sync");
         const DriveRow = document.createElement("div");
         DriveRow.className = "lb-cubed-settings-action-row";
 
@@ -1408,8 +1445,8 @@
 
         DriveRow.append(DriveLabel, GoogleDriveButton);
 
-        const DataButtons = document.createElement("div");
-        DataButtons.className = "lb-cubed-settings-button-row";
+        const SyncButtons = document.createElement("div");
+        SyncButtons.className = "lb-cubed-settings-button-row";
 
         const ExportButton = document.createElement("button");
         ExportButton.type = "button";
@@ -1433,14 +1470,13 @@
             PromptForImport();
         });
 
-        DataButtons.append(ExportButton, ImportButton);
-        DataSection.append(DriveRow, DataButtons);
+        SyncButtons.append(ExportButton, ImportButton);
+        SyncSection.append(DriveRow, SyncButtons);
 
         Menu.append(
-            DisplaySection,
             AnimationSection,
-            NytSection,
-            DataSection
+            DisplaySection,
+            SyncSection
         );
         Details.appendChild(Menu);
 
@@ -1661,55 +1697,66 @@
         }
     }
 
-    function ApplyNytTitleArrangement() {
-        const Host = document.querySelector("#portal-game-header");
-        if (!Host) {
-            return;
-        }
-
-        const OriginalYesterday = document.querySelector(
+    function FindYesterdayHelpRow() {
+        const Yesterday = document.querySelector(
             '#yesterday-button, [data-testid="yesterday-button"]'
         );
 
-        Host.classList.toggle(
-            "lb-cubed-title-meta-layout",
-            BylineNextToDate || YesterdayNextToDate
-        );
-        Host.classList.toggle(
-            "lb-cubed-byline-next-to-date",
-            BylineNextToDate
-        );
+        if (!Yesterday) {
+            return null;
+        }
 
-        let Proxy = Host.querySelector(".lb-cubed-yesterday-proxy");
+        const Root = document.querySelector("#letter-boxed-container") || document.body;
+        let Candidate = Yesterday.parentElement;
+        const ImmediateParent = Candidate;
 
-        if (YesterdayNextToDate && OriginalYesterday) {
-            OriginalYesterday.classList.add("lb-cubed-original-yesterday-hidden");
+        const ContainsHelpControl = Element =>
+            [...Element.querySelectorAll("button, a")].some(Control => {
+                const Description = [
+                    Control.textContent,
+                    Control.getAttribute("aria-label"),
+                    Control.getAttribute("title"),
+                    Control.getAttribute("data-testid")
+                ]
+                    .filter(Boolean)
+                    .join(" ");
 
-            if (!Proxy) {
-                Proxy = OriginalYesterday.cloneNode(true);
-                Proxy.removeAttribute("id");
-                Proxy.removeAttribute("data-testid");
-                Proxy.removeAttribute("aria-controls");
-                Proxy.removeAttribute("aria-expanded");
-                Proxy.classList.add("lb-cubed-yesterday-proxy");
-                Proxy.title = "Yesterday";
+                return /help/i.test(Description);
+            });
 
-                Proxy.addEventListener("click", Event => {
-                    Event.preventDefault();
-                    Event.stopPropagation();
-
-                    const CurrentOriginal = document.querySelector(
-                        '#yesterday-button, [data-testid="yesterday-button"]'
-                    );
-                    CurrentOriginal?.click();
-                });
-
-                Host.appendChild(Proxy);
+        while (Candidate && Candidate !== Root && Candidate !== document.body) {
+            if (ContainsHelpControl(Candidate)) {
+                return Candidate;
             }
-        } else {
-            Proxy?.remove();
-            document.querySelectorAll(".lb-cubed-original-yesterday-hidden")
-                .forEach(Element => Element.classList.remove("lb-cubed-original-yesterday-hidden"));
+
+            Candidate = Candidate.parentElement;
+        }
+
+        return ImmediateParent;
+    }
+
+    function ApplyNytTitleArrangement() {
+        const Host = document.querySelector("#portal-game-header");
+
+        // Remove beta.1's proxy behavior if this script was hot-updated.
+        Host?.querySelectorAll(".lb-cubed-yesterday-proxy")
+            .forEach(Element => Element.remove());
+        document.querySelectorAll(".lb-cubed-original-yesterday-hidden")
+            .forEach(Element => Element.classList.remove("lb-cubed-original-yesterday-hidden"));
+
+        if (Host) {
+            Host.classList.toggle(
+                "lb-cubed-compact-title-layout",
+                CompactTitleLayout
+            );
+        }
+
+        document.querySelectorAll(".lb-cubed-yesterday-help-row-hidden")
+            .forEach(Element => Element.classList.remove("lb-cubed-yesterday-help-row-hidden"));
+
+        const YesterdayHelpRow = FindYesterdayHelpRow();
+        if (HideYesterdayHelpRow && YesterdayHelpRow) {
+            YesterdayHelpRow.classList.add("lb-cubed-yesterday-help-row-hidden");
         }
     }
 
@@ -4704,8 +4751,8 @@
         );
 
         GameContainer.style.setProperty(
-            "--lb-cubed-word-area-height",
-            `${StableWordAreaHeight}px`
+            "--lb-cubed-layout-gap",
+            `${LayoutGapPx}px`
         );
 
         GameContainer.style.setProperty(
@@ -4725,7 +4772,7 @@
 
         GameContainer.style.setProperty(
             "--lb-cubed-left-column-gap",
-            `${LayoutGapPx}px`
+            "0px"
         );
 
         GameContainer.style.setProperty(
@@ -4791,8 +4838,8 @@
         );
 
         GameContainer.style.setProperty(
-            "--lb-cubed-word-area-height",
-            `${StableWordAreaHeight}px`
+            "--lb-cubed-layout-gap",
+            `${LayoutGapPx}px`
         );
 
         GameContainer.style.setProperty(
@@ -4807,7 +4854,7 @@
 
         GameContainer.style.setProperty(
             "--lb-cubed-left-column-gap",
-            `${LayoutGapPx}px`
+            "0px"
         );
 
         GameContainer.style.setProperty(
@@ -5402,17 +5449,29 @@
         const StatGrid = document.createElement("div");
         StatGrid.className = "lb-cubed-stat-grid";
 
-        AddStat(
+        const CompletionCard = AddStat(
             StatGrid,
             "Completion",
             `${Stats.FoundCount.toLocaleString()} / ${Stats.TotalCount.toLocaleString()} (${Stats.PercentFound.toFixed(1)}%)`
         );
 
-        AddStat(
+        ApplyRecentWordGroupHighlight(
+            CompletionCard,
+            () => true
+        );
+
+        const LongestCard = AddStat(
             StatGrid,
             "Longest Found",
             Stats.LongestFoundText
         );
+
+        if (Stats.LongestLength > 0) {
+            ApplyRecentWordGroupHighlight(
+                LongestCard,
+                Word => Word.length === Stats.LongestLength
+            );
+        }
 
         Panel.appendChild(StatGrid);
     }
@@ -5764,11 +5823,20 @@
         const LengthGrid = document.createElement("div");
         LengthGrid.className = "lb-cubed-length-grid";
 
-        AddLengthStat(LengthGrid, "3 letters", Stats.LengthStats["3"], "3");
-        AddLengthStat(LengthGrid, "4 letters", Stats.LengthStats["4"], "4");
-        AddLengthStat(LengthGrid, "5 letters", Stats.LengthStats["5"], "5");
-        AddLengthStat(LengthGrid, "6 letters", Stats.LengthStats["6"], "6");
-        AddLengthStat(LengthGrid, "7+ letters", Stats.LengthStats["7+"], "7+");
+        const Lengths = Object.keys(Stats.LengthStats)
+            .map(Number)
+            .filter(Number.isFinite)
+            .sort((A, B) => A - B);
+
+        for (const Length of Lengths) {
+            const Bucket = String(Length);
+            AddLengthStat(
+                LengthGrid,
+                `${Length} letters`,
+                Stats.LengthStats[Bucket],
+                Bucket
+            );
+        }
 
         LengthDetails.appendChild(LengthGrid);
         Panel.appendChild(LengthDetails);
@@ -5914,6 +5982,7 @@
 
         Card.append(ValueElement, LabelElement);
         Container.appendChild(Card);
+        return Card;
     }
 
     function AddLengthStat(Container, Label, Values, Bucket) {
@@ -5945,32 +6014,36 @@
             ? 0
             : (FoundCount / TotalCount) * 100;
 
-        const LengthStats = {
-            "3": { Found: 0, Total: 0 },
-            "4": { Found: 0, Total: 0 },
-            "5": { Found: 0, Total: 0 },
-            "6": { Found: 0, Total: 0 },
-            "7+": { Found: 0, Total: 0 }
-        };
+        const LengthStats = {};
 
         for (const Word of Dictionary) {
             const Bucket = GetLengthBucket(Word.length);
-            if (Bucket) {
-                LengthStats[Bucket].Total++;
+            if (!Bucket) {
+                continue;
             }
+
+            if (!LengthStats[Bucket]) {
+                LengthStats[Bucket] = {
+                    Found: 0,
+                    Total: 0
+                };
+            }
+
+            LengthStats[Bucket].Total++;
         }
 
         for (const Word of FoundDictionaryWords) {
             const Bucket = GetLengthBucket(Word.length);
-            if (Bucket) {
+            if (Bucket && LengthStats[Bucket]) {
                 LengthStats[Bucket].Found++;
             }
         }
 
         let LongestFoundText = "-";
+        let LongestLength = 0;
 
         if (FoundDictionaryWords.length > 0) {
-            const LongestLength = Math.max(
+            LongestLength = Math.max(
                 ...FoundDictionaryWords.map(Word => Word.length)
             );
 
@@ -5985,17 +6058,17 @@
             TotalCount,
             PercentFound,
             LengthStats,
-            LongestFoundText
+            LongestFoundText,
+            LongestLength
         };
     }
 
     function GetLengthBucket(Length) {
-        if (Length === 3) return "3";
-        if (Length === 4) return "4";
-        if (Length === 5) return "5";
-        if (Length === 6) return "6";
-        if (Length >= 7) return "7+";
-        return null;
+        const NumericLength = Number(Length);
+
+        return Number.isFinite(NumericLength) && NumericLength > 0
+            ? String(Math.trunc(NumericLength))
+            : null;
     }
 
     // -------------------------------------------------------------------------
@@ -6111,48 +6184,48 @@
                 display: none !important;
             }
 
-            #portal-game-header.lb-cubed-title-meta-layout {
-                display: grid !important;
-                grid-template-columns: auto auto minmax(0, 1fr) auto;
-                grid-template-rows: auto auto auto;
-                column-gap: 10px;
-                row-gap: 3px;
-                align-items: center;
+            #letter-boxed-container .pz-game-title-bar {
+                justify-content: flex-start !important;
+                text-align: left !important;
+                transform-origin: left top !important;
             }
 
-            #portal-game-header.lb-cubed-title-meta-layout > h2 {
+            #portal-game-header {
+                margin-left: 0 !important;
+                margin-right: auto !important;
+                text-align: left !important;
+                transform-origin: left top !important;
+            }
+
+            #portal-game-header.lb-cubed-compact-title-layout {
+                display: flex !important;
+                flex-flow: row nowrap !important;
+                align-items: center !important;
+                justify-content: flex-start !important;
+                gap: 10px;
+                width: max-content !important;
+                max-width: 100% !important;
+                margin-left: 0 !important;
+                margin-right: auto !important;
+                text-align: left !important;
+            }
+
+            #portal-game-header.lb-cubed-compact-title-layout > h2 {
                 display: contents !important;
             }
 
-            #portal-game-header.lb-cubed-title-meta-layout .pz-game-title {
-                grid-column: 1 / -1;
-                grid-row: 1;
-            }
-
-            #portal-game-header.lb-cubed-title-meta-layout .pz-game-date {
-                grid-column: 1;
-                grid-row: 2;
+            #portal-game-header.lb-cubed-compact-title-layout .pz-game-title,
+            #portal-game-header.lb-cubed-compact-title-layout .pz-game-date,
+            #portal-game-header.lb-cubed-compact-title-layout .pz-byline {
+                width: auto !important;
                 margin: 0 !important;
+                align-self: center !important;
+                text-align: left !important;
+                white-space: nowrap !important;
             }
 
-            #portal-game-header.lb-cubed-title-meta-layout .pz-byline {
-                grid-column: 1 / -1;
-                grid-row: 3;
-                margin-top: 0 !important;
-            }
-
-            #portal-game-header.lb-cubed-title-meta-layout.lb-cubed-byline-next-to-date .pz-byline {
-                grid-column: 2;
-                grid-row: 2;
-                align-self: center;
-                margin: 0 !important;
-            }
-
-            #portal-game-header .lb-cubed-yesterday-proxy {
-                grid-column: 4;
-                grid-row: 2;
-                justify-self: end;
-                align-self: center;
+            .lb-cubed-yesterday-help-row-hidden {
+                display: none !important;
             }
 
             .lb-cubed-original-yesterday-hidden {
@@ -6173,7 +6246,7 @@
                     LBC's height completely.
                 */
                 grid-template-rows:
-                    var(--lb-cubed-word-area-height, 250px)
+                    auto
                     var(--lb-cubed-square-height, auto) !important;
                 column-gap: var(--lb-cubed-gap, 24px) !important;
                 row-gap: var(--lb-cubed-left-column-gap, 16px) !important;
@@ -6194,9 +6267,9 @@
                 width: var(--lb-cubed-word-width) !important;
                 min-width: var(--lb-cubed-word-width) !important;
                 max-width: var(--lb-cubed-word-width) !important;
-                height: var(--lb-cubed-word-area-height, 250px) !important;
-                min-height: var(--lb-cubed-word-area-height, 250px) !important;
-                max-height: var(--lb-cubed-word-area-height, 250px) !important;
+                height: auto !important;
+                min-height: 0 !important;
+                max-height: none !important;
             }
 
             .lb-game-container.${SideModeClass} > .lb-square-container {
@@ -6227,7 +6300,7 @@
                 display: grid !important;
                 grid-template-columns: minmax(0, 1fr) !important;
                 grid-template-rows:
-                    var(--lb-cubed-word-area-height, 250px)
+                    auto
                     var(--lb-cubed-square-height, auto)
                     auto !important;
                 row-gap: var(--lb-cubed-left-column-gap, 16px) !important;
@@ -6246,9 +6319,9 @@
                 justify-self: center !important;
                 width: min(var(--lb-cubed-word-width), 100%) !important;
                 max-width: 100% !important;
-                height: var(--lb-cubed-word-area-height, 250px) !important;
-                min-height: var(--lb-cubed-word-area-height, 250px) !important;
-                max-height: var(--lb-cubed-word-area-height, 250px) !important;
+                height: auto !important;
+                min-height: 0 !important;
+                max-height: none !important;
             }
 
             .lb-game-container.${StackedModeClass} > .lb-square-container {
@@ -6302,6 +6375,10 @@
             > .lb-list-container {
                 order: 2;
                 flex: 0 0 auto;
+                height: auto !important;
+                min-height: 0 !important;
+                max-height: none !important;
+                padding-bottom: var(--lb-cubed-layout-gap, 16px) !important;
             }
 
             .lb-game-container.${LayoutClass}
@@ -6536,6 +6613,22 @@
                 font-weight: 800;
                 letter-spacing: 0.04em;
                 text-transform: uppercase;
+            }
+
+            .lb-cubed-settings-subgroup {
+                margin-top: 6px;
+                padding: 6px;
+                border: 1px solid rgba(78, 34, 34, 0.18);
+                border-radius: 3px;
+                background: rgba(255, 255, 255, 0.07);
+            }
+
+            .lb-cubed-settings-subgroup-title {
+                margin-bottom: 2px;
+                color: rgba(48, 24, 24, 0.82);
+                font-size: 10px;
+                font-weight: 700;
+                line-height: 1.3;
             }
 
             .lb-cubed-settings-checkbox,
