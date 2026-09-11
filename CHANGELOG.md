@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.12.0-beta.2
+- Reworked the TI-to-letter-box gap control to compact NYT's `.lb-list-container` instead of changing the outer grid row gap.
+- Reorganized Settings into Feedback & animation, Display, and Sync; folded NYT page-layout controls into Display and clarified control labels.
+- Replaced the beta title/byline and Yesterday proxy behaviors with Compact title layout and Hide Yesterday/Help row.
+- Added new-word highlights to Completion and Longest Found, including tied-longest additions.
+- Expanded Words by Length to one row per exact length present in the dictionary.
+
 ## 1.12.0-beta.1
 - Moved Hide Par, animation controls, Google Drive actions, Export, and Import into a compact Settings menu; added a lightweight Drive status beside Word Log.
 - Added an optional draggable TI-to-GB layout-gap handle with a stored precise gap setting.
