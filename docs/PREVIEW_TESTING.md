@@ -39,15 +39,20 @@ Each workflow run appends the monotonically increasing `github.run_number` to th
 
 ## v1.12 QoL bundle checks
 
-The `feature/qol-4-10-12-13-14` preview bundles issues #4, #10, #12, #13, and #14 as `1.12.0-beta.1`.
+The `feature/qol-4-10-12-13-14` preview bundles issues #4, #10, #12, #13, #14, #16, and #17. The current source is `1.12.0-beta.2`.
 
 - The main LBC header should contain only the custom-dictionary control, **Browse History**, and **Settings**. Google Drive state should appear as light-gray text beside **Word Log**.
-- Settings should contain Hide Par, Animation Speed, Google Drive controls, Export/Import, the **Adjust layout gap** toggle and precise gap value, highlight duration, NYT header/title size controls, and the byline/Yesterday layout toggles.
-- **Adjust layout gap** should reveal a horizontal drag grip between TI and GB; dragging it or editing the numeric gap should persist the new spacing.
+- Settings sections should appear in this order: **FEEDBACK & ANIMATION**, **DISPLAY**, **SYNC**. The former NYT page-layout controls are folded into DISPLAY before LBC display controls.
+- Settings copy should use **Hide par**, **Line animation speed**, **New word highlight**, **Compact title layout**, and **Hide Yesterday/Help row**.
+- **Adjust layout gap between text input and letter box** should contain **Enable draggable grip line** plus the precise **Manually set gap** pixel input/reset. Both controls change the same persisted value.
+- The layout-gap control should compact/expand the space associated with NYT's `.lb-list-container`, rather than adding an external grid gap between TI and GB.
 - First/Second Hint entries should show solved/total Twofer progress for that word in that position, and completed entries should be struck through.
-- Newly discovered words should briefly fade from chartreuse in Found Words and Hints. Because Words by Length currently contains aggregate count rows rather than individual words, the corresponding length-count row is highlighted and its tooltip identifies the newly found word. Newly solved Twofers should receive the same effect.
+- Newly discovered words should briefly fade from chartreuse in Found Words and Hints. Their exact Words-by-Length row should highlight as well, and newly solved Twofers should receive the same effect.
+- Completion should highlight for every newly discovered dictionary word. Longest Found should highlight when the new word establishes a new maximum or ties the current maximum length.
+- Words by Length should contain one row for every exact word length present in the current dictionary; absent lengths should be omitted rather than rolled into `7+`.
 - The NYT global header and Letter Boxed title area should each have an on-page vertical resize grip. Their Settings values are percentages of native size; 0% hides the region and Reset returns it to 100%.
-- The byline toggle should place the byline beside the date. The Yesterday toggle should place an equivalent Yesterday control on that same line, right-justified, while preserving NYT's actual button behavior.
+- **Compact title layout** should keep the game title, date, and byline on a single left-justified row with vertical centers aligned, including when the title region is scaled down.
+- **Hide Yesterday/Help row** should simply hide the native row containing those controls; it should not clone or proxy Yesterday.
 
 ## Automated source commits and stale previews
 
