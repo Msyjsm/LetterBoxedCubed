@@ -39,10 +39,11 @@ Each workflow run appends the monotonically increasing `github.run_number` to th
 
 ## v1.12 QoL bundle checks
 
-The `feature/qol-4-10-12-13-14` preview bundles issues #4, #10, #12, #13, #14, #16, and #17. The current source is `1.12.0-beta.3`.
+The `feature/qol-4-10-12-13-14` preview bundles issues #4, #5, #10, #12, #13, #14, #16, #17, and #18. The current source is `1.12.0-beta.4`.
 
 - LBC must not participate in TI/GB grid row sizing. The letter box should sit immediately after TI's natural content plus the chosen gap, regardless of LBC panel height.
-- **Adjust layout gap between text input and letter box** still owns the extra spacing inside NYT's `.lb-list-container`; each pixel of adjustment should move actual page content rather than only moving the grip through dead space.
+- **Adjust layout gap between text input and letter box** now uses the actual grid row gap between the complete TI and GB. Increasing the value by 1px should immediately increase visible TI-to-GB separation by 1px with zero words, one word, or multiple wrapped rows; there should be no state-dependent dead zone.
+- **Hide par** should hide the par before any words are accepted as well as after the first word; NYT uses a different nested `.lb-par.no-words` DOM shape in the initial state.
 - Settings sections remain **FEEDBACK & ANIMATION**, **DISPLAY**, **SYNC** and ordinary settings text/buttons are now 12px. Chrome number steppers should use a narrower spinner area where supported.
 - `Word Log` is temporarily replaced by a bordered square logo placeholder. It displays its current side length in pixels and should remain a perfect square sized to the natural available header height.
 - The main LBC header otherwise contains the custom-dictionary control, **Browse History**, and **Settings**. Google Drive state remains light-gray header text.
