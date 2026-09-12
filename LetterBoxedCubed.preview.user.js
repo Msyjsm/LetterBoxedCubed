@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed [PREVIEW]
 // @namespace    https://nathanburgdorff.com/userscripts/preview/
-// @version      1.12.0-beta.3.41
+// @version      1.12.0-beta.4.42
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -60,15 +60,6 @@
     const LeftColumnGap = 16;
     const EdgePadding = 18;
     const MinimumPanelWidth = 300;
-
-    /*
-        TI and GB are stacked in Cubed's left meta-column. Give TI a stable
-        vertical slot so accepting words cannot move GB up or down. The slot
-        is intentionally roomy enough for the active chain while keeping GB
-        close to the entry area; the page can still scroll if a very long
-        chain eventually outgrows it.
-    */
-    const StableWordAreaHeight = 250;
 
     /*
         v1.7's automatic width was 75% of the horizontal space left after
@@ -4772,7 +4763,7 @@
 
         GameContainer.style.setProperty(
             "--lb-cubed-left-column-gap",
-            "0px"
+            `${LayoutGapPx}px`
         );
 
         GameContainer.style.setProperty(
@@ -4854,7 +4845,7 @@
 
         GameContainer.style.setProperty(
             "--lb-cubed-left-column-gap",
-            "0px"
+            `${LayoutGapPx}px`
         );
 
         GameContainer.style.setProperty(
@@ -6295,6 +6286,7 @@
                 row-gap: var(--lb-cubed-left-column-gap, 16px) !important;
                 justify-content: center !important;
                 align-items: start !important;
+                align-content: start !important;
                 width: 100% !important;
                 max-width: none !important;
                 padding-left: var(--lb-cubed-edge-padding, 18px) !important;
@@ -6353,6 +6345,7 @@
                 row-gap: var(--lb-cubed-left-column-gap, 16px) !important;
                 justify-items: center !important;
                 align-items: start !important;
+                align-content: start !important;
                 width: 100% !important;
                 max-width: none !important;
                 padding-left: var(--lb-cubed-edge-padding, 18px) !important;
@@ -6425,7 +6418,7 @@
                 height: auto !important;
                 min-height: 0 !important;
                 max-height: none !important;
-                padding-bottom: var(--lb-cubed-layout-gap, 16px) !important;
+                padding-bottom: 0 !important;
             }
 
             .lb-game-container.${LayoutClass}
@@ -6440,8 +6433,7 @@
             }
 
             .lb-game-container.${LayoutClass}.lb-cubed-hide-par
-            > .lb-word-container
-            > .lb-par {
+            > .lb-word-container .lb-par {
                 display: none !important;
             }
 
