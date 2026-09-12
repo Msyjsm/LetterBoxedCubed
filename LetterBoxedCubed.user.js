@@ -6743,7 +6743,7 @@
             .lb-cubed-settings-suffix {
                 min-width: 14px;
                 color: rgba(48, 24, 24, 0.68);
-                font-size: 11px;
+                font-size: 12px;
             }
 
             .lb-cubed-settings-mini-button {
@@ -6753,8 +6753,12 @@
                 background: rgba(255, 255, 255, 0.20);
                 color: rgb(48, 24, 24);
                 font: inherit;
-                font-size: 11px;
+                font-size: 12px;
                 cursor: pointer;
+            }
+
+            .lb-cubed-settings-panel .lb-cubed-header-button {
+                font-size: 12px;
             }
 
             .lb-cubed-settings-button-row {
