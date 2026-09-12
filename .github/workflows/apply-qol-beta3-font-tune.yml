@@ -1,0 +1,36 @@
+name: Apply QoL beta.3 settings font tune
+
+on:
+  push:
+    branches:
+      - feature/qol-4-10-12-13-14
+    paths:
+      - .github/workflows/apply-qol-beta3-font-tune.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/qol-4-10-12-13-14
+          fetch-depth: 0
+
+      - name: Apply settings font tune and validate
+        run: |
+          python tools/apply_qol_beta3_font_tune.py
+          node --check LetterBoxedCubed.user.js
+          node tests/merge-tests.js
+
+      - name: Commit implementation and remove one-shot tooling
+        run: |
+          git config user.name "Nathan Burgdorff + Ari (ChatGPT)"
+          git config user.email "6709230+Msyjsm@users.noreply.github.com"
+          git rm tools/apply_qol_beta3_font_tune.py
+          git rm .github/workflows/apply-qol-beta3-font-tune.yml
+          git add LetterBoxedCubed.user.js
+          git commit -m "Finish beta.3 settings typography tune"
+          git push origin HEAD:feature/qol-4-10-12-13-14
