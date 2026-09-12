@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed [PREVIEW]
 // @namespace    https://nathanburgdorff.com/userscripts/preview/
-// @version      1.12.0-beta.2.33
+// @version      1.12.0-beta.3.34
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -5348,9 +5348,13 @@
         const Header = document.createElement("div");
         Header.className = "lb-cubed-header";
 
-        const Title = document.createElement("h2");
-        Title.className = "lb-cubed-title";
-        Title.textContent = "Word Log";
+        const LogoPlaceholder = document.createElement("div");
+        LogoPlaceholder.className = "lb-cubed-logo-placeholder";
+        LogoPlaceholder.setAttribute("aria-label", "Letter Boxed Cubed logo placeholder");
+
+        const LogoSize = document.createElement("span");
+        LogoSize.className = "lb-cubed-logo-placeholder-size";
+        LogoPlaceholder.appendChild(LogoSize);
 
         const DriveStatus = document.createElement("span");
         DriveStatus.id = GoogleDriveStatusId;
@@ -5358,7 +5362,7 @@
 
         const TitleRow = document.createElement("div");
         TitleRow.className = "lb-cubed-title-row";
-        TitleRow.append(Title, DriveStatus);
+        TitleRow.append(LogoPlaceholder, DriveStatus);
 
         const Subtitle = document.createElement("div");
         Subtitle.className = "lb-cubed-subtitle";
@@ -5443,6 +5447,45 @@
 
         Panel.appendChild(Header);
         UpdateGoogleDriveButton();
+        UpdateLogoPlaceholderSize(Header, LogoPlaceholder, HeaderActions, LogoSize);
+    }
+
+    function UpdateLogoPlaceholderSize(Header, Placeholder, HeaderActions, SizeText) {
+        if (!Header || !Placeholder || !HeaderActions || !SizeText) {
+            return;
+        }
+
+        const Measure = () => {
+            if (!Header.isConnected || !Placeholder.isConnected) {
+                return;
+            }
+
+            Placeholder.style.width = "0px";
+            Placeholder.style.height = "0px";
+
+            requestAnimationFrame(() => {
+                if (!Header.isConnected || !Placeholder.isConnected) {
+                    return;
+                }
+
+                const HeaderHeight = Math.ceil(Header.getBoundingClientRect().height);
+                const ActionHeight = Math.ceil(HeaderActions.getBoundingClientRect().height);
+                const Side = Math.max(20, Math.min(96, Math.max(HeaderHeight, ActionHeight)));
+
+                Placeholder.style.width = `${Side}px`;
+                Placeholder.style.height = `${Side}px`;
+                SizeText.textContent = `${Side}px`;
+            });
+        };
+
+        Measure();
+
+        if (typeof ResizeObserver !== "undefined") {
+            const Observer = new ResizeObserver(Measure);
+            Observer.observe(HeaderActions);
+        }
+
+        window.addEventListener("resize", Measure);
     }
 
     function RenderMainStats(Panel, Stats) {
@@ -6288,12 +6331,16 @@
             .lb-game-container.${SideModeClass} > #${PanelId} {
                 grid-column: 2 !important;
                 grid-row: 1 / span 2 !important;
-                position: relative;
+                position: absolute !important;
+                inset: 0;
                 align-self: stretch;
+                justify-self: stretch;
                 width: var(--lb-cubed-panel-width) !important;
                 min-width: var(--lb-cubed-panel-width) !important;
                 max-width: var(--lb-cubed-panel-width) !important;
+                height: auto !important;
                 min-height: 0;
+                max-height: none !important;
             }
 
             .lb-game-container.${StackedModeClass} {
@@ -6609,7 +6656,7 @@
             .lb-cubed-settings-section-title {
                 margin-bottom: 5px;
                 color: rgb(48, 24, 24);
-                font-size: 10px;
+                font-size: 12px;
                 font-weight: 800;
                 letter-spacing: 0.04em;
                 text-transform: uppercase;
@@ -6626,7 +6673,7 @@
             .lb-cubed-settings-subgroup-title {
                 margin-bottom: 2px;
                 color: rgba(48, 24, 24, 0.82);
-                font-size: 10px;
+                font-size: 12px;
                 font-weight: 700;
                 line-height: 1.3;
             }
@@ -6638,9 +6685,9 @@
                 display: flex;
                 align-items: center;
                 gap: 6px;
-                min-height: 28px;
+                min-height: 30px;
                 color: rgb(48, 24, 24);
-                font-size: 10px;
+                font-size: 12px;
             }
 
             .lb-cubed-settings-checkbox {
@@ -6679,7 +6726,7 @@
 
             .lb-cubed-settings-number-wrap input {
                 width: 62px;
-                padding: 2px 3px;
+                padding: 2px 2px 2px 3px;
                 border: 1px solid rgba(78, 34, 34, 0.35);
                 border-radius: 3px;
                 background: rgba(255, 255, 255, 0.35);
@@ -6689,10 +6736,17 @@
                 text-align: right;
             }
 
+            .lb-cubed-settings-number-wrap input[type="number"]::-webkit-inner-spin-button,
+            .lb-cubed-settings-number-wrap input[type="number"]::-webkit-outer-spin-button {
+                margin: 0;
+                width: 11px;
+                height: 16px;
+            }
+
             .lb-cubed-settings-suffix {
                 min-width: 14px;
                 color: rgba(48, 24, 24, 0.68);
-                font-size: 9px;
+                font-size: 11px;
             }
 
             .lb-cubed-settings-mini-button {
@@ -6702,7 +6756,7 @@
                 background: rgba(255, 255, 255, 0.20);
                 color: rgb(48, 24, 24);
                 font: inherit;
-                font-size: 9px;
+                font-size: 11px;
                 cursor: pointer;
             }
 
@@ -6802,13 +6856,24 @@
                 transform: translateY(1px);
             }
 
-            .lb-cubed-title {
-                margin: 0;
-                padding: 0;
-                color: rgb(48, 24, 24);
-                font-size: 22px;
-                line-height: 1.1;
+            .lb-cubed-logo-placeholder {
+                flex: 0 0 auto;
+                display: grid;
+                place-items: center;
+                width: 28px;
+                height: 28px;
+                border: 1px solid rgba(76, 34, 34, 0.78);
+                background: rgba(255, 255, 255, 0.08);
+                color: rgba(48, 24, 24, 0.78);
+                font-family: Consolas, "Courier New", monospace;
+                font-size: 9px;
                 font-weight: 700;
+                line-height: 1;
+                white-space: nowrap;
+            }
+
+            .lb-cubed-logo-placeholder-size {
+                pointer-events: none;
             }
 
             .lb-cubed-subtitle {
