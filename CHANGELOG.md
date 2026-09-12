@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.12.0-beta.4
+- Fixed the TI/GB gap dead zone by preventing CSS Grid auto-track stretching and applying the preference as the actual TI-to-GB row gap.
+- Fixed Hide par before the first accepted word by supporting NYT's alternate no-words par DOM placement.
+
 ## 1.12.0-beta.3
 - Decoupled LBC from the TI/GB grid row sizing so the game board is no longer pinned to the bottom of the LBC panel.
 - Kept the adjustable TI/GB spacing inside `.lb-list-container`, so each pixel of gap should now move the actual left-side layout immediately.
