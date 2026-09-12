@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.12.0-beta.3
+- Decoupled LBC from the TI/GB grid row sizing so the game board is no longer pinned to the bottom of the LBC panel.
+- Kept the adjustable TI/GB spacing inside `.lb-list-container`, so each pixel of gap should now move the actual left-side layout immediately.
+- Increased Settings text sizing to 12px and reduced the visual width of native number-input steppers where Chrome permits styling them.
+- Replaced the temporary `Word Log` text with a live bordered square logo placeholder that reports its current pixel side length.
+
 ## 1.12.0-beta.2
 - Reworked the TI-to-letter-box gap control to compact NYT's `.lb-list-container` instead of changing the outer grid row gap.
 - Reorganized Settings into Feedback & animation, Display, and Sync; folded NYT page-layout controls into Display and clarified control labels.
