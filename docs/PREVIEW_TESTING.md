@@ -39,20 +39,21 @@ Each workflow run appends the monotonically increasing `github.run_number` to th
 
 ## v1.12 QoL bundle checks
 
-The `feature/qol-4-10-12-13-14` preview bundles issues #4, #10, #12, #13, #14, #16, and #17. The current source is `1.12.0-beta.2`.
+The `feature/qol-4-10-12-13-14` preview bundles issues #4, #10, #12, #13, #14, #16, and #17. The current source is `1.12.0-beta.3`.
 
-- The main LBC header should contain only the custom-dictionary control, **Browse History**, and **Settings**. Google Drive state should appear as light-gray text beside **Word Log**.
-- Settings sections should appear in this order: **FEEDBACK & ANIMATION**, **DISPLAY**, **SYNC**. The former NYT page-layout controls are folded into DISPLAY before LBC display controls.
-- Settings copy should use **Hide par**, **Line animation speed**, **New word highlight**, **Compact title layout**, and **Hide Yesterday/Help row**.
-- **Adjust layout gap between text input and letter box** should contain **Enable draggable grip line** plus the precise **Manually set gap** pixel input/reset. Both controls change the same persisted value.
-- The layout-gap control should compact/expand the space associated with NYT's `.lb-list-container`, rather than adding an external grid gap between TI and GB.
-- First/Second Hint entries should show solved/total Twofer progress for that word in that position, and completed entries should be struck through.
-- Newly discovered words should briefly fade from chartreuse in Found Words and Hints. Their exact Words-by-Length row should highlight as well, and newly solved Twofers should receive the same effect.
-- Completion should highlight for every newly discovered dictionary word. Longest Found should highlight when the new word establishes a new maximum or ties the current maximum length.
-- Words by Length should contain one row for every exact word length present in the current dictionary; absent lengths should be omitted rather than rolled into `7+`.
-- The NYT global header and Letter Boxed title area should each have an on-page vertical resize grip. Their Settings values are percentages of native size; 0% hides the region and Reset returns it to 100%.
-- **Compact title layout** should keep the game title, date, and byline on a single left-justified row with vertical centers aligned, including when the title region is scaled down.
-- **Hide Yesterday/Help row** should simply hide the native row containing those controls; it should not clone or proxy Yesterday.
+- LBC must not participate in TI/GB grid row sizing. The letter box should sit immediately after TI's natural content plus the chosen gap, regardless of LBC panel height.
+- **Adjust layout gap between text input and letter box** still owns the extra spacing inside NYT's `.lb-list-container`; each pixel of adjustment should move actual page content rather than only moving the grip through dead space.
+- Settings sections remain **FEEDBACK & ANIMATION**, **DISPLAY**, **SYNC** and ordinary settings text/buttons are now 12px. Chrome number steppers should use a narrower spinner area where supported.
+- `Word Log` is temporarily replaced by a bordered square logo placeholder. It displays its current side length in pixels and should remain a perfect square sized to the natural available header height.
+- The main LBC header otherwise contains the custom-dictionary control, **Browse History**, and **Settings**. Google Drive state remains light-gray header text.
+- Settings copy uses **Hide par**, **Line animation speed**, **New word highlight**, **Compact title layout**, and **Hide Yesterday/Help row**.
+- First/Second Hint entries show solved/total Twofer progress for that word in that position, and completed entries are struck through.
+- Newly discovered words briefly fade from chartreuse in Found Words and Hints. Their exact Words-by-Length row highlights as well, and newly solved Twofers receive the same effect.
+- Completion highlights for every newly discovered dictionary word. Longest Found highlights when the new word establishes a new maximum or ties the current maximum length.
+- Words by Length contains one row for every exact word length present in the current dictionary; absent lengths are omitted rather than rolled into `7+`.
+- The NYT global header and Letter Boxed title area each have an on-page vertical resize grip. Their Settings values are percentages of native size; 0% hides the region and Reset returns it to 100%.
+- **Compact title layout** keeps the game title, date, and byline on a single left-justified row with vertical centers aligned, including when the title region is scaled down.
+- **Hide Yesterday/Help row** simply hides the native row containing those controls; it does not clone or proxy Yesterday.
 
 ## Automated source commits and stale previews
 
