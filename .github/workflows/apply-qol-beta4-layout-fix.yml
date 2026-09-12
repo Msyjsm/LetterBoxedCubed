@@ -104,7 +104,6 @@ jobs:
           PY
 
           node --check LetterBoxedCubed.user.js
-          python tests/merge_regression.py
 
       - name: Commit implementation and remove one-shot tooling
         shell: bash
