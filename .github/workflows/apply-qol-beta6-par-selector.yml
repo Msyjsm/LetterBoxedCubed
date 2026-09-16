@@ -9,7 +9,6 @@ on:
 
 permissions:
   contents: write
-  actions: write
 
 jobs:
   apply:
@@ -36,26 +35,14 @@ jobs:
                   raise SystemExit(f'{label}: expected 1 occurrence, found {count}')
               text = text.replace(old, new, 1)
 
-          replace_once(
-              '// @version      1.12.0-beta.5',
-              '// @version      1.12.0-beta.6',
-              'version'
-          )
+          replace_once('// @version      1.12.0-beta.5', '// @version      1.12.0-beta.6', 'version')
 
-          replace_once(
-              '''            .lb-game-container.lb-cubed-hide-par
+          old_selector = '''            .lb-game-container.lb-cubed-hide-par
             .lb-word-container .lb-par {
                 display: none !important;
-            }''',
-              '''            /*
-                Hide only NYT's actual par prompt. Validation messages such as
-                "Too short" and "Not a valid word" also use lb-par styling,
-                so a blanket descendant selector incorrectly suppressed them.
+            }'''
 
-                NYT has two prompt DOM shapes:
-                - zero words: nested .lb-par.no-words in the text wrapper
-                - accepted words: direct-child .lb-par in the word container
-            */
+          new_selector = '''            /* Hide only the actual par prompt; validation feedback can also use lb-par. */
             .lb-game-container.lb-cubed-hide-par
             > .lb-word-container
             > .lb-par,
@@ -64,10 +51,9 @@ jobs:
             > .lb-text-field-wrapper
             > .lb-par.no-words {
                 display: none !important;
-            }''',
-              'Hide par selector'
-          )
+            }'''
 
+          replace_once(old_selector, new_selector, 'Hide par selector')
           path.write_text(text, encoding='utf-8')
 
           changelog = Path('CHANGELOG.md')
@@ -96,16 +82,3 @@ jobs:
           git add LetterBoxedCubed.user.js CHANGELOG.md .github/workflows/apply-qol-beta6-par-selector.yml
           git commit -m "Preserve validation feedback when par is hidden"
           git push origin feature/qol-4-10-12-13-14
-
-      - name: Rebuild Preview from updated branch
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          curl --fail-with-body \
-            -X POST \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/preview-channel.yml/dispatches \
-            -d '{"ref":"feature/qol-4-10-12-13-14"}'
