@@ -19,66 +19,18 @@ jobs:
           ref: feature/qol-4-10-12-13-14
           fetch-depth: 0
 
-      - name: Narrow Hide par selectors and validate
-        shell: bash
+      - name: Apply and validate
         run: |
-          python - <<'PY'
-          from pathlib import Path
-
-          path = Path('LetterBoxedCubed.user.js')
-          text = path.read_text(encoding='utf-8')
-
-          def replace_once(old, new, label):
-              global text
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f'{label}: expected 1 occurrence, found {count}')
-              text = text.replace(old, new, 1)
-
-          replace_once('// @version      1.12.0-beta.5', '// @version      1.12.0-beta.6', 'version')
-
-          old_selector = '''            .lb-game-container.lb-cubed-hide-par
-            .lb-word-container .lb-par {
-                display: none !important;
-            }'''
-
-          new_selector = '''            /* Hide only the actual par prompt; validation feedback can also use lb-par. */
-            .lb-game-container.lb-cubed-hide-par
-            > .lb-word-container
-            > .lb-par,
-            .lb-game-container.lb-cubed-hide-par
-            > .lb-word-container
-            > .lb-text-field-wrapper
-            > .lb-par.no-words {
-                display: none !important;
-            }'''
-
-          replace_once(old_selector, new_selector, 'Hide par selector')
-          path.write_text(text, encoding='utf-8')
-
-          changelog = Path('CHANGELOG.md')
-          ctext = changelog.read_text(encoding='utf-8')
-          marker = '# Changelog\n\n'
-          entry = '''## 1.12.0-beta.6
-- Narrowed Hide par to the two actual NYT par-prompt DOM shapes so validation feedback such as "Too short" and "Not a valid word" remains visible.
-
-'''
-          if entry not in ctext:
-              if marker not in ctext:
-                  raise SystemExit('changelog heading not found')
-              ctext = ctext.replace(marker, marker + entry, 1)
-              changelog.write_text(ctext, encoding='utf-8')
-          PY
-
+          python tools/temporary_beta6_par_selector_patch.py
           node --check LetterBoxedCubed.user.js
           node tests/merge-tests.js
 
-      - name: Commit implementation and remove one-shot workflow
-        shell: bash
+      - name: Commit implementation and clean temporary files
         run: |
           rm .github/workflows/apply-qol-beta6-par-selector.yml
+          rm tools/temporary_beta6_par_selector_patch.py
           git config user.name "Nathan Burgdorff + Ari (ChatGPT)"
           git config user.email "6709230+Msyjsm@users.noreply.github.com"
-          git add LetterBoxedCubed.user.js CHANGELOG.md .github/workflows/apply-qol-beta6-par-selector.yml
+          git add LetterBoxedCubed.user.js CHANGELOG.md .github/workflows/apply-qol-beta6-par-selector.yml tools/temporary_beta6_par_selector_patch.py
           git commit -m "Preserve validation feedback when par is hidden"
           git push origin feature/qol-4-10-12-13-14
