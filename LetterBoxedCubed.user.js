@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed
 // @namespace    https://nathanburgdorff.com/userscripts/
-// @version      1.12.0-beta.4
+// @version      1.12.0-beta.5
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -46,6 +46,48 @@
     }
 
     const PageWindow = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
+
+    const BootstrapDiagnostics = [];
+    const BootstrapDiagnosticSessionKey =
+        "LetterBoxedCubed_PreviewBootstrapTrace";
+
+    function RecordBootstrapDiagnostic(Stage, Details = {}) {
+        if (UserscriptBuildChannel !== "preview") {
+            return;
+        }
+
+        const NavigationEntry =
+            typeof performance?.getEntriesByType === "function"
+                ? performance.getEntriesByType("navigation")[0]
+                : null;
+
+        const Entry = {
+            Stage,
+            Timestamp: new Date().toISOString(),
+            ReadyState: document.readyState,
+            WasDiscarded: Boolean(document.wasDiscarded),
+            NavigationType: NavigationEntry?.type || null,
+            ...Details
+        };
+
+        BootstrapDiagnostics.push(Entry);
+        const Snapshot = BootstrapDiagnostics.slice(-100);
+
+        try {
+            sessionStorage.setItem(
+                BootstrapDiagnosticSessionKey,
+                JSON.stringify(Snapshot)
+            );
+        } catch {}
+
+        try {
+            PageWindow.__LetterBoxedCubedBootstrapTrace = Snapshot;
+        } catch {}
+
+        console.debug("[Letter Boxed Cubed][bootstrap]", Entry);
+    }
+
+    RecordBootstrapDiagnostic("userscript-channel-active");
 
     const PanelId = "lb-cubed-panel";
     const StyleId = "lb-cubed-styles";
@@ -217,6 +259,7 @@
     // -------------------------------------------------------------------------
 
     async function Initialize() {
+        RecordBootstrapDiagnostic("initialize-start");
         AddStyles();
 
         const Ready = await WaitForGame();
@@ -260,6 +303,11 @@
             ScheduleCloudSync(750);
         }
 
+        RecordBootstrapDiagnostic("initialize-complete", {
+            PuzzleId: GameData.id || null,
+            PrintDate: GameData.printDate || null
+        });
+
         console.log("[Letter Boxed Cubed] Initialized.", {
             PuzzleId: GameData.id,
             Date: GameData.printDate,
@@ -292,31 +340,55 @@
     }
 
     function WaitForGame() {
+        RecordBootstrapDiagnostic("wait-for-game-start");
+
         return new Promise((Resolve) => {
             const StartTime = Date.now();
             const TimeoutMs = 20000;
+            let SawGameData = false;
+            let SawWordContainer = false;
+            let SawSquareContainer = false;
 
             const Timer = setInterval(() => {
                 const HasGameData =
                     PageWindow.gameData &&
                     Array.isArray(PageWindow.gameData.dictionary);
-
-                const HasWordContainer = document.querySelector(
+                const HasWordContainer = Boolean(document.querySelector(
                     ".lb-game-container .lb-word-container"
-                );
-
-                const HasSquareContainer = document.querySelector(
+                ));
+                const HasSquareContainer = Boolean(document.querySelector(
                     ".lb-game-container .lb-square-container"
-                );
+                ));
+
+                if (HasGameData && !SawGameData) {
+                    SawGameData = true;
+                    RecordBootstrapDiagnostic("game-data-seen");
+                }
+                if (HasWordContainer && !SawWordContainer) {
+                    SawWordContainer = true;
+                    RecordBootstrapDiagnostic("word-container-seen");
+                }
+                if (HasSquareContainer && !SawSquareContainer) {
+                    SawSquareContainer = true;
+                    RecordBootstrapDiagnostic("square-container-seen");
+                }
 
                 if (HasGameData && HasWordContainer && HasSquareContainer) {
                     clearInterval(Timer);
+                    RecordBootstrapDiagnostic("wait-for-game-ready", {
+                        ElapsedMs: Date.now() - StartTime
+                    });
                     Resolve(true);
                     return;
                 }
 
                 if (Date.now() - StartTime >= TimeoutMs) {
                     clearInterval(Timer);
+                    RecordBootstrapDiagnostic("wait-for-game-timeout", {
+                        HasGameData: Boolean(HasGameData),
+                        HasWordContainer,
+                        HasSquareContainer
+                    });
                     Resolve(false);
                 }
             }, 250);
@@ -4555,6 +4627,33 @@
         );
     }
 
+    function UpdateHistoryLaneGeometry(GameContainer, WordContainer) {
+        const TextFieldWrapper = WordContainer?.querySelector(
+            ":scope > .lb-text-field-wrapper"
+        );
+
+        if (!GameContainer || !TextFieldWrapper) {
+            return;
+        }
+
+        const InputHeight = Math.max(
+            1,
+            Math.ceil(TextFieldWrapper.getBoundingClientRect().height)
+        );
+        const HistoryLaneHeight = Math.round(
+            Clamp(LayoutGapPx, MinimumLayoutGap, MaximumLayoutGap)
+        );
+
+        GameContainer.style.setProperty(
+            "--lb-cubed-history-lane-height",
+            `${HistoryLaneHeight}px`
+        );
+        GameContainer.style.setProperty(
+            "--lb-cubed-word-area-height",
+            `${InputHeight + HistoryLaneHeight}px`
+        );
+    }
+
     function StartLayoutObserver() {
         if (typeof ResizeObserver === "undefined") {
             return;
@@ -4613,6 +4712,7 @@
 
         UpdateLayoutGapHandleVisibility();
         PositionLayoutGapResizeHandle();
+        UpdateLogoPlaceholderSize();
     }
 
     function GetLeftColumnWidth() {
@@ -4743,6 +4843,11 @@
             `${LayoutGapPx}px`
         );
 
+        UpdateHistoryLaneGeometry(
+            GameContainer,
+            WordContainer
+        );
+
         GameContainer.style.setProperty(
             "--lb-cubed-left-column-width",
             `${GetLeftColumnWidth()}px`
@@ -4760,7 +4865,7 @@
 
         GameContainer.style.setProperty(
             "--lb-cubed-left-column-gap",
-            `${LayoutGapPx}px`
+            "0px"
         );
 
         GameContainer.style.setProperty(
@@ -4830,6 +4935,11 @@
             `${LayoutGapPx}px`
         );
 
+        UpdateHistoryLaneGeometry(
+            GameContainer,
+            WordContainer
+        );
+
         GameContainer.style.setProperty(
             "--lb-cubed-left-column-width",
             `${GetLeftColumnWidth()}px`
@@ -4842,7 +4952,7 @@
 
         GameContainer.style.setProperty(
             "--lb-cubed-left-column-gap",
-            `${LayoutGapPx}px`
+            "0px"
         );
 
         GameContainer.style.setProperty(
@@ -5438,42 +5548,28 @@
         UpdateLogoPlaceholderSize(Header, LogoPlaceholder, HeaderActions, LogoSize);
     }
 
-    function UpdateLogoPlaceholderSize(Header, Placeholder, HeaderActions, SizeText) {
+    function UpdateLogoPlaceholderSize(
+        Header = document.querySelector(".lb-cubed-header"),
+        Placeholder = document.querySelector(".lb-cubed-logo-placeholder"),
+        HeaderActions = document.querySelector(".lb-cubed-header-actions"),
+        SizeText = document.querySelector(".lb-cubed-logo-placeholder-size")
+    ) {
         if (!Header || !Placeholder || !HeaderActions || !SizeText) {
             return;
         }
-
-        const Measure = () => {
-            if (!Header.isConnected || !Placeholder.isConnected) {
-                return;
-            }
-
-            Placeholder.style.width = "0px";
-            Placeholder.style.height = "0px";
-
-            requestAnimationFrame(() => {
-                if (!Header.isConnected || !Placeholder.isConnected) {
-                    return;
-                }
-
-                const HeaderHeight = Math.ceil(Header.getBoundingClientRect().height);
-                const ActionHeight = Math.ceil(HeaderActions.getBoundingClientRect().height);
-                const Side = Math.max(20, Math.min(96, Math.max(HeaderHeight, ActionHeight)));
-
-                Placeholder.style.width = `${Side}px`;
-                Placeholder.style.height = `${Side}px`;
-                SizeText.textContent = `${Side}px`;
-            });
-        };
-
-        Measure();
-
-        if (typeof ResizeObserver !== "undefined") {
-            const Observer = new ResizeObserver(Measure);
-            Observer.observe(HeaderActions);
+        if (!Header.isConnected || !Placeholder.isConnected) {
+            return;
         }
 
-        window.addEventListener("resize", Measure);
+        Placeholder.classList.add("lb-cubed-logo-placeholder-measuring");
+        const HeaderHeight = Math.ceil(Header.getBoundingClientRect().height);
+        const ActionHeight = Math.ceil(HeaderActions.getBoundingClientRect().height);
+        const Side = Math.max(20, Math.min(96, Math.max(HeaderHeight, ActionHeight)));
+        Placeholder.classList.remove("lb-cubed-logo-placeholder-measuring");
+
+        Placeholder.style.width = `${Side}px`;
+        Placeholder.style.height = `${Side}px`;
+        SizeText.textContent = `${Side}px`;
     }
 
     function RenderMainStats(Panel, Stats) {
@@ -6277,7 +6373,7 @@
                     LBC's height completely.
                 */
                 grid-template-rows:
-                    auto
+                    var(--lb-cubed-word-area-height, auto)
                     var(--lb-cubed-square-height, auto) !important;
                 column-gap: var(--lb-cubed-gap, 24px) !important;
                 row-gap: var(--lb-cubed-left-column-gap, 16px) !important;
@@ -6299,9 +6395,10 @@
                 width: var(--lb-cubed-word-width) !important;
                 min-width: var(--lb-cubed-word-width) !important;
                 max-width: var(--lb-cubed-word-width) !important;
-                height: auto !important;
-                min-height: 0 !important;
-                max-height: none !important;
+                height: var(--lb-cubed-word-area-height, auto) !important;
+                min-height: var(--lb-cubed-word-area-height, 0) !important;
+                max-height: var(--lb-cubed-word-area-height, none) !important;
+                overflow: hidden !important;
             }
 
             .lb-game-container.${SideModeClass} > .lb-square-container {
@@ -6336,7 +6433,7 @@
                 display: grid !important;
                 grid-template-columns: minmax(0, 1fr) !important;
                 grid-template-rows:
-                    auto
+                    var(--lb-cubed-word-area-height, auto)
                     var(--lb-cubed-square-height, auto)
                     auto !important;
                 row-gap: var(--lb-cubed-left-column-gap, 16px) !important;
@@ -6356,9 +6453,10 @@
                 justify-self: center !important;
                 width: min(var(--lb-cubed-word-width), 100%) !important;
                 max-width: 100% !important;
-                height: auto !important;
-                min-height: 0 !important;
-                max-height: none !important;
+                height: var(--lb-cubed-word-area-height, auto) !important;
+                min-height: var(--lb-cubed-word-area-height, 0) !important;
+                max-height: var(--lb-cubed-word-area-height, none) !important;
+                overflow: hidden !important;
             }
 
             .lb-game-container.${StackedModeClass} > .lb-square-container {
@@ -6397,25 +6495,42 @@
                 display: flex !important;
                 flex-direction: column !important;
                 justify-content: flex-start !important;
-                overflow: visible !important;
+                overflow: hidden !important;
             }
 
             .lb-game-container.${LayoutClass}
             > .lb-word-container
             > .lb-text-field-wrapper {
                 order: 1;
+                position: relative !important;
                 flex: 0 0 auto;
+            }
+
+            .lb-game-container.${LayoutClass}
+            > .lb-word-container
+            > .lb-text-field-wrapper
+            > .lb-par.no-words {
+                position: absolute !important;
+                top: 100% !important;
+                left: 0 !important;
+                right: 0 !important;
+                margin-top: 10px !important;
+                transform: none !important;
+                z-index: 2;
             }
 
             .lb-game-container.${LayoutClass}
             > .lb-word-container
             > .lb-list-container {
                 order: 2;
-                flex: 0 0 auto;
+                flex: 1 1 auto;
                 height: auto !important;
                 min-height: 0 !important;
-                max-height: none !important;
+                max-height: 100% !important;
                 padding-bottom: 0 !important;
+                overflow-x: hidden !important;
+                overflow-y: auto !important;
+                scrollbar-width: thin;
             }
 
             .lb-game-container.${LayoutClass}
@@ -6429,8 +6544,8 @@
                 transform: none !important;
             }
 
-            .lb-game-container.${LayoutClass}.lb-cubed-hide-par
-            > .lb-word-container .lb-par {
+            .lb-game-container.lb-cubed-hide-par
+            .lb-word-container .lb-par {
                 display: none !important;
             }
 
@@ -6570,6 +6685,14 @@
                 HEADER
                 ================================================================
             */
+
+            .lb-cubed-logo-placeholder-measuring {
+                position: absolute !important;
+                visibility: hidden !important;
+                width: 0 !important;
+                height: 0 !important;
+                pointer-events: none !important;
+            }
 
             .lb-cubed-header {
                 display: flex;

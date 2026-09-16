@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.12.0-beta.5
+- Reworked TI/GB spacing into a fixed-height, scrollable accepted-word history lane so word wrapping cannot move the board.
+- Removed the one-frame 0x0 logo-placeholder measurement that caused LBC to blink on word acceptance.
+- Made Hide par independent of LBC layout state and the no-words DOM variant.
+- Added Preview-only bootstrap telemetry for reproducing issue #1.
+
 ## 1.12.0-beta.4
 - Fixed the TI/GB gap dead zone by preventing CSS Grid auto-track stretching and applying the preference as the actual TI-to-GB row gap.
 - Fixed Hide par before the first accepted word by supporting NYT's alternate no-words par DOM placement.
