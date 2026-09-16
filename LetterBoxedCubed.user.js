@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed
 // @namespace    https://nathanburgdorff.com/userscripts/
-// @version      1.12.0-beta.5
+// @version      1.12.0-beta.6
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -6544,8 +6544,22 @@
                 transform: none !important;
             }
 
+            /*
+                Hide only NYT's actual par prompt. Validation messages such as
+                "Too short" and "Not a valid word" can also use lb-par,
+                so a blanket descendant selector incorrectly suppresses them.
+
+                NYT has two prompt DOM shapes:
+                - zero words: nested .lb-par.no-words in the text wrapper
+                - accepted words: direct-child .lb-par in the word container
+            */
             .lb-game-container.lb-cubed-hide-par
-            .lb-word-container .lb-par {
+            > .lb-word-container
+            > .lb-par,
+            .lb-game-container.lb-cubed-hide-par
+            > .lb-word-container
+            > .lb-text-field-wrapper
+            > .lb-par.no-words {
                 display: none !important;
             }
 

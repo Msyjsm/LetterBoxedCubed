@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.12.0-beta.6
+- Narrowed Hide par to the two actual NYT par-prompt DOM shapes so validation feedback such as "Too short" and "Not a valid word" remains visible.
+
 ## 1.12.0-beta.5
 - Reworked TI/GB spacing into a fixed-height, scrollable accepted-word history lane so word wrapping cannot move the board.
 - Removed the one-frame 0x0 logo-placeholder measurement that caused LBC to blink on word acceptance.
