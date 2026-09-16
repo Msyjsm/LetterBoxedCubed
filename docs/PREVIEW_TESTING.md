@@ -39,12 +39,12 @@ Each workflow run appends the monotonically increasing `github.run_number` to th
 
 ## v1.12 QoL bundle checks
 
-The `feature/qol-4-10-12-13-14` preview bundles issues #4, #5, #10, #12, #13, #14, #16, #17, and #18. The current source is `1.12.0-beta.5`.
+The `feature/qol-4-10-12-13-14` preview bundles issues #4, #5, #10, #12, #13, #14, #16, #17, and #18. The current source is `1.12.0-beta.6`.
 
 - **Adjust layout gap between text input and letter box** now reserves a fixed-height history lane below the text input. Accepted words, the par, and feedback consume this already-reserved space instead of increasing TI height. Entering enough words to wrap onto additional rows must not move GB.
 - If accepted-word history exceeds the reserved lane, `.lb-list-container` scrolls vertically inside that lane; GB remains fixed.
 - The initial `.lb-par.no-words` is removed from normal flow so NYT's zero-word DOM variant cannot alter the measured input height.
-- **Hide par** is independent of LBC layout classes and should hide both the zero-word nested par and the later direct-child par.
+- **Hide par** should hide only the actual `Try to solve in X words` prompt in both NYT DOM states. Validation feedback such as **Too short** and **Not a valid word** must remain visible.
 - The temporary square logo placeholder must no longer collapse to 0x0 for one animation frame when a word is accepted. Its size measurement is synchronous and should not cause the visible LBC blink seen in beta.4.
 - Preview exposes bootstrap diagnostics for issue #1 in `window.__LetterBoxedCubedBootstrapTrace` and `sessionStorage["LetterBoxedCubed_PreviewBootstrapTrace"]`. The trace records `document.wasDiscarded`, navigation type, readiness milestones, and timeout/initialization completion.
 - Settings sections remain **FEEDBACK & ANIMATION**, **DISPLAY**, **SYNC** and ordinary settings text/buttons are 12px. Chrome number steppers use a narrower spinner area where supported.
