@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.12.0-beta.7
+- Added a Preview-only live TI/GB DOM inspector to the left of LBC, including per-element visibility overrides, selected outerHTML, and a mutation log that retains transient additions/removals.
+- Added keyboard QoL shortcuts: Escape clicks NYT Restart, while Delete repeatedly invokes NYT Delete until one current-word boundary is reached.
+- Kept the DOM inspector out of Production; it is intentionally development instrumentation for diagnosing transient NYT feedback elements and layout behavior.
+
 ## 1.12.0-beta.6
 - Narrowed Hide par to the two actual NYT par-prompt DOM shapes so validation feedback such as "Too short" and "Not a valid word" remains visible.
 
