@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.12.0-beta.8
+- Restored NYT invalid-submission feedback by allowing nested `.lb-message-box` popups to escape the fixed TI history-lane clipping while keeping accepted-word overflow inside its own scroller.
+- Moved the Preview DOM debugger to the right of LBC and added an external Show/Hide Debug Pane toggle above LBC near Settings; mutation capture continues while the pane is hidden.
+
 ## 1.12.0-beta.7
 - Added a Preview-only live TI/GB DOM inspector to the left of LBC, including per-element visibility overrides, selected outerHTML, and a mutation log that retains transient additions/removals.
 - Added keyboard QoL shortcuts: Escape clicks NYT Restart, while Delete repeatedly invokes NYT Delete until one current-word boundary is reached.
