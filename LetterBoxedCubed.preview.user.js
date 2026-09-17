@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed [PREVIEW]
 // @namespace    https://nathanburgdorff.com/userscripts/preview/
-// @version      1.12.0-beta.7.55
+// @version      1.12.0-beta.8.56
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -148,6 +148,7 @@
     const NytTitleResizeHandleId = "lb-cubed-nyt-title-resize-handle";
     const PreviewDebugPanelId = "lb-cubed-preview-debug";
     const PreviewDebugStyleId = "lb-cubed-preview-debug-styles";
+    const PreviewDebugToggleButtonId = "lb-cubed-preview-debug-toggle";
     const CloudSyncDebounceMs = 2500;
     const CloudSyncProtocolVersion = 1;
 
@@ -262,6 +263,7 @@
     let PreviewDebugObserver = null;
     let PreviewDebugRenderTimer = null;
     let PreviewDebugNextElementId = 1;
+    let PreviewDebugPaneVisible = false;
     const PreviewDebugElementIds = new WeakMap();
     const PreviewDebugElementsById = new Map();
     const PreviewDebugOriginalDisplay = new WeakMap();
@@ -4765,6 +4767,24 @@
         const Style = document.createElement("style");
         Style.id = PreviewDebugStyleId;
         Style.textContent = `
+            #${PreviewDebugToggleButtonId} {
+                position: fixed;
+                z-index: 100001;
+                padding: 4px 7px;
+                border: 1px solid rgba(255, 255, 255, 0.45);
+                border-radius: 3px;
+                background: rgba(20, 20, 24, 0.96);
+                color: #f2f2f2;
+                box-shadow: 0 3px 12px rgba(0, 0, 0, 0.32);
+                font: 700 11px/1.25 Arial, sans-serif;
+                white-space: nowrap;
+                cursor: pointer;
+            }
+
+            #${PreviewDebugToggleButtonId}:hover {
+                background: #303038;
+            }
+
             #${PreviewDebugPanelId} {
                 position: fixed;
                 z-index: 100000;
@@ -5114,22 +5134,53 @@
         }
 
         const DebugPanel = document.getElementById(PreviewDebugPanelId);
+        const ToggleButton = document.getElementById(PreviewDebugToggleButtonId);
         const Panel = document.getElementById(PanelId);
 
-        if (!DebugPanel || !Panel) {
+        if (!DebugPanel || !ToggleButton || !Panel) {
             return;
         }
 
         const PanelRect = Panel.getBoundingClientRect();
+        const SettingsSummary = document.querySelector(
+            `#${SettingsMenuId} > summary`
+        );
+        const SettingsRect = SettingsSummary?.getBoundingClientRect();
+        const ToggleWidth = Math.max(1, ToggleButton.offsetWidth);
+        const ToggleHeight = Math.max(1, ToggleButton.offsetHeight);
+
+        /*
+            Keep the control outside LBC itself, immediately above the header
+            and horizontally just left of the Settings button when possible.
+        */
+        const ToggleLeft = Clamp(
+            (SettingsRect?.left ?? PanelRect.right) - ToggleWidth - 6,
+            8,
+            Math.max(8, window.innerWidth - ToggleWidth - 8)
+        );
+        const ToggleTop = Math.max(
+            8,
+            PanelRect.top - ToggleHeight - 4
+        );
+
+        ToggleButton.style.left = `${ToggleLeft}px`;
+        ToggleButton.style.top = `${ToggleTop}px`;
+
+        const ToggleRect = ToggleButton.getBoundingClientRect();
         const DebugWidth = Math.min(
             340,
             Math.max(280, window.innerWidth - 16)
         );
+
+        /* User-tested placement: debug pane belongs to the RIGHT of LBC. */
         const Left = Math.max(
             8,
-            PanelRect.left - DebugWidth - 8
+            PanelRect.right + 8
         );
-        const Top = Math.max(8, PanelRect.top);
+        const Top = Math.max(
+            8,
+            ToggleRect.bottom + 4
+        );
         const MaximumHeight = Math.max(
             180,
             window.innerHeight - Top - 8
@@ -5207,12 +5258,41 @@
 
         EnsurePreviewDebugStyles();
 
+        const ToggleButton = document.createElement("button");
+        ToggleButton.id = PreviewDebugToggleButtonId;
+        ToggleButton.type = "button";
+        ToggleButton.textContent = "Show Debug Pane";
+        ToggleButton.setAttribute(
+            "aria-controls",
+            PreviewDebugPanelId
+        );
+        ToggleButton.setAttribute("aria-expanded", "false");
+
         const DebugPanel = document.createElement("aside");
         DebugPanel.id = PreviewDebugPanelId;
         DebugPanel.setAttribute(
             "aria-label",
             "Letter Boxed Cubed Preview DOM debugger"
         );
+        DebugPanel.hidden = !PreviewDebugPaneVisible;
+
+        ToggleButton.addEventListener("click", () => {
+            PreviewDebugPaneVisible = !PreviewDebugPaneVisible;
+            DebugPanel.hidden = !PreviewDebugPaneVisible;
+            ToggleButton.textContent = PreviewDebugPaneVisible
+                ? "Hide Debug Pane"
+                : "Show Debug Pane";
+            ToggleButton.setAttribute(
+                "aria-expanded",
+                String(PreviewDebugPaneVisible)
+            );
+
+            if (PreviewDebugPaneVisible) {
+                RenderPreviewDebugPane();
+            }
+
+            PositionPreviewDebugPane();
+        });
 
         const Header = document.createElement("div");
         Header.className = "lbc-debug-title";
@@ -5283,7 +5363,10 @@
             Html
         );
 
-        document.body.appendChild(DebugPanel);
+        document.body.append(
+            ToggleButton,
+            DebugPanel
+        );
         StartPreviewDebugObserver();
         RenderPreviewDebugPane();
 
@@ -6140,6 +6223,8 @@
 
         PanelContent.scrollTop =
             PreviousScrollTop;
+
+        requestAnimationFrame(PositionPreviewDebugPane);
     }
 
     function RenderHeader(Panel) {
@@ -7195,7 +7280,14 @@
                 display: flex !important;
                 flex-direction: column !important;
                 justify-content: flex-start !important;
-                overflow: hidden !important;
+
+                /*
+                    NYT injects invalid-submission feedback as an absolutely
+                    positioned .lb-message-box inside the text-field wrapper.
+                    The fixed history lane must not clip those transient boxes.
+                    Accepted-word overflow remains owned by .lb-list-container.
+                */
+                overflow: visible !important;
             }
 
             .lb-game-container.${LayoutClass}
@@ -7204,6 +7296,14 @@
                 order: 1;
                 position: relative !important;
                 flex: 0 0 auto;
+                overflow: visible !important;
+            }
+
+            .lb-game-container.${LayoutClass}
+            > .lb-word-container
+            > .lb-text-field-wrapper
+            > .lb-message-box {
+                z-index: 4 !important;
             }
 
             .lb-game-container.${LayoutClass}
