@@ -1,0 +1,123 @@
+name: Apply QoL beta.8 feedback and debug pane
+
+on:
+  push:
+    branches:
+      - feature/qol-4-10-12-13-14
+    paths:
+      - .github/workflows/apply-qol-beta8-feedback-debug.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/qol-4-10-12-13-14
+          fetch-depth: 0
+
+      - name: Apply beta.8 fixes and validate
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('LetterBoxedCubed.user.js')
+          text = path.read_text(encoding='utf-8')
+
+          def replace_once(old, new, label):
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected 1 occurrence, found {count}')
+              text = text.replace(old, new, 1)
+
+          replace_once('// @version      1.12.0-beta.7', '// @version      1.12.0-beta.8', 'version')
+
+          replace_once(
+              '    const PreviewDebugPanelId = "lb-cubed-preview-debug";\n    const PreviewDebugStyleId = "lb-cubed-preview-debug-styles";\n',
+              '    const PreviewDebugPanelId = "lb-cubed-preview-debug";\n    const PreviewDebugStyleId = "lb-cubed-preview-debug-styles";\n    const PreviewDebugToggleButtonId = "lb-cubed-preview-debug-toggle";\n',
+              'debug toggle constant'
+          )
+
+          replace_once(
+              '    let PreviewDebugRenderTimer = null;\n    let PreviewDebugNextElementId = 1;\n',
+              '    let PreviewDebugRenderTimer = null;\n    let PreviewDebugNextElementId = 1;\n    let PreviewDebugPaneVisible = false;\n',
+              'debug visible state'
+          )
+
+          replace_once(
+              '''            .lb-game-container.${LayoutClass} > .lb-word-container {\n                display: flex !important;\n                flex-direction: column !important;\n                justify-content: flex-start !important;\n                overflow: hidden !important;\n            }''',
+              '''            .lb-game-container.${LayoutClass} > .lb-word-container {\n                display: flex !important;\n                flex-direction: column !important;\n                justify-content: flex-start !important;\n\n                /*\n                    NYT injects invalid-submission feedback as an absolutely\n                    positioned .lb-message-box inside the text-field wrapper.\n                    The fixed history lane must not clip those transient boxes.\n                    Accepted-word overflow remains owned by .lb-list-container.\n                */\n                overflow: visible !important;\n            }''',
+              'word container overflow'
+          )
+
+          replace_once(
+              '''            > .lb-text-field-wrapper {\n                order: 1;\n                position: relative !important;\n                flex: 0 0 auto;\n            }''',
+              '''            > .lb-text-field-wrapper {\n                order: 1;\n                position: relative !important;\n                flex: 0 0 auto;\n                overflow: visible !important;\n            }\n\n            .lb-game-container.${LayoutClass}\n            > .lb-word-container\n            > .lb-text-field-wrapper\n            > .lb-message-box {\n                z-index: 4 !important;\n            }''',
+              'message box visibility'
+          )
+
+          replace_once(
+              '''            #${PreviewDebugPanelId} {\n                position: fixed;''',
+              '''            #${PreviewDebugToggleButtonId} {\n                position: fixed;\n                z-index: 100001;\n                padding: 4px 7px;\n                border: 1px solid rgba(255, 255, 255, 0.45);\n                border-radius: 3px;\n                background: rgba(20, 20, 24, 0.96);\n                color: #f2f2f2;\n                box-shadow: 0 3px 12px rgba(0, 0, 0, 0.32);\n                font: 700 11px/1.25 Arial, sans-serif;\n                white-space: nowrap;\n                cursor: pointer;\n            }\n\n            #${PreviewDebugToggleButtonId}:hover {\n                background: #303038;\n            }\n\n            #${PreviewDebugPanelId} {\n                position: fixed;''',
+              'debug toggle styles'
+          )
+
+          old_position = '''    function PositionPreviewDebugPane() {\n        if (UserscriptBuildChannel !== "preview") {\n            return;\n        }\n\n        const DebugPanel = document.getElementById(PreviewDebugPanelId);\n        const Panel = document.getElementById(PanelId);\n\n        if (!DebugPanel || !Panel) {\n            return;\n        }\n\n        const PanelRect = Panel.getBoundingClientRect();\n        const DebugWidth = Math.min(\n            340,\n            Math.max(280, window.innerWidth - 16)\n        );\n        const Left = Math.max(\n            8,\n            PanelRect.left - DebugWidth - 8\n        );\n        const Top = Math.max(8, PanelRect.top);\n        const MaximumHeight = Math.max(\n            180,\n            window.innerHeight - Top - 8\n        );\n\n        DebugPanel.style.width = `${DebugWidth}px`;\n        DebugPanel.style.left = `${Left}px`;\n        DebugPanel.style.top = `${Top}px`;\n        DebugPanel.style.maxHeight = `${MaximumHeight}px`;\n    }'''
+
+          new_position = '''    function PositionPreviewDebugPane() {\n        if (UserscriptBuildChannel !== "preview") {\n            return;\n        }\n\n        const DebugPanel = document.getElementById(PreviewDebugPanelId);\n        const ToggleButton = document.getElementById(PreviewDebugToggleButtonId);\n        const Panel = document.getElementById(PanelId);\n\n        if (!DebugPanel || !ToggleButton || !Panel) {\n            return;\n        }\n\n        const PanelRect = Panel.getBoundingClientRect();\n        const SettingsSummary = document.querySelector(\n            `#${SettingsMenuId} > summary`\n        );\n        const SettingsRect = SettingsSummary?.getBoundingClientRect();\n        const ToggleWidth = Math.max(1, ToggleButton.offsetWidth);\n        const ToggleHeight = Math.max(1, ToggleButton.offsetHeight);\n\n        /*\n            Keep the control outside LBC itself, immediately above the header\n            and horizontally just left of the Settings button when possible.\n        */\n        const ToggleLeft = Clamp(\n            (SettingsRect?.left ?? PanelRect.right) - ToggleWidth - 6,\n            8,\n            Math.max(8, window.innerWidth - ToggleWidth - 8)\n        );\n        const ToggleTop = Math.max(\n            8,\n            PanelRect.top - ToggleHeight - 4\n        );\n\n        ToggleButton.style.left = `${ToggleLeft}px`;\n        ToggleButton.style.top = `${ToggleTop}px`;\n\n        const ToggleRect = ToggleButton.getBoundingClientRect();\n        const DebugWidth = Math.min(\n            340,\n            Math.max(280, window.innerWidth - 16)\n        );\n\n        /* User-tested placement: debug pane belongs to the RIGHT of LBC. */\n        const Left = Math.max(\n            8,\n            PanelRect.right + 8\n        );\n        const Top = Math.max(\n            8,\n            ToggleRect.bottom + 4\n        );\n        const MaximumHeight = Math.max(\n            180,\n            window.innerHeight - Top - 8\n        );\n\n        DebugPanel.style.width = `${DebugWidth}px`;\n        DebugPanel.style.left = `${Left}px`;\n        DebugPanel.style.top = `${Top}px`;\n        DebugPanel.style.maxHeight = `${MaximumHeight}px`;\n    }'''
+          replace_once(old_position, new_position, 'debug position function')
+
+          replace_once(
+              '''        EnsurePreviewDebugStyles();\n\n        const DebugPanel = document.createElement("aside");''',
+              '''        EnsurePreviewDebugStyles();\n\n        const ToggleButton = document.createElement("button");\n        ToggleButton.id = PreviewDebugToggleButtonId;\n        ToggleButton.type = "button";\n        ToggleButton.textContent = "Show Debug Pane";\n        ToggleButton.setAttribute(\n            "aria-controls",\n            PreviewDebugPanelId\n        );\n        ToggleButton.setAttribute("aria-expanded", "false");\n\n        const DebugPanel = document.createElement("aside");''',
+              'create toggle button'
+          )
+
+          replace_once(
+              '''        DebugPanel.setAttribute(\n            "aria-label",\n            "Letter Boxed Cubed Preview DOM debugger"\n        );\n\n        const Header = document.createElement("div");''',
+              '''        DebugPanel.setAttribute(\n            "aria-label",\n            "Letter Boxed Cubed Preview DOM debugger"\n        );\n        DebugPanel.hidden = !PreviewDebugPaneVisible;\n\n        ToggleButton.addEventListener("click", () => {\n            PreviewDebugPaneVisible = !PreviewDebugPaneVisible;\n            DebugPanel.hidden = !PreviewDebugPaneVisible;\n            ToggleButton.textContent = PreviewDebugPaneVisible\n                ? "Hide Debug Pane"\n                : "Show Debug Pane";\n            ToggleButton.setAttribute(\n                "aria-expanded",\n                String(PreviewDebugPaneVisible)\n            );\n\n            if (PreviewDebugPaneVisible) {\n                RenderPreviewDebugPane();\n            }\n\n            PositionPreviewDebugPane();\n        });\n\n        const Header = document.createElement("div");''',
+              'toggle behavior'
+          )
+
+          replace_once(
+              '''        document.body.appendChild(DebugPanel);\n        StartPreviewDebugObserver();''',
+              '''        document.body.append(\n            ToggleButton,\n            DebugPanel\n        );\n        StartPreviewDebugObserver();''',
+              'append toggle and panel'
+          )
+
+          replace_once(
+              '''        PanelContent.scrollTop =\n            PreviousScrollTop;\n    }''',
+              '''        PanelContent.scrollTop =\n            PreviousScrollTop;\n\n        requestAnimationFrame(PositionPreviewDebugPane);\n    }''',
+              'reposition debug after render'
+          )
+
+          path.write_text(text, encoding='utf-8')
+
+          changelog = Path('CHANGELOG.md')
+          ctext = changelog.read_text(encoding='utf-8')
+          marker = '# Changelog\n\n'
+          entry = '''## 1.12.0-beta.8\n- Restored NYT invalid-submission feedback by allowing nested `.lb-message-box` popups to escape the fixed TI history-lane clipping while keeping accepted-word overflow inside its own scroller.\n- Moved the Preview DOM debugger to the right of LBC and added an external Show/Hide Debug Pane toggle above LBC near Settings; mutation capture continues while the pane is hidden.\n\n'''
+          if entry not in ctext:
+              if marker not in ctext:
+                  raise SystemExit('changelog heading not found')
+              ctext = ctext.replace(marker, marker + entry, 1)
+              changelog.write_text(ctext, encoding='utf-8')
+          PY
+
+          node --check LetterBoxedCubed.user.js
+          node tests/merge-tests.js
+
+      - name: Commit implementation and remove one-shot workflow
+        shell: bash
+        run: |
+          rm .github/workflows/apply-qol-beta8-feedback-debug.yml
+          git config user.name "Nathan Burgdorff + Ari (ChatGPT)"
+          git config user.email "6709230+Msyjsm@users.noreply.github.com"
+          git add LetterBoxedCubed.user.js CHANGELOG.md .github/workflows/apply-qol-beta8-feedback-debug.yml
+          git commit -m "Restore invalid feedback and refine Preview debugger"
+          git push origin feature/qol-4-10-12-13-14
