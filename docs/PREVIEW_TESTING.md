@@ -39,13 +39,13 @@ Each workflow run appends the monotonically increasing `github.run_number` to th
 
 ## v1.12 QoL bundle checks
 
-The `feature/qol-4-10-12-13-14` preview bundles issues #4, #5, #10, #12, #13, #14, #16, #17, #18, and #19. The current source is `1.12.0-beta.8`.
+The `feature/qol-4-10-12-13-14` preview bundles issues #4, #5, #10, #12, #13, #14, #16, #17, #18, and #19. The current source is `1.12.0-beta.9`.
 
-- **Adjust layout gap between text input and letter box** now reserves a fixed-height history lane below the text input. Accepted words, the par, and feedback consume this already-reserved space instead of increasing TI height. Entering enough words to wrap onto additional rows must not move GB.
+- **Adjust layout gap between text input and letter box** now reserves a fixed-height history lane below the text input. Accepted words, the par, and feedback consume this already-reserved space instead of increasing TI height. Entering enough words to wrap onto additional rows must not move GB. The draggable horizontal grip line sits a fixed visual offset above the GB top letters rather than touching them.
 - If accepted-word history exceeds the reserved lane, `.lb-list-container` scrolls vertically inside that lane; GB remains fixed.
 - The initial `.lb-par.no-words` is removed from normal flow so NYT's zero-word DOM variant cannot alter the measured input height.
 - **Hide par** should hide only the actual `Try to solve in X words` prompt in both NYT DOM states. Invalid-submission feedback injected as `.lb-text-field-wrapper > .lb-message-box` (for example **Too short** and **Not in word list**) must remain visible and must not be clipped by the fixed TI/history lane.
-- Preview includes a TI/GB DOM debugger. Its external **Show Debug Pane / Hide Debug Pane** control sits just outside LBC near Settings; the pane opens to the **right** of LBC and below that control. Mutation capture continues while the pane is hidden.
+- Preview includes a TI/GB DOM debugger. Its external **Show Debug Pane / Hide Debug Pane** control sits just outside LBC, right-aligned with Settings; the pane opens to the **right** of LBC and below that control. The pane is explicitly hidden/shown by the toggle, and mutation capture continues while hidden. The right LBC resize grip is centered in an equal gutter between LBC and the debugger.
 - The temporary square logo placeholder must no longer collapse to 0x0 for one animation frame when a word is accepted. Its size measurement is synchronous and should not cause the visible LBC blink seen in beta.4.
 - Preview exposes bootstrap diagnostics for issue #1 in `window.__LetterBoxedCubedBootstrapTrace` and `sessionStorage["LetterBoxedCubed_PreviewBootstrapTrace"]`. The trace records `document.wasDiscarded`, navigation type, readiness milestones, and timeout/initialization completion.
 - Escape invokes NYT's native Restart control. Delete repeatedly invokes NYT's native Delete control until one current-word boundary is reached; when a prior word has been accepted, the carried linking letter remains as the starting point of the current word.

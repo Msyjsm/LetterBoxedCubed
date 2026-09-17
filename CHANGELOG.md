@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.12.0-beta.9
+- Raised the TI/GB horizontal resize-grip line above the GB top letters using the same visual offset as LBC's vertical grip lines.
+- Made LBC's left and right vertical resize-grip lines symmetric outside the panel edges.
+- Moved the Preview debugger farther right so LBC's right grip line is centered in an equal gutter between LBC and the debugger.
+- Fixed the Preview debugger Show/Hide control with an explicit display override and right-aligned its external toggle with the Settings button.
+
 ## 1.12.0-beta.8
 - Restored NYT invalid-submission feedback by allowing nested `.lb-message-box` popups to escape the fixed TI history-lane clipping while keeping accepted-word overflow inside its own scroller.
 - Moved the Preview DOM debugger to the right of LBC and added an external Show/Hide Debug Pane toggle above LBC near Settings; mutation capture continues while the pane is hidden.

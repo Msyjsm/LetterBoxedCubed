@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed
 // @namespace    https://nathanburgdorff.com/userscripts/
-// @version      1.12.0-beta.8
+// @version      1.12.0-beta.9
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -112,6 +112,8 @@
 
     const ResizeHandleWidth = 16;
     const RightResizeHandleGap = 3;
+    const ResizeGripLineOffset =
+        (ResizeHandleWidth / 2) + RightResizeHandleGap;
 
     const LegacyPanelWidthStorageKey = "LetterBoxedCubed_PanelWidth";
     const PanelWidthStorageKey = "LetterBoxedCubed_PanelWidth_v2";
@@ -1901,13 +1903,19 @@
                 GameRect.width,
                 Math.max(WordRect.right, SquareRect.right) - GameRect.left
             );
-            const Midpoint =
-                ((WordRect.bottom + SquareRect.top) / 2) -
+            /*
+                Keep the visible horizontal grip a fixed distance ABOVE the
+                GB boundary. That distance matches the visual offset of LBC's
+                vertical resize-grip lines from the panel edge.
+            */
+            const GripLineY =
+                SquareRect.top -
+                ResizeGripLineOffset -
                 GameRect.top;
 
             Handle.style.left = `${Math.round(Left)}px`;
             Handle.style.width = `${Math.max(24, Math.round(Right - Left))}px`;
-            Handle.style.top = `${Math.round(Midpoint - 6)}px`;
+            Handle.style.top = `${Math.round(GripLineY - 6)}px`;
         });
     }
 
@@ -5151,7 +5159,7 @@
             and horizontally just left of the Settings button when possible.
         */
         const ToggleLeft = Clamp(
-            (SettingsRect?.left ?? PanelRect.right) - ToggleWidth - 6,
+            (SettingsRect?.right ?? PanelRect.right) - ToggleWidth,
             8,
             Math.max(8, window.innerWidth - ToggleWidth - 8)
         );
@@ -5169,10 +5177,14 @@
             Math.max(280, window.innerWidth - 16)
         );
 
-        /* User-tested placement: debug pane belongs to the RIGHT of LBC. */
+        /*
+            The right LBC grip line sits ResizeGripLineOffset px outside LBC.
+            Put the debugger another equal offset beyond that line, so the
+            grip is visually centered in the gutter between the two panels.
+        */
         const Left = Math.max(
             8,
-            PanelRect.right + 8
+            PanelRect.right + (ResizeGripLineOffset * 2)
         );
         const Top = Math.max(
             8,
@@ -5272,10 +5284,20 @@
             "Letter Boxed Cubed Preview DOM debugger"
         );
         DebugPanel.hidden = !PreviewDebugPaneVisible;
+        DebugPanel.style.setProperty(
+            "display",
+            PreviewDebugPaneVisible ? "block" : "none",
+            "important"
+        );
 
         ToggleButton.addEventListener("click", () => {
             PreviewDebugPaneVisible = !PreviewDebugPaneVisible;
             DebugPanel.hidden = !PreviewDebugPaneVisible;
+            DebugPanel.style.setProperty(
+                "display",
+                PreviewDebugPaneVisible ? "block" : "none",
+                "important"
+            );
             ToggleButton.textContent = PreviewDebugPaneVisible
                 ? "Hide Debug Pane"
                 : "Show Debug Pane";
@@ -7455,7 +7477,7 @@
             }
 
             .lb-cubed-resize-handle-left {
-                left: -${ResizeHandleWidth / 2}px;
+                left: -${ResizeHandleWidth + RightResizeHandleGap}px;
             }
 
             .lb-cubed-resize-handle-right {
