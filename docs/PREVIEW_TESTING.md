@@ -39,10 +39,10 @@ Each workflow run appends the monotonically increasing `github.run_number` to th
 
 ## v1.12 QoL bundle checks
 
-The `feature/qol-4-10-12-13-14` preview bundles issues #4, #5, #10, #12, #13, #14, #16, #17, #18, and #19. The current source is `1.12.0-beta.9`.
+The `feature/qol-4-10-12-13-14` preview bundles issues #4, #5, #10, #12, #13, #14, #16, #17, #18, and #19. The current source is `1.12.0-beta.10`.
 
-- **Adjust layout gap between text input and letter box** now reserves a fixed-height history lane below the text input. Accepted words, the par, and feedback consume this already-reserved space instead of increasing TI height. Entering enough words to wrap onto additional rows must not move GB. The draggable horizontal grip line sits a fixed visual offset above the GB top letters rather than touching them.
-- If accepted-word history exceeds the reserved lane, `.lb-list-container` scrolls vertically inside that lane; GB remains fixed.
+- **Adjust layout gap between text input and letter box** now uses a calibrated baseline: the closest safe TI/GB arrangement is shown as **0px**, backed internally by a 90px minimum history lane. The control then represents only additional space above that minimum, and Reset returns to 0px. The draggable horizontal grip line sits a fixed visual offset above the GB top letters rather than touching them.
+- `.lb-list-container` is now an exact-height scroll viewport matching the reserved history lane rather than a flex-inferred remainder. Accepted-word history must scroll inside that lane before it can visually enter GB territory; GB remains fixed.
 - The initial `.lb-par.no-words` is removed from normal flow so NYT's zero-word DOM variant cannot alter the measured input height.
 - **Hide par** should hide only the actual `Try to solve in X words` prompt in both NYT DOM states. Invalid-submission feedback injected as `.lb-text-field-wrapper > .lb-message-box` (for example **Too short** and **Not in word list**) must remain visible and must not be clipped by the fixed TI/history lane.
 - Preview includes a TI/GB DOM debugger. Its external **Show Debug Pane / Hide Debug Pane** control sits just outside LBC, right-aligned with Settings; the pane opens to the **right** of LBC and below that control. The pane is explicitly hidden/shown by the toggle, and mutation capture continues while hidden. The right LBC resize grip is centered in an equal gutter between LBC and the debugger.
@@ -54,7 +54,7 @@ The `feature/qol-4-10-12-13-14` preview bundles issues #4, #5, #10, #12, #13, #1
 - The main LBC header otherwise contains the custom-dictionary control, **Browse History**, and **Settings**. Google Drive state remains light-gray header text.
 - Settings copy uses **Hide par**, **Line animation speed**, **New word highlight**, **Compact title layout**, and **Hide Yesterday/Help row**.
 - First/Second Hint entries show solved/total Twofer progress for that word in that position, and completed entries are struck through.
-- Newly discovered words briefly fade from chartreuse in Found Words and Hints. Their exact Words-by-Length row highlights as well, and newly solved Twofers receive the same effect.
+- Newly discovered words briefly fade from chartreuse in Found Words and Hints. Their exact Words-by-Length row highlights as well, and newly solved Twofers receive the same effect. Structurally valid NYT-invalid submissions update only the custom-dictionary header control and must not restart a fade already in progress.
 - Completion highlights for every newly discovered dictionary word. Longest Found highlights when the new word establishes a new maximum or ties the current maximum length.
 - Words by Length contains one row for every exact word length present in the current dictionary; absent lengths are omitted rather than rolled into `7+`.
 - The NYT global header and Letter Boxed title area each have an on-page vertical resize grip. Their Settings values are percentages of native size; 0% hides the region and Reset returns it to 100%.

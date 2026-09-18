@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.12.0-beta.10
+- Recalibrated TI/GB spacing so the closest safe layout is displayed as 0px while preserving a 90px internal history-lane baseline; Reset now returns to 0px instead of the obsolete 16px value.
+- Made the accepted-word history lane an exact-height scroll viewport rather than a flex-inferred remainder, so scrolling should begin before history can visually enter GB territory.
+- Stopped structurally valid NYT-invalid submissions from rebuilding the entire LBC panel; the custom-dictionary header control now updates in place, preserving any active new-word highlight fade.
+
 ## 1.12.0-beta.9
 - Raised the TI/GB horizontal resize-grip line above the GB top letters using the same visual offset as LBC's vertical grip lines.
 - Made LBC's left and right vertical resize-grip lines symmetric outside the panel edges.

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed
 // @namespace    https://nathanburgdorff.com/userscripts/
-// @version      1.12.0-beta.9
+// @version      1.12.0-beta.10
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -154,8 +154,16 @@
     const DefaultNewItemHighlightSeconds = 1.0;
     const MinimumNewItemHighlightSeconds = 0.1;
     const MaximumNewItemHighlightSeconds = 10.0;
+    /*
+        The NYT TI needs a real baseline lane beneath the text entry before
+        the board can sit any closer without visual collision. User-facing
+        "gap" is therefore EXTRA space above this calibrated minimum.
+    */
+    const MinimumHistoryLaneHeight = 90;
     const MinimumLayoutGap = 0;
     const MaximumLayoutGap = 200;
+    const MaximumHistoryLaneHeight =
+        MinimumHistoryLaneHeight + MaximumLayoutGap;
     const MinimumNytPageScale = 0;
     const MaximumNytPageScale = 2;
 
@@ -652,6 +660,42 @@
         ScheduleCloudSync();
     }
 
+    function UpdateInvalidWordControl() {
+        const InvalidWord = document.querySelector(
+            ".lb-cubed-invalid-word"
+        );
+        const AddDictionaryButton = document.querySelector(
+            ".lb-cubed-invalid-control .lb-cubed-header-button"
+        );
+
+        if (!InvalidWord || !AddDictionaryButton) {
+            return;
+        }
+
+        InvalidWord.textContent =
+            LastInvalidWord ||
+            "No invalid word";
+        InvalidWord.title = LastInvalidWord
+            ? "Last submitted word that obeys the board rules but is absent from NYT's dictionary"
+            : "No structurally valid NYT-dictionary rejection has been captured yet";
+
+        const InvalidAlreadyAdded =
+            LastInvalidWord &&
+            CustomDictionary.has(LastInvalidWord);
+
+        AddDictionaryButton.textContent = InvalidAlreadyAdded
+            ? "Added"
+            : "Add to dictionary";
+        AddDictionaryButton.disabled =
+            !LastInvalidWord ||
+            InvalidAlreadyAdded;
+        AddDictionaryButton.title = LastInvalidWord
+            ? InvalidAlreadyAdded
+                ? `${LastInvalidWord} is already in your custom dictionary`
+                : `Record ${LastInvalidWord} as a user-approved custom dictionary word`
+            : "Submit a structurally valid word that NYT does not recognize first";
+    }
+
     function AddLastInvalidWordToCustomDictionary() {
         const Word = NormalizeWord(LastInvalidWord);
 
@@ -682,7 +726,11 @@
             Word
         );
 
-        RenderPanel();
+        /*
+            Only the header control changed. Avoid rebuilding the entire LBC
+            panel, which would restart any in-progress new-word fade animation.
+        */
+        UpdateInvalidWordControl();
     }
 
     function IsStructurallyValidLetterBoxedWord(Word) {
@@ -730,7 +778,12 @@
             SaveCustomWordsForCurrentPuzzle();
         }
 
-        RenderPanel();
+        /*
+            An invalid submission only changes the small dictionary control in
+            LBC's header. A full RenderPanel() here recreated highlighted nodes
+            and visibly restarted an active new-word fade.
+        */
+        UpdateInvalidWordControl();
     }
 
     // -------------------------------------------------------------------------
@@ -1038,11 +1091,16 @@
             GetGuiSetting("AdjustLayoutGap", false)
         );
 
+        /*
+            LayoutGapPx remains the physical stored lane height for beta
+            compatibility. The UI presents only the extra amount above the
+            calibrated 90px minimum.
+        */
         LayoutGapPx = GetFiniteGuiNumber(
             "LayoutGapPx",
-            LeftColumnGap,
-            MinimumLayoutGap,
-            MaximumLayoutGap
+            MinimumHistoryLaneHeight,
+            MinimumHistoryLaneHeight,
+            MaximumHistoryLaneHeight
         );
 
         NytHeaderScale = GetFiniteGuiNumber(
@@ -1066,6 +1124,24 @@
         HideYesterdayHelpRow = Boolean(
             GetGuiSetting("HideYesterdayHelpRow", false)
         );
+    }
+
+    function GetDisplayedLayoutGapPx() {
+        return Math.max(
+            0,
+            Math.round(LayoutGapPx - MinimumHistoryLaneHeight)
+        );
+    }
+
+    function SetDisplayedLayoutGapPx(Value) {
+        const Numeric = Number(Value);
+        const DisplayedGap = Number.isFinite(Numeric)
+            ? Clamp(Numeric, MinimumLayoutGap, MaximumLayoutGap)
+            : MinimumLayoutGap;
+
+        LayoutGapPx =
+            MinimumHistoryLaneHeight +
+            DisplayedGap;
     }
 
     function RegisterRecentHighlight(MapValue, Key) {
@@ -1480,15 +1556,15 @@
             ),
             CreateSettingsNumberWithReset(
                 "Manually set gap",
-                Math.round(LayoutGapPx),
+                GetDisplayedLayoutGapPx(),
                 MinimumLayoutGap,
                 MaximumLayoutGap,
                 1,
                 "px",
-                LeftColumnGap,
+                0,
                 "LayoutGapPx",
                 Value => {
-                    LayoutGapPx = Value;
+                    SetDisplayedLayoutGapPx(Value);
                     SetGuiSetting("LayoutGapPx", LayoutGapPx);
                     UpdatePanelLayout();
                 }
@@ -1965,15 +2041,15 @@
         LayoutGapPx = Clamp(
             LayoutGapResizeState.StartGap +
             (Event.clientY - LayoutGapResizeState.StartY),
-            MinimumLayoutGap,
-            MaximumLayoutGap
+            MinimumHistoryLaneHeight,
+            MaximumHistoryLaneHeight
         );
 
         const Input = document.querySelector(
             '[data-cubed-setting-input="LayoutGapPx"]'
         );
         if (Input) {
-            Input.value = String(Math.round(LayoutGapPx));
+            Input.value = String(GetDisplayedLayoutGapPx());
         }
 
         UpdatePanelLayout();
@@ -5442,7 +5518,11 @@
             Math.ceil(TextFieldWrapper.getBoundingClientRect().height)
         );
         const HistoryLaneHeight = Math.round(
-            Clamp(LayoutGapPx, MinimumLayoutGap, MaximumLayoutGap)
+            Clamp(
+                LayoutGapPx,
+                MinimumHistoryLaneHeight,
+                MaximumHistoryLaneHeight
+            )
         );
 
         GameContainer.style.setProperty(
@@ -7342,10 +7422,33 @@
             > .lb-word-container
             > .lb-list-container {
                 order: 2;
-                flex: 1 1 auto;
-                height: auto !important;
-                min-height: 0 !important;
-                max-height: 100% !important;
+
+                /*
+                    This is the history lane. Give it an exact physical height
+                    instead of asking flexbox to infer the remainder from NYT's
+                    changing child geometry. Its own overflow is therefore the
+                    authoritative clipping/scroll boundary, so accepted words
+                    scroll BEFORE they can enter GB territory.
+                */
+                flex: 0 0 var(
+                    --lb-cubed-history-lane-height,
+                    ${MinimumHistoryLaneHeight}px
+                );
+                box-sizing: border-box !important;
+                height: var(
+                    --lb-cubed-history-lane-height,
+                    ${MinimumHistoryLaneHeight}px
+                ) !important;
+                min-height: var(
+                    --lb-cubed-history-lane-height,
+                    ${MinimumHistoryLaneHeight}px
+                ) !important;
+                max-height: var(
+                    --lb-cubed-history-lane-height,
+                    ${MinimumHistoryLaneHeight}px
+                ) !important;
+                margin-top: 0 !important;
+                margin-bottom: 0 !important;
                 padding-bottom: 0 !important;
                 overflow-x: hidden !important;
                 overflow-y: auto !important;
