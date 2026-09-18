@@ -4,6 +4,7 @@
 - Removed NYT's native vertical margins from the square container while Cubed owns the TI/GB grid, preventing GB/canvas content from being pulled upward into the reserved history lane and blocking its scrollbar.
 - Repositioned the draggable TI/GB grip into the gutter immediately below the history lane instead of anchoring it above the square container's native box.
 - Added collision-aware valid-word feedback placement: if NYT's success message would crowd visible accepted-word history, Cubed mirrors it into the text-field wrapper where NYT already displays invalid-submission messages, with a small clearance buffer.
+- Refreshed the generated Preview from the finalized beta.11 implementation commit after the one-shot patch workflow completed.
 
 ## 1.12.0-beta.10
 - Recalibrated TI/GB spacing so the closest safe layout is displayed as 0px while preserving a 90px internal history-lane baseline; Reset now returns to 0px instead of the obsolete 16px value.
