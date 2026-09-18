@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.12.0-beta.13
+- Replaced the parent-relative relocated success-toast positioning with a game-container-level proxy placed from live viewport geometry immediately above the text-entry wrapper; the native GB toast is hidden only after the proxy is populated and positioned.
+- Removed the nested history scrollbars: `.lb-list-container` is now a non-scrolling fixed-height flex shell, `.lb-word-list-length` stays pinned, and only `.lb-word-list-container` owns vertical scrolling.
+- Updated toast/history collision measurement to use the inner word-history viewport rather than the outer container that also contains the pinned word count.
+
 ## 1.12.0-beta.12
 - Corrected the TI/GB grid track to include NYT's native TI top/bottom margins. The four geometry dumps showed that the board/history overlap was exactly the uncounted TI margin, so GB now begins after the visible TI rather than after its smaller nominal grid row.
 - Added a fixed 22px TI/GB grip gutter derived from the existing 11px grip-line offset, centering the horizontal grip between the history lane and GB instead of placing it inside either region.
