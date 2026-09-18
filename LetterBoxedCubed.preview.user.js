@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed [PREVIEW]
 // @namespace    https://nathanburgdorff.com/userscripts/preview/
-// @version      1.12.0-beta.12.71
+// @version      1.12.0-beta.13.72
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -4588,38 +4588,38 @@
             return null;
         }
 
-        const ListRect = ListContainer.getBoundingClientRect();
-        let Bottom = ListRect.top;
-        let SawVisibleContent = false;
+        /*
+            The count label is intentionally outside the scrolling viewport.
+            Collision detection therefore measures only the actually visible
+            accepted-word content inside .lb-word-list-container.
+        */
+        const HistoryViewport = ListContainer.querySelector(
+            ":scope > .lb-word-list-container"
+        );
+        const HistoryList = HistoryViewport?.querySelector(
+            ":scope > .lb-word-list"
+        );
 
-        for (const Selector of [
-            ":scope > .lb-word-list-length",
-            ":scope > .lb-word-list-container .lb-word-list"
-        ]) {
-            const Element = ListContainer.querySelector(Selector);
-            if (!Element) {
-                continue;
-            }
-
-            const Rect = Element.getBoundingClientRect();
-            if (
-                Rect.height <= 0 ||
-                Rect.bottom <= ListRect.top ||
-                Rect.top >= ListRect.bottom
-            ) {
-                continue;
-            }
-
-            SawVisibleContent = true;
-            Bottom = Math.max(
-                Bottom,
-                Math.min(Rect.bottom, ListRect.bottom)
-            );
+        if (!HistoryViewport || !HistoryList) {
+            return null;
         }
 
-        return SawVisibleContent
-            ? Bottom
-            : null;
+        const ViewportRect = HistoryViewport.getBoundingClientRect();
+        const ListRect = HistoryList.getBoundingClientRect();
+
+        if (
+            ViewportRect.height <= 0 ||
+            ListRect.height <= 0 ||
+            ListRect.bottom <= ViewportRect.top ||
+            ListRect.top >= ViewportRect.bottom
+        ) {
+            return null;
+        }
+
+        return Math.min(
+            ListRect.bottom,
+            ViewportRect.bottom
+        );
     }
 
     function ClearValidWordFeedbackProxy(Source = null) {
@@ -4642,8 +4642,11 @@
     function UpdateValidWordFeedbackPlacement() {
         ValidFeedbackPlacementFrame = null;
 
-        const WordContainer = document.querySelector(
-            ".lb-game-container .lb-word-container"
+        const GameContainer = document.querySelector(
+            ".lb-game-container"
+        );
+        const WordContainer = GameContainer?.querySelector(
+            ":scope > .lb-word-container"
         );
         const TextFieldWrapper = WordContainer?.querySelector(
             ":scope > .lb-text-field-wrapper"
@@ -4651,14 +4654,19 @@
         const ListContainer = WordContainer?.querySelector(
             ":scope > .lb-list-container"
         );
-        const SquareContainer = document.querySelector(
-            ".lb-game-container .lb-square-container"
+        const SquareContainer = GameContainer?.querySelector(
+            ":scope > .lb-square-container"
         );
         const Source = SquareContainer?.querySelector(
             ":scope > .lb-message-box"
         );
 
-        if (!TextFieldWrapper || !ListContainer || !Source) {
+        if (
+            !GameContainer ||
+            !TextFieldWrapper ||
+            !ListContainer ||
+            !Source
+        ) {
             ClearValidWordFeedbackProxy();
             return;
         }
@@ -4687,7 +4695,7 @@
             return;
         }
 
-        let Proxy = TextFieldWrapper.querySelector(
+        let Proxy = GameContainer.querySelector(
             ":scope > .lb-cubed-valid-feedback-proxy"
         );
 
@@ -4695,12 +4703,44 @@
             Proxy = document.createElement("div");
             Proxy.className =
                 "lb-message-box success-message lb-cubed-valid-feedback-proxy";
-            TextFieldWrapper.appendChild(Proxy);
+            GameContainer.appendChild(Proxy);
         }
 
         Proxy.replaceChildren(
             ...[...Source.childNodes].map(Node => Node.cloneNode(true))
         );
+
+        /*
+            Do not reuse NYT's parent-relative top/bottom coordinates.
+            The proxy is a direct child of the positioned game container,
+            so place it from live viewport geometry immediately above TI.
+        */
+        const GameRect = GameContainer.getBoundingClientRect();
+        const InputRect = TextFieldWrapper.getBoundingClientRect();
+        const ProxyRect = Proxy.getBoundingClientRect();
+        const Left =
+            ((InputRect.left + InputRect.right) / 2) -
+            GameRect.left -
+            (ProxyRect.width / 2);
+        const Top = Math.max(
+            0,
+            InputRect.top -
+            GameRect.top -
+            ProxyRect.height -
+            8
+        );
+
+        Proxy.style.setProperty(
+            "left",
+            `${Math.round(Left)}px`,
+            "important"
+        );
+        Proxy.style.setProperty(
+            "top",
+            `${Math.round(Top)}px`,
+            "important"
+        );
+
         Source.classList.add(
             "lb-cubed-valid-feedback-relocated-source"
         );
@@ -7704,13 +7744,13 @@
 
             .lb-cubed-valid-feedback-proxy {
                 position: absolute !important;
-                left: 50% !important;
                 right: auto !important;
-                top: auto !important;
-                bottom: calc(100% + 8px) !important;
+                bottom: auto !important;
                 margin: 0 !important;
-                transform: translateX(-50%) !important;
-                z-index: 5 !important;
+                transform: none !important;
+                visibility: visible !important;
+                display: block !important;
+                z-index: 60 !important;
                 pointer-events: none !important;
             }
 
@@ -7759,6 +7799,31 @@
                 margin-top: 0 !important;
                 margin-bottom: 0 !important;
                 padding-bottom: 0 !important;
+                display: flex !important;
+                flex-direction: column !important;
+                overflow: hidden !important;
+                pointer-events: auto !important;
+            }
+
+            /*
+                Keep the count pinned. Only the word-history viewport scrolls,
+                eliminating the nested outer+inner scrollbar pair.
+            */
+            .lb-game-container.${LayoutClass}
+            > .lb-word-container
+            > .lb-list-container
+            > .lb-word-list-length {
+                flex: 0 0 auto !important;
+            }
+
+            .lb-game-container.${LayoutClass}
+            > .lb-word-container
+            > .lb-list-container
+            > .lb-word-list-container {
+                flex: 1 1 auto !important;
+                min-height: 0 !important;
+                height: auto !important;
+                max-height: none !important;
                 overflow-x: hidden !important;
                 overflow-y: auto !important;
                 pointer-events: auto !important;
