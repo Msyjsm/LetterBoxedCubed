@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed
 // @namespace    https://nathanburgdorff.com/userscripts/
-// @version      1.12.0-beta.10
+// @version      1.12.0-beta.11
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -164,6 +164,7 @@
     const MaximumLayoutGap = 200;
     const MaximumHistoryLaneHeight =
         MinimumHistoryLaneHeight + MaximumLayoutGap;
+    const ValidFeedbackHistoryClearance = 10;
     const MinimumNytPageScale = 0;
     const MaximumNytPageScale = 2;
 
@@ -264,6 +265,8 @@
 
     let GameObserver = null;
     let LayoutObserver = null;
+    let SquareFeedbackObserver = null;
+    let ValidFeedbackPlacementFrame = null;
     let ScanTimer = null;
     let LayoutTimer = null;
 
@@ -318,6 +321,7 @@
         StartNytPageResizeBehavior();
         ScanGameState(true);
         StartGameObserver();
+        StartSquareFeedbackObserver();
         StartSubmissionHooks();
         StartKeyboardShortcuts();
         StartLayoutObserver();
@@ -1980,12 +1984,13 @@
                 Math.max(WordRect.right, SquareRect.right) - GameRect.left
             );
             /*
-                Keep the visible horizontal grip a fixed distance ABOVE the
-                GB boundary. That distance matches the visual offset of LBC's
-                vertical resize-grip lines from the panel edge.
+                Position the grip in the gutter BELOW the history lane rather
+                than relative to the square container's native box. NYT gives
+                the square container its own vertical offset, which previously
+                pulled the handle up across accepted-word history.
             */
             const GripLineY =
-                SquareRect.top -
+                WordRect.bottom +
                 ResizeGripLineOffset -
                 GameRect.top;
 
@@ -4567,6 +4572,163 @@
                 );
             }
         }
+
+        QueueValidWordFeedbackPlacement();
+    }
+
+    function GetVisibleHistoryContentBottom(ListContainer) {
+        if (!ListContainer) {
+            return null;
+        }
+
+        const ListRect = ListContainer.getBoundingClientRect();
+        let Bottom = ListRect.top;
+        let SawVisibleContent = false;
+
+        for (const Selector of [
+            ":scope > .lb-word-list-length",
+            ":scope > .lb-word-list-container .lb-word-list"
+        ]) {
+            const Element = ListContainer.querySelector(Selector);
+            if (!Element) {
+                continue;
+            }
+
+            const Rect = Element.getBoundingClientRect();
+            if (
+                Rect.height <= 0 ||
+                Rect.bottom <= ListRect.top ||
+                Rect.top >= ListRect.bottom
+            ) {
+                continue;
+            }
+
+            SawVisibleContent = true;
+            Bottom = Math.max(
+                Bottom,
+                Math.min(Rect.bottom, ListRect.bottom)
+            );
+        }
+
+        return SawVisibleContent
+            ? Bottom
+            : null;
+    }
+
+    function ClearValidWordFeedbackProxy(Source = null) {
+        document.querySelectorAll(".lb-cubed-valid-feedback-proxy")
+            .forEach(Element => Element.remove());
+
+        if (Source) {
+            Source.classList.remove(
+                "lb-cubed-valid-feedback-relocated-source"
+            );
+        } else {
+            document.querySelectorAll(
+                ".lb-cubed-valid-feedback-relocated-source"
+            ).forEach(Element => Element.classList.remove(
+                "lb-cubed-valid-feedback-relocated-source"
+            ));
+        }
+    }
+
+    function UpdateValidWordFeedbackPlacement() {
+        ValidFeedbackPlacementFrame = null;
+
+        const WordContainer = document.querySelector(
+            ".lb-game-container .lb-word-container"
+        );
+        const TextFieldWrapper = WordContainer?.querySelector(
+            ":scope > .lb-text-field-wrapper"
+        );
+        const ListContainer = WordContainer?.querySelector(
+            ":scope > .lb-list-container"
+        );
+        const SquareContainer = document.querySelector(
+            ".lb-game-container .lb-square-container"
+        );
+        const Source = SquareContainer?.querySelector(
+            ":scope > .lb-message-box"
+        );
+
+        if (!TextFieldWrapper || !ListContainer || !Source) {
+            ClearValidWordFeedbackProxy();
+            return;
+        }
+
+        const MessageText = String(Source.textContent || "").trim();
+        if (!MessageText) {
+            ClearValidWordFeedbackProxy(Source);
+            return;
+        }
+
+        const HistoryBottom = GetVisibleHistoryContentBottom(ListContainer);
+        if (!Number.isFinite(HistoryBottom)) {
+            ClearValidWordFeedbackProxy(Source);
+            return;
+        }
+
+        const SourceRect = Source.getBoundingClientRect();
+        const ShouldRelocate =
+            SourceRect.width > 0 &&
+            SourceRect.height > 0 &&
+            SourceRect.top <
+                HistoryBottom + ValidFeedbackHistoryClearance;
+
+        if (!ShouldRelocate) {
+            ClearValidWordFeedbackProxy(Source);
+            return;
+        }
+
+        let Proxy = TextFieldWrapper.querySelector(
+            ":scope > .lb-cubed-valid-feedback-proxy"
+        );
+
+        if (!Proxy) {
+            Proxy = document.createElement("div");
+            Proxy.className =
+                "lb-message-box lb-cubed-valid-feedback-proxy";
+            TextFieldWrapper.appendChild(Proxy);
+        }
+
+        Proxy.replaceChildren(
+            ...[...Source.childNodes].map(Node => Node.cloneNode(true))
+        );
+        Source.classList.add(
+            "lb-cubed-valid-feedback-relocated-source"
+        );
+    }
+
+    function QueueValidWordFeedbackPlacement() {
+        if (ValidFeedbackPlacementFrame !== null) {
+            cancelAnimationFrame(ValidFeedbackPlacementFrame);
+        }
+
+        ValidFeedbackPlacementFrame = requestAnimationFrame(
+            UpdateValidWordFeedbackPlacement
+        );
+    }
+
+    function StartSquareFeedbackObserver() {
+        const SquareContainer = document.querySelector(
+            ".lb-game-container .lb-square-container"
+        );
+
+        if (!SquareContainer) {
+            return;
+        }
+
+        SquareFeedbackObserver?.disconnect();
+        SquareFeedbackObserver = new MutationObserver(
+            QueueValidWordFeedbackPlacement
+        );
+        SquareFeedbackObserver.observe(SquareContainer, {
+            childList: true,
+            subtree: true,
+            characterData: true
+        });
+
+        QueueValidWordFeedbackPlacement();
     }
 
     function StartSubmissionHooks() {
@@ -5595,6 +5757,7 @@
         PositionLayoutGapResizeHandle();
         UpdateLogoPlaceholderSize();
         PositionPreviewDebugPane();
+        QueueValidWordFeedbackPlacement();
     }
 
     function GetLeftColumnWidth() {
@@ -7121,6 +7284,17 @@
             }
 
             /*
+                Once Cubed owns TI/GB positioning as grid rows, NYT's native
+                vertical square-container margins must not pull GB back upward
+                into the reserved history lane. Horizontal margins are left
+                untouched so NYT can keep its own board centering behavior.
+            */
+            .lb-game-container.${LayoutClass} > .lb-square-container {
+                margin-top: 0 !important;
+                margin-bottom: 0 !important;
+            }
+
+            /*
                 Issue #4: optional, explicit vertical-gap grip. It is physically
                 positioned between TI and GB by JavaScript so it follows either
                 side-by-side or stacked outer layout without becoming a grid item.
@@ -7403,6 +7577,23 @@
             > .lb-text-field-wrapper
             > .lb-message-box {
                 z-index: 4 !important;
+            }
+
+            /*
+                NYT renders success praise in the square container, unlike its
+                invalid-submission messages in the text-field wrapper. When the
+                native praise position would crowd accepted-word history, Cubed
+                mirrors it into the wrapper so NYT's own message-box positioning
+                puts it in the same safe feedback area as validation errors.
+            */
+            .lb-cubed-valid-feedback-relocated-source {
+                visibility: hidden !important;
+                pointer-events: none !important;
+            }
+
+            .lb-cubed-valid-feedback-proxy {
+                z-index: 5 !important;
+                pointer-events: none !important;
             }
 
             .lb-game-container.${LayoutClass}
