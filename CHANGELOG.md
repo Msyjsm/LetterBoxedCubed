@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.12.0-beta.12
+- Corrected the TI/GB grid track to include NYT's native TI top/bottom margins. The four geometry dumps showed that the board/history overlap was exactly the uncounted TI margin, so GB now begins after the visible TI rather than after its smaller nominal grid row.
+- Added a fixed 22px TI/GB grip gutter derived from the existing 11px grip-line offset, centering the horizontal grip between the history lane and GB instead of placing it inside either region.
+- Restored direct pointer interaction on the accepted-word history scroller, whose computed `pointer-events: none` was preventing scrollbar dragging/wheel targeting.
+- Preserved the `success-message` class on relocated valid-word feedback and gave its proxy an explicit above-input position instead of relying on NYT's parent-dependent absolute positioning.
+- Preview builds now show their exact runtime version in gray just above LBC, left-aligned with the logo placeholder. The header date now sits directly below Drive sync status beside the logo.
+
 ## 1.12.0-beta.11
 - Removed NYT's native vertical margins from the square container while Cubed owns the TI/GB grid, preventing GB/canvas content from being pulled upward into the reserved history lane and blocking its scrollbar.
 - Repositioned the draggable TI/GB grip into the gutter immediately below the history lane instead of anchoring it above the square container's native box.
