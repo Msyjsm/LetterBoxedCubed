@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed [PREVIEW]
 // @namespace    https://nathanburgdorff.com/userscripts/preview/
-// @version      1.12.0-beta.11.67
+// @version      1.12.0-beta.12.68
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -9,6 +9,7 @@
 // @grant        unsafeWindow
 // @grant        GM_getValue
 // @grant        GM_setValue
+// @grant        GM_info
 // @grant        GM_listValues
 // @grant        GM_xmlhttpRequest
 // @connect      script.google.com
@@ -117,6 +118,7 @@
     const RightResizeHandleGap = 3;
     const ResizeGripLineOffset =
         (ResizeHandleWidth / 2) + RightResizeHandleGap;
+    const TiGbGripGutter = ResizeGripLineOffset * 2;
 
     const LegacyPanelWidthStorageKey = "LetterBoxedCubed_PanelWidth";
     const PanelWidthStorageKey = "LetterBoxedCubed_PanelWidth_v2";
@@ -151,6 +153,7 @@
     const PreviewDebugPanelId = "lb-cubed-preview-debug";
     const PreviewDebugStyleId = "lb-cubed-preview-debug-styles";
     const PreviewDebugToggleButtonId = "lb-cubed-preview-debug-toggle";
+    const PreviewVersionLabelId = "lb-cubed-preview-version";
     const CloudSyncDebounceMs = 2500;
     const CloudSyncProtocolVersion = 1;
 
@@ -316,6 +319,7 @@
         NormalizeWordAreaFeedbackLayout();
         CreatePanel();
         CreatePreviewDebugPane();
+        CreatePreviewVersionLabel();
         EnsureLayoutGapResizeHandle();
         EnsureNytPageResizeHandles();
         ApplyNytPagePreferences();
@@ -1986,20 +1990,20 @@
                 GameRect.width,
                 Math.max(WordRect.right, SquareRect.right) - GameRect.left
             );
+
             /*
-                Position the grip in the gutter BELOW the history lane rather
-                than relative to the square container's native box. NYT gives
-                the square container its own vertical offset, which previously
-                pulled the handle up across accepted-word history.
+                The grid reserves a gutter exactly twice the normal external
+                grip offset. Put the visible line one offset ABOVE GB, which
+                centers it between the history lane and the first GB pixels.
             */
             const GripLineY =
-                WordRect.bottom +
+                SquareRect.top -
                 ResizeGripLineOffset -
                 GameRect.top;
 
             Handle.style.left = `${Math.round(Left)}px`;
             Handle.style.width = `${Math.max(24, Math.round(Right - Left))}px`;
-            Handle.style.top = `${Math.round(GripLineY - 6)}px`;
+            Handle.style.top = `${Math.round(GripLineY - 5)}px`;
         });
     }
 
@@ -4690,7 +4694,7 @@
         if (!Proxy) {
             Proxy = document.createElement("div");
             Proxy.className =
-                "lb-message-box lb-cubed-valid-feedback-proxy";
+                "lb-message-box success-message lb-cubed-valid-feedback-proxy";
             TextFieldWrapper.appendChild(Proxy);
         }
 
@@ -5013,6 +5017,16 @@
         const Style = document.createElement("style");
         Style.id = PreviewDebugStyleId;
         Style.textContent = `
+            #${PreviewVersionLabelId} {
+                position: fixed;
+                z-index: 99999;
+                color: rgba(92, 92, 92, 0.78);
+                font: 10px/1.2 Consolas, "Courier New", monospace;
+                white-space: nowrap;
+                pointer-events: none;
+                user-select: none;
+            }
+
             #${PreviewDebugToggleButtonId} {
                 position: fixed;
                 z-index: 100001;
@@ -5498,6 +5512,66 @@
         }
     }
 
+    function GetRunningUserscriptVersion() {
+        try {
+            if (typeof GM_info !== "undefined") {
+                const Version = String(GM_info?.script?.version || "").trim();
+                if (Version) {
+                    return Version;
+                }
+            }
+        } catch {}
+
+        return "preview";
+    }
+
+    function CreatePreviewVersionLabel() {
+        if (
+            UserscriptBuildChannel !== "preview" ||
+            document.getElementById(PreviewVersionLabelId)
+        ) {
+            return;
+        }
+
+        EnsurePreviewDebugStyles();
+
+        const Label = document.createElement("div");
+        Label.id = PreviewVersionLabelId;
+        Label.textContent = GetRunningUserscriptVersion();
+        document.body.appendChild(Label);
+        PositionPreviewVersionLabel();
+    }
+
+    function PositionPreviewVersionLabel() {
+        if (UserscriptBuildChannel !== "preview") {
+            return;
+        }
+
+        const Label = document.getElementById(PreviewVersionLabelId);
+        const Panel = document.getElementById(PanelId);
+        const Logo = document.querySelector(".lb-cubed-logo-placeholder");
+
+        if (!Label || !Panel) {
+            return;
+        }
+
+        const PanelRect = Panel.getBoundingClientRect();
+        const LogoRect = Logo?.getBoundingClientRect();
+        const LabelHeight = Math.max(1, Label.offsetHeight);
+        const Left = Clamp(
+            LogoRect?.left ?? (PanelRect.left + 12),
+            4,
+            Math.max(4, window.innerWidth - Label.offsetWidth - 4)
+        );
+        const Top = Math.max(
+            2,
+            PanelRect.top - LabelHeight - 4
+        );
+
+        Label.style.left = `${Math.round(Left)}px`;
+        Label.style.top = `${Math.round(Top)}px`;
+    }
+
     function CreatePreviewDebugPane() {
         if (
             UserscriptBuildChannel !== "preview" ||
@@ -5674,7 +5748,7 @@
             ":scope > .lb-text-field-wrapper"
         );
 
-        if (!GameContainer || !TextFieldWrapper) {
+        if (!GameContainer || !WordContainer || !TextFieldWrapper) {
             return;
         }
 
@@ -5689,6 +5763,28 @@
                 MaximumHistoryLaneHeight
             )
         );
+        const WordStyle = getComputedStyle(WordContainer);
+        const WordMarginTop = Math.max(
+            0,
+            Number.parseFloat(WordStyle.marginTop) || 0
+        );
+        const WordMarginBottom = Math.max(
+            0,
+            Number.parseFloat(WordStyle.marginBottom) || 0
+        );
+        const WordAreaHeight = InputHeight + HistoryLaneHeight;
+
+        /*
+            NYT vertically offsets the TI with a native top margin. Because TI
+            and GB are now separate rows in Cubed's grid, that margin has to be
+            part of the ROW TRACK height as well as the rendered TI position.
+            Otherwise the TI overflows its own row and the following GB row
+            begins underneath the visible word history. The geometry dumps made
+            this measurable: the missing amount was exactly the TI margin.
+        */
+        const WordGridTrackHeight = Math.ceil(
+            WordMarginTop + WordAreaHeight + WordMarginBottom
+        );
 
         GameContainer.style.setProperty(
             "--lb-cubed-history-lane-height",
@@ -5696,7 +5792,11 @@
         );
         GameContainer.style.setProperty(
             "--lb-cubed-word-area-height",
-            `${InputHeight + HistoryLaneHeight}px`
+            `${WordAreaHeight}px`
+        );
+        GameContainer.style.setProperty(
+            "--lb-cubed-word-grid-track-height",
+            `${WordGridTrackHeight}px`
         );
     }
 
@@ -5760,6 +5860,7 @@
         PositionLayoutGapResizeHandle();
         UpdateLogoPlaceholderSize();
         PositionPreviewDebugPane();
+        PositionPreviewVersionLabel();
         QueueValidWordFeedbackPlacement();
     }
 
@@ -5913,7 +6014,7 @@
 
         GameContainer.style.setProperty(
             "--lb-cubed-left-column-gap",
-            "0px"
+            `${TiGbGripGutter}px`
         );
 
         GameContainer.style.setProperty(
@@ -6000,7 +6101,7 @@
 
         GameContainer.style.setProperty(
             "--lb-cubed-left-column-gap",
-            "0px"
+            `${TiGbGripGutter}px`
         );
 
         GameContainer.style.setProperty(
@@ -6489,7 +6590,10 @@
         PanelContent.scrollTop =
             PreviousScrollTop;
 
-        requestAnimationFrame(PositionPreviewDebugPane);
+        requestAnimationFrame(() => {
+            PositionPreviewDebugPane();
+            PositionPreviewVersionLabel();
+        });
     }
 
     function RenderHeader(Panel) {
@@ -6508,10 +6612,6 @@
         DriveStatus.id = GoogleDriveStatusId;
         DriveStatus.className = "lb-cubed-drive-status";
 
-        const TitleRow = document.createElement("div");
-        TitleRow.className = "lb-cubed-title-row";
-        TitleRow.append(LogoPlaceholder, DriveStatus);
-
         const Subtitle = document.createElement("div");
         Subtitle.className = "lb-cubed-subtitle";
         Subtitle.textContent =
@@ -6519,9 +6619,17 @@
             GameData.printDate ||
             "Today's Letter Boxed";
 
+        const TitleMeta = document.createElement("div");
+        TitleMeta.className = "lb-cubed-title-meta";
+        TitleMeta.append(DriveStatus, Subtitle);
+
+        const TitleRow = document.createElement("div");
+        TitleRow.className = "lb-cubed-title-row";
+        TitleRow.append(LogoPlaceholder, TitleMeta);
+
         const HeaderText = document.createElement("div");
         HeaderText.className = "lb-cubed-header-text";
-        HeaderText.append(TitleRow, Subtitle);
+        HeaderText.append(TitleRow);
 
         const HeaderActions = document.createElement("div");
         HeaderActions.className = "lb-cubed-header-actions";
@@ -7434,7 +7542,7 @@
                     LBC's height completely.
                 */
                 grid-template-rows:
-                    var(--lb-cubed-word-area-height, auto)
+                    var(--lb-cubed-word-grid-track-height, auto)
                     var(--lb-cubed-square-height, auto) !important;
                 column-gap: var(--lb-cubed-gap, 24px) !important;
                 row-gap: var(--lb-cubed-left-column-gap, 16px) !important;
@@ -7494,7 +7602,7 @@
                 display: grid !important;
                 grid-template-columns: minmax(0, 1fr) !important;
                 grid-template-rows:
-                    var(--lb-cubed-word-area-height, auto)
+                    var(--lb-cubed-word-grid-track-height, auto)
                     var(--lb-cubed-square-height, auto)
                     auto !important;
                 row-gap: var(--lb-cubed-left-column-gap, 16px) !important;
@@ -7595,6 +7703,13 @@
             }
 
             .lb-cubed-valid-feedback-proxy {
+                position: absolute !important;
+                left: 50% !important;
+                right: auto !important;
+                top: auto !important;
+                bottom: calc(100% + 8px) !important;
+                margin: 0 !important;
+                transform: translateX(-50%) !important;
                 z-index: 5 !important;
                 pointer-events: none !important;
             }
@@ -7646,6 +7761,7 @@
                 padding-bottom: 0 !important;
                 overflow-x: hidden !important;
                 overflow-y: auto !important;
+                pointer-events: auto !important;
                 scrollbar-width: thin;
             }
 
@@ -7838,8 +7954,15 @@
 
             .lb-cubed-title-row {
                 display: flex;
-                align-items: baseline;
+                align-items: flex-start;
                 gap: 8px;
+                min-width: 0;
+            }
+
+            .lb-cubed-title-meta {
+                display: flex;
+                flex-direction: column;
+                align-items: flex-start;
                 min-width: 0;
             }
 
@@ -8123,7 +8246,7 @@
             }
 
             .lb-cubed-subtitle {
-                margin-top: 3px;
+                margin-top: 2px;
                 color: rgba(48, 24, 24, 0.70);
                 font-size: 11px;
             }
