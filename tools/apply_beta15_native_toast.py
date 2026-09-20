@@ -79,12 +79,12 @@ source = once(
 ''',
     '''            /*
                 Suppress NYT praise by LOCATION rather than by its eventual
-                `success-message` class. NYT initially paints the box as a plain
-                `.lb-message-box` and decorates it afterward, so class-based
+                success-message class. NYT initially paints the box as a plain
+                lb-message-box and decorates it afterward, so class-based
                 suppression was one mutation too late. Keep the native node in
                 layout for geometry, but make every possible native rendering
                 path visually inert before its first paint. Error messages live
-                under `.lb-text-field-wrapper` and are deliberately untouched.
+                under lb-text-field-wrapper and are deliberately untouched.
             */
             .lb-game-container.${LayoutClass}
             > .lb-square-container .lb-message-box,
