@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed
 // @namespace    https://nathanburgdorff.com/userscripts/
-// @version      1.12.0-beta.14
+// @version      1.12.0-beta.15
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -4621,9 +4621,36 @@
     }
 
     function GetNativeValidWordFeedbackSource() {
-        return document.querySelector(
-            ".lb-game-container > .lb-square-container > .lb-message-box.success-message"
+        const GameContainer = document.querySelector(
+            ".lb-game-container"
         );
+
+        if (!GameContainer) {
+            return null;
+        }
+
+        /*
+            Do not wait for NYT to add `success-message`. The first visible
+            paint can happen while the toast is still only `.lb-message-box`,
+            which is exactly how the native flash escaped beta.14's selector.
+            Validation errors are nested in the text-field wrapper and carry
+            `error-message`, so they remain outside this source set.
+        */
+        const Candidates = [
+            ...GameContainer.querySelectorAll(
+                ":scope > .lb-square-container .lb-message-box"
+            ),
+            ...GameContainer.querySelectorAll(
+                ":scope > .lb-word-container > .lb-message-box:not(.error-message)"
+            )
+        ];
+
+        return Candidates.find(Element =>
+            !Element.classList.contains(
+                "lb-cubed-valid-feedback-proxy"
+            ) &&
+            String(Element.textContent || "").trim()
+        ) || null;
     }
 
     function ClearValidWordFeedbackProxy(Source = null) {
@@ -7788,11 +7815,26 @@
                 visibility:hidden preserves its geometry for normal-position
                 mirroring.
             */
+            /*
+                Suppress NYT praise by LOCATION rather than by its eventual
+                success-message class. NYT initially paints the box as a plain
+                lb-message-box and decorates it afterward, so class-based
+                suppression was one mutation too late. Keep the native node in
+                layout for geometry, but make every possible native rendering
+                path visually inert before its first paint. Error messages live
+                under lb-text-field-wrapper and are deliberately untouched.
+            */
             .lb-game-container.${LayoutClass}
-            > .lb-square-container
-            > .lb-message-box.success-message,
+            > .lb-square-container .lb-message-box,
+            .lb-game-container.${LayoutClass}
+            > .lb-word-container
+            > .lb-message-box:not(.error-message),
             .lb-cubed-valid-feedback-relocated-source {
                 visibility: hidden !important;
+                opacity: 0 !important;
+                clip-path: inset(100%) !important;
+                animation: none !important;
+                transition: none !important;
                 pointer-events: none !important;
             }
 

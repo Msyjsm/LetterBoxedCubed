@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.12.0-beta.15
+- Suppress NYT valid-word praise by DOM location from the moment a native `.lb-message-box` is inserted, rather than waiting for NYT to add the later `success-message` class. This closes the one-paint race that caused a native toast followed by Cubed's proxy.
+- Hardened native-toast suppression with visibility, opacity, clipping, animation, and transition overrides while preserving the source element's layout geometry for proxy positioning.
+- Broadened native praise discovery to the square-container message box (and direct word-container non-error fallback) without affecting nested `error-message` validation feedback.
+
 ## 1.12.0-beta.14
 - Made Cubed the sole renderer of valid-word praise while its TI/GB layout is active: NYT's native success box is suppressed before paint, then a proxy appears after a 60ms settle delay so accepted-word wrapping is already final before placement is chosen.
 - Added stable per-submission toast identity using accepted-word count plus message text. Repeated NYT mutations for the same accepted word now reposition the existing proxy instead of recreating it and restarting the fade.
