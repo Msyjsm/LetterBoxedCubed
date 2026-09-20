@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed [PREVIEW]
 // @namespace    https://nathanburgdorff.com/userscripts/preview/
-// @version      1.12.0-beta.13.74
+// @version      1.12.0-beta.14.75
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -272,7 +272,8 @@
     let GameObserver = null;
     let LayoutObserver = null;
     let SquareFeedbackObserver = null;
-    let ValidFeedbackPlacementFrame = null;
+    let ValidFeedbackPlacementTimer = null;
+    let RenderedValidFeedbackKey = null;
     let ScanTimer = null;
     let LayoutTimer = null;
 
@@ -4622,7 +4623,17 @@
         );
     }
 
+    function GetNativeValidWordFeedbackSource() {
+        return document.querySelector(
+            ".lb-game-container > .lb-square-container > .lb-message-box.success-message"
+        );
+    }
+
     function ClearValidWordFeedbackProxy(Source = null) {
+        clearTimeout(ValidFeedbackPlacementTimer);
+        ValidFeedbackPlacementTimer = null;
+        RenderedValidFeedbackKey = null;
+
         document.querySelectorAll(".lb-cubed-valid-feedback-proxy")
             .forEach(Element => Element.remove());
 
@@ -4639,8 +4650,65 @@
         }
     }
 
+    function PositionValidWordFeedbackProxy(
+        Proxy,
+        Source,
+        GameContainer,
+        TextFieldWrapper,
+        ListContainer
+    ) {
+        const GameRect = GameContainer.getBoundingClientRect();
+        const InputRect = TextFieldWrapper.getBoundingClientRect();
+        const SourceRect = Source.getBoundingClientRect();
+        const ProxyRect = Proxy.getBoundingClientRect();
+        const HistoryBottom = GetVisibleHistoryContentBottom(ListContainer);
+
+        const ShouldRelocate =
+            Number.isFinite(HistoryBottom) &&
+            SourceRect.width > 0 &&
+            SourceRect.height > 0 &&
+            SourceRect.top <
+                HistoryBottom + ValidFeedbackHistoryClearance;
+
+        let Left;
+        let Top;
+
+        if (ShouldRelocate) {
+            Left =
+                ((InputRect.left + InputRect.right) / 2) -
+                GameRect.left -
+                (ProxyRect.width / 2);
+            Top = Math.max(
+                0,
+                InputRect.top -
+                GameRect.top -
+                ProxyRect.height -
+                8
+            );
+        } else {
+            /*
+                Native praise is always suppressed while Cubed controls TI/GB.
+                When there is no collision, reproduce NYT's final rendered
+                position exactly rather than briefly showing NYT's own box.
+            */
+            Left = SourceRect.left - GameRect.left;
+            Top = SourceRect.top - GameRect.top;
+        }
+
+        Proxy.style.setProperty(
+            "left",
+            `${Math.round(Left)}px`,
+            "important"
+        );
+        Proxy.style.setProperty(
+            "top",
+            `${Math.round(Top)}px`,
+            "important"
+        );
+    }
+
     function UpdateValidWordFeedbackPlacement() {
-        ValidFeedbackPlacementFrame = null;
+        ValidFeedbackPlacementTimer = null;
 
         const GameContainer = document.querySelector(
             ".lb-game-container"
@@ -4654,12 +4722,7 @@
         const ListContainer = WordContainer?.querySelector(
             ":scope > .lb-list-container"
         );
-        const SquareContainer = GameContainer?.querySelector(
-            ":scope > .lb-square-container"
-        );
-        const Source = SquareContainer?.querySelector(
-            ":scope > .lb-message-box"
-        );
+        const Source = GetNativeValidWordFeedbackSource();
 
         if (
             !GameContainer ||
@@ -4677,68 +4740,39 @@
             return;
         }
 
-        const HistoryBottom = GetVisibleHistoryContentBottom(ListContainer);
-        if (!Number.isFinite(HistoryBottom)) {
-            ClearValidWordFeedbackProxy(Source);
-            return;
-        }
-
-        const SourceRect = Source.getBoundingClientRect();
-        const ShouldRelocate =
-            SourceRect.width > 0 &&
-            SourceRect.height > 0 &&
-            SourceRect.top <
-                HistoryBottom + ValidFeedbackHistoryClearance;
-
-        if (!ShouldRelocate) {
-            ClearValidWordFeedbackProxy(Source);
-            return;
-        }
+        /*
+            Accepted count is the stable identity of one valid submission.
+            NYT can mutate/re-render the same toast more than once while that
+            submission settles. Keeping the same key prevents Cubed from
+            recreating the proxy and restarting its fade. The next accepted
+            word increments the count, intentionally creating one fresh toast.
+        */
+        const FeedbackKey =
+            `${ReadCurrentChain().length}\u001F${MessageText}`;
 
         let Proxy = GameContainer.querySelector(
             ":scope > .lb-cubed-valid-feedback-proxy"
         );
 
-        if (!Proxy) {
+        if (!Proxy || RenderedValidFeedbackKey !== FeedbackKey) {
+            Proxy?.remove();
+
             Proxy = document.createElement("div");
             Proxy.className =
                 "lb-message-box success-message lb-cubed-valid-feedback-proxy";
+            Proxy.replaceChildren(
+                ...[...Source.childNodes].map(Node => Node.cloneNode(true))
+            );
             GameContainer.appendChild(Proxy);
+            RenderedValidFeedbackKey = FeedbackKey;
         }
 
-        Proxy.replaceChildren(
-            ...[...Source.childNodes].map(Node => Node.cloneNode(true))
-        );
-
-        /*
-            Do not reuse NYT's parent-relative top/bottom coordinates.
-            The proxy is a direct child of the positioned game container,
-            so place it from live viewport geometry immediately above TI.
-        */
-        const GameRect = GameContainer.getBoundingClientRect();
-        const InputRect = TextFieldWrapper.getBoundingClientRect();
-        const ProxyRect = Proxy.getBoundingClientRect();
-        const Left =
-            ((InputRect.left + InputRect.right) / 2) -
-            GameRect.left -
-            (ProxyRect.width / 2);
-        const Top = Math.max(
-            0,
-            InputRect.top -
-            GameRect.top -
-            ProxyRect.height -
-            8
-        );
-
-        Proxy.style.setProperty(
-            "left",
-            `${Math.round(Left)}px`,
-            "important"
-        );
-        Proxy.style.setProperty(
-            "top",
-            `${Math.round(Top)}px`,
-            "important"
+        PositionValidWordFeedbackProxy(
+            Proxy,
+            Source,
+            GameContainer,
+            TextFieldWrapper,
+            ListContainer
         );
 
         Source.classList.add(
@@ -4747,12 +4781,25 @@
     }
 
     function QueueValidWordFeedbackPlacement() {
-        if (ValidFeedbackPlacementFrame !== null) {
-            cancelAnimationFrame(ValidFeedbackPlacementFrame);
+        const Source = GetNativeValidWordFeedbackSource();
+
+        if (Source) {
+            /*
+                MutationObserver callbacks run before paint, so this is an
+                additional guard on top of the CSS selector that suppresses
+                native praise immediately. The visible proxy is deliberately
+                delayed until NYT has inserted the accepted word and wrapping
+                has settled.
+            */
+            Source.classList.add(
+                "lb-cubed-valid-feedback-relocated-source"
+            );
         }
 
-        ValidFeedbackPlacementFrame = requestAnimationFrame(
-            UpdateValidWordFeedbackPlacement
+        clearTimeout(ValidFeedbackPlacementTimer);
+        ValidFeedbackPlacementTimer = setTimeout(
+            UpdateValidWordFeedbackPlacement,
+            60
         );
     }
 
@@ -7737,6 +7784,16 @@
                 mirrors it into the wrapper so NYT's own message-box positioning
                 puts it in the same safe feedback area as validation errors.
             */
+            /*
+                Cubed is the sole renderer for valid-word praise. Hiding the
+                native success box by selector prevents even a single paint in
+                NYT's pre-wrap position before the delayed placement decision.
+                visibility:hidden preserves its geometry for normal-position
+                mirroring.
+            */
+            .lb-game-container.${LayoutClass}
+            > .lb-square-container
+            > .lb-message-box.success-message,
             .lb-cubed-valid-feedback-relocated-source {
                 visibility: hidden !important;
                 pointer-events: none !important;
