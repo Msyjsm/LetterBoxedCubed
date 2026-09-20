@@ -1,5 +1,6 @@
 name: Apply beta.15 native toast suppression
 
+# Retry after fixing template-literal-safe patch text.
 on:
   push:
     branches:
