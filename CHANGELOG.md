@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.12.0-beta.14
+- Made Cubed the sole renderer of valid-word praise while its TI/GB layout is active: NYT's native success box is suppressed before paint, then a proxy appears after a 60ms settle delay so accepted-word wrapping is already final before placement is chosen.
+- Added stable per-submission toast identity using accepted-word count plus message text. Repeated NYT mutations for the same accepted word now reposition the existing proxy instead of recreating it and restarting the fade.
+- When relocation is unnecessary, the proxy mirrors NYT's final rendered toast rectangle; when history would collide, it uses Cubed's above-TI position.
+
 ## 1.12.0-beta.13
 - Replaced the parent-relative relocated success-toast positioning with a game-container-level proxy placed from live viewport geometry immediately above the text-entry wrapper; the native GB toast is hidden only after the proxy is populated and positioned.
 - Removed the nested history scrollbars: `.lb-list-container` is now a non-scrolling fixed-height flex shell, `.lb-word-list-length` stays pinned, and only `.lb-word-list-container` owns vertical scrolling.
