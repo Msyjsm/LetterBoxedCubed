@@ -1,0 +1,45 @@
+name: Apply beta.17 page polish
+
+on:
+  push:
+    branches:
+      - feature/qol-4-10-12-13-14
+    paths:
+      - .github/workflows/apply-beta17-page-polish.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/qol-4-10-12-13-14
+          fetch-depth: 0
+
+      - name: Apply beta.17 patch
+        run: python tools/apply_beta17_page_polish.py
+
+      - name: Validate
+        run: |
+          node --check LetterBoxedCubed.user.js
+          node tests/merge-tests.js
+
+      - name: Commit finalized source
+        run: |
+          git config user.name "Nathan Burgdorff + Ari (ChatGPT)"
+          git config user.email "6709230+Msyjsm@users.noreply.github.com"
+          git rm .github/workflows/apply-beta17-page-polish.yml
+          git rm tools/apply_beta17_page_polish.py
+          git add LetterBoxedCubed.user.js CHANGELOG.md docs/PREVIEW_TESTING.md
+          git commit -m "Polish title scaling and preview controls"
+          git push origin HEAD:feature/qol-4-10-12-13-14
+
+      - name: Rebuild Preview from finalized source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run preview-channel.yml --ref feature/qol-4-10-12-13-14
