@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.12.0-beta.17
+- Restored centered alignment for the zero-word `Try to solve in X words` par while preserving the alternate nested no-words DOM handling.
+- Anchored the Letter Boxed title region to its captured native left edge before applying CSS zoom, so resize percentages grow/shrink to the right instead of recentering toward the viewport middle.
+- Compact title layout now also removes the parent `.pz-section` top margin, reclaiming NYT's otherwise persistent 24px vertical gap.
+- Preview's version label and Show/Hide Debug Pane button now use document-absolute positioning so they scroll with LBC; the debug pane itself remains fixed to the viewport.
+
 ## 1.12.0-beta.16
 - Fixed the remaining double-toast/re-fade bug: Cubed no longer keys a valid-word toast to the live accepted-word count, which changes while NYT asynchronously commits the same accepted word to history. One non-empty native-toast lifecycle now owns one monotonic proxy generation.
 - Cubed now keeps its praise proxy hidden until the accepted-word history count advances (with a 400ms safety ceiling), then measures the settled history geometry once and reveals the proxy in its final location. This prevents the normal-position flash followed by a jump above TI when a submission creates a new wrapped history line.

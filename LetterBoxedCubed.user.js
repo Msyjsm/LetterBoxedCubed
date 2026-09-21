@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed
 // @namespace    https://nathanburgdorff.com/userscripts/
-// @version      1.12.0-beta.16
+// @version      1.12.0-beta.17
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -251,6 +251,7 @@
         Header: null,
         Title: null
     };
+    let NytOriginalTitleLeftOffset = null;
 
     let LayoutGapResizeState = null;
     let NytPageResizeState = null;
@@ -1680,6 +1681,25 @@
         }
     }
 
+    function CaptureNytTitleLeftAnchor(Element) {
+        if (!Element || NytOriginalTitleLeftOffset !== null) {
+            return;
+        }
+
+        const Parent = Element.parentElement;
+        if (!Parent) {
+            return;
+        }
+
+        const Rect = Element.getBoundingClientRect();
+        const ParentRect = Parent.getBoundingClientRect();
+        const Offset = Rect.left - ParentRect.left;
+
+        if (Number.isFinite(Offset)) {
+            NytOriginalTitleLeftOffset = Math.max(0, Offset);
+        }
+    }
+
     function ApplyNytElementScale(Element, Scale) {
         if (!Element) {
             return;
@@ -1916,6 +1936,10 @@
 
     function ApplyNytTitleArrangement() {
         const Host = document.querySelector("#portal-game-header");
+        const TitleBar = document.querySelector(
+            "#letter-boxed-container .pz-game-title-bar"
+        );
+        const TitleSection = TitleBar?.closest(".pz-section");
 
         // Remove beta.1's proxy behavior if this script was hot-updated.
         Host?.querySelectorAll(".lb-cubed-yesterday-proxy")
@@ -1926,6 +1950,13 @@
         if (Host) {
             Host.classList.toggle(
                 "lb-cubed-compact-title-layout",
+                CompactTitleLayout
+            );
+        }
+
+        if (TitleSection) {
+            TitleSection.classList.toggle(
+                "lb-cubed-compact-title-section",
                 CompactTitleLayout
             );
         }
@@ -1945,9 +1976,30 @@
         const Targets = GetNytPageTargets();
         CaptureNytOriginalHeight("Header", Targets.Header);
         CaptureNytOriginalHeight("Title", Targets.Title);
+        CaptureNytTitleLeftAnchor(Targets.Title);
 
         ApplyNytElementScale(Targets.Header, NytHeaderScale);
         ApplyNytElementScale(Targets.Title, NytTitleScale);
+
+        /*
+            NYT normally centers the title bar with auto margins. CSS zoom then
+            changes its used width, so the whole title region appears to shrink
+            toward the middle. Preserve the title bar's native left edge within
+            its parent and let all scaling grow/shrink to the right from there.
+        */
+        if (Targets.Title && NytOriginalTitleLeftOffset !== null) {
+            Targets.Title.style.setProperty(
+                "margin-left",
+                `${NytOriginalTitleLeftOffset}px`,
+                "important"
+            );
+            Targets.Title.style.setProperty(
+                "margin-right",
+                "auto",
+                "important"
+            );
+        }
+
         ApplyNytTitleArrangement();
     }
 
@@ -5190,7 +5242,7 @@
         Style.id = PreviewDebugStyleId;
         Style.textContent = `
             #${PreviewVersionLabelId} {
-                position: fixed;
+                position: absolute;
                 z-index: 99999;
                 color: rgba(92, 92, 92, 0.78);
                 font: 10px/1.2 Consolas, "Courier New", monospace;
@@ -5200,7 +5252,7 @@
             }
 
             #${PreviewDebugToggleButtonId} {
-                position: fixed;
+                position: absolute;
                 z-index: 100001;
                 padding: 4px 7px;
                 border: 1px solid rgba(255, 255, 255, 0.45);
@@ -5585,14 +5637,19 @@
             Keep the control outside LBC itself, immediately above the header
             and horizontally just left of the Settings button when possible.
         */
+        const ScrollX = window.scrollX || window.pageXOffset || 0;
+        const ScrollY = window.scrollY || window.pageYOffset || 0;
         const ToggleLeft = Clamp(
-            (SettingsRect?.right ?? PanelRect.right) - ToggleWidth,
-            8,
-            Math.max(8, window.innerWidth - ToggleWidth - 8)
+            (SettingsRect?.right ?? PanelRect.right) - ToggleWidth + ScrollX,
+            ScrollX + 8,
+            Math.max(
+                ScrollX + 8,
+                ScrollX + window.innerWidth - ToggleWidth - 8
+            )
         );
         const ToggleTop = Math.max(
-            8,
-            PanelRect.top - ToggleHeight - 4
+            ScrollY + 8,
+            PanelRect.top + ScrollY - ToggleHeight - 4
         );
 
         ToggleButton.style.left = `${ToggleLeft}px`;
@@ -5730,14 +5787,19 @@
         const PanelRect = Panel.getBoundingClientRect();
         const LogoRect = Logo?.getBoundingClientRect();
         const LabelHeight = Math.max(1, Label.offsetHeight);
+        const ScrollX = window.scrollX || window.pageXOffset || 0;
+        const ScrollY = window.scrollY || window.pageYOffset || 0;
         const Left = Clamp(
-            LogoRect?.left ?? (PanelRect.left + 12),
-            4,
-            Math.max(4, window.innerWidth - Label.offsetWidth - 4)
+            (LogoRect?.left ?? (PanelRect.left + 12)) + ScrollX,
+            ScrollX + 4,
+            Math.max(
+                ScrollX + 4,
+                ScrollX + window.innerWidth - Label.offsetWidth - 4
+            )
         );
         const Top = Math.max(
-            2,
-            PanelRect.top - LabelHeight - 4
+            ScrollY + 2,
+            PanelRect.top + ScrollY - LabelHeight - 4
         );
 
         Label.style.left = `${Math.round(Left)}px`;
@@ -7658,6 +7720,16 @@
                 transform-origin: left top !important;
             }
 
+            /*
+                Compact mode removes NYT's otherwise persistent 24px section
+                top margin so hiding/shrinking the title region actually
+                recovers that vertical space too.
+            */
+            #letter-boxed-container
+            .pz-section.lb-cubed-compact-title-section {
+                margin-top: 0 !important;
+            }
+
             #portal-game-header {
                 margin-left: 0 !important;
                 margin-right: auto !important;
@@ -7920,6 +7992,7 @@
                 left: 0 !important;
                 right: 0 !important;
                 margin-top: 10px !important;
+                text-align: center !important;
                 transform: none !important;
                 z-index: 2;
             }
