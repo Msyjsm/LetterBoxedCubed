@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.12.0-beta.19
+- Reserved the visible direct-child par prompt's full outer height in the fixed TI grid track, so an unhidden par pushes GB (and its normal-position success toast) downward instead of overlapping it.
+- Par visibility/DOM-shape changes now trigger a targeted layout recalculation; hiding the par immediately collapses the extra space again without reintroducing general gameplay-driven GB movement.
+
 ## 1.12.0-beta.18
 - Corrected title scaling so the captured native left offset is divided by CSS zoom, keeping the title bar's rendered left edge stationary while it grows/shrinks to the right.
 - Fixed Compact title layout's 24px gap override by targeting the actual `#letter-boxed-container.pz-section` element rather than a nonexistent descendant `.pz-section`.
