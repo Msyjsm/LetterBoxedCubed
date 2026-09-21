@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed [PREVIEW]
 // @namespace    https://nathanburgdorff.com/userscripts/preview/
-// @version      1.12.0-beta.18.92
+// @version      1.12.0-beta.19.93
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -294,6 +294,7 @@
 
     let ScanTimer = null;
     let LayoutTimer = null;
+    let LastParTrackHeight = null;
 
     let PreviewDebugObserver = null;
     let PreviewDebugRenderTimer = null;
@@ -1059,6 +1060,10 @@
             "lb-cubed-hide-par",
             HidePar
         );
+
+        // Showing/hiding the real par changes the vertical space reserved
+        // between TI/history and GB. Recalculate that fixed grid track now.
+        QueuePanelLayoutUpdate();
     }
 
     // -------------------------------------------------------------------------
@@ -4644,9 +4649,11 @@
             clearTimeout(ScanTimer);
             ScanTimer = setTimeout(() => {
                 /*
-                    Gameplay mutations update player data, but they must not
-                    reflow the TI/GB meta-column. GB's vertical position is
-                    intentionally stable until an actual viewport resize.
+                    Gameplay mutations update player data without generally
+                    reflowing the TI/GB meta-column. The one intentional
+                    exception is the actual par prompt: NormalizeWordAreaFeedbackLayout
+                    queues a layout update only when its visible direct-child
+                    footprint changes, so GB makes room for the par when needed.
                 */
                 NormalizeWordAreaFeedbackLayout();
                 ScanGameState();
@@ -4697,6 +4704,15 @@
                 );
             }
         }
+
+        const ParTrackHeight = GetVisibleParTrackHeight(WordContainer);
+        if (
+            LastParTrackHeight !== null &&
+            ParTrackHeight !== LastParTrackHeight
+        ) {
+            QueuePanelLayoutUpdate();
+        }
+        LastParTrackHeight = ParTrackHeight;
 
         QueueValidWordFeedbackPlacement();
     }
@@ -6029,6 +6045,41 @@
         );
     }
 
+    function GetVisibleParTrackHeight(WordContainer) {
+        const Par = WordContainer?.querySelector(
+            ":scope > .lb-par"
+        );
+
+        if (!Par) {
+            return 0;
+        }
+
+        const Style = getComputedStyle(Par);
+        if (
+            Style.display === "none" ||
+            Style.visibility === "hidden"
+        ) {
+            return 0;
+        }
+
+        const Height = Math.max(
+            0,
+            Par.getBoundingClientRect().height
+        );
+        const MarginTop = Math.max(
+            0,
+            Number.parseFloat(Style.marginTop) || 0
+        );
+        const MarginBottom = Math.max(
+            0,
+            Number.parseFloat(Style.marginBottom) || 0
+        );
+
+        return Math.ceil(
+            Height + MarginTop + MarginBottom
+        );
+    }
+
     function UpdateHistoryLaneGeometry(GameContainer, WordContainer) {
         const TextFieldWrapper = WordContainer?.querySelector(
             ":scope > .lb-text-field-wrapper"
@@ -6059,6 +6110,8 @@
             Number.parseFloat(WordStyle.marginBottom) || 0
         );
         const WordAreaHeight = InputHeight + HistoryLaneHeight;
+        const ParTrackHeight = GetVisibleParTrackHeight(WordContainer);
+        LastParTrackHeight = ParTrackHeight;
 
         /*
             NYT vertically offsets the TI with a native top margin. Because TI
@@ -6068,8 +6121,18 @@
             begins underneath the visible word history. The geometry dumps made
             this measurable: the missing amount was exactly the TI margin.
         */
+        /*
+            The accepted-word DOM variant places the real par as a direct flex
+            child after the history lane. Because Cubed uses an explicit grid
+            track, that child otherwise overflows the track and collides with
+            GB (and its normal-position success toast). Reserve only the actual
+            visible par's outer height; hiding the par collapses this space.
+        */
         const WordGridTrackHeight = Math.ceil(
-            WordMarginTop + WordAreaHeight + WordMarginBottom
+            WordMarginTop +
+            WordAreaHeight +
+            ParTrackHeight +
+            WordMarginBottom
         );
 
         GameContainer.style.setProperty(
