@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.12.0-beta.18
+- Corrected title scaling so the captured native left offset is divided by CSS zoom, keeping the title bar's rendered left edge stationary while it grows/shrinks to the right.
+- Fixed Compact title layout's 24px gap override by targeting the actual `#letter-boxed-container.pz-section` element rather than a nonexistent descendant `.pz-section`.
+- Reposition the preview version label and Show/Hide Debug Pane control after header/title scaling changes so they stay attached to LBC as page geometry moves.
+- Added a bottom-of-Display **Footer size** control (0%-200%, Reset = 100%) that proportionally scales the native `footer.pz-footer` and hides it at 0%.
+
 ## 1.12.0-beta.17
 - Restored centered alignment for the zero-word `Try to solve in X words` par while preserving the alternate nested no-words DOM handling.
 - Anchored the Letter Boxed title region to its captured native left edge before applying CSS zoom, so resize percentages grow/shrink to the right instead of recentering toward the viewport middle.

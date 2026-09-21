@@ -39,7 +39,7 @@ Each workflow run appends the monotonically increasing `github.run_number` to th
 
 ## v1.12 QoL bundle checks
 
-The `feature/qol-4-10-12-13-14` preview bundles issues #4, #5, #10, #12, #13, #14, #16, #17, #18, and #19. The current source is `1.12.0-beta.17`.
+The `feature/qol-4-10-12-13-14` preview bundles issues #4, #5, #10, #12, #13, #14, #16, #17, #18, and #19. The current source is `1.12.0-beta.18`.
 
 - **Adjust layout gap between text input and letter box** now uses a calibrated baseline: the closest safe TI/GB arrangement is shown as **0px**, backed internally by a 90px minimum history lane. The control then represents only additional space above that minimum, and Reset returns to 0px. The draggable horizontal grip line sits a fixed visual offset above the GB top letters rather than touching them.
 - `.lb-list-container` is an exact-height non-scrolling flex shell matching the reserved history lane. The word-count label is pinned at the top, while only the nested `.lb-word-list-container` scrolls. The TI grid track includes NYT's native TI top/bottom margins so the following GB row starts after the *rendered* TI rather than underneath it. A fixed 22px structural gutter sits between history and GB; the draggable grip line is centered in that gutter.
@@ -52,13 +52,13 @@ The `feature/qol-4-10-12-13-14` preview bundles issues #4, #5, #10, #12, #13, #1
 - Settings sections remain **FEEDBACK & ANIMATION**, **DISPLAY**, **SYNC** and ordinary settings text/buttons are 12px. Chrome number steppers use a narrower spinner area where supported.
 - `Word Log` is temporarily replaced by a bordered square logo placeholder. It displays its current side length in pixels and should remain a perfect square sized to the natural available header height.
 - The main LBC header otherwise contains the custom-dictionary control, **Browse History**, and **Settings**. Google Drive state remains light-gray header text.
-- Settings copy uses **Hide par**, **Line animation speed**, **New word highlight**, **Compact title layout**, and **Hide Yesterday/Help row**.
+- Settings copy uses **Hide par**, **Line animation speed**, **New word highlight**, **Compact title layout**, **Hide Yesterday/Help row**, and **Footer size**.
 - First/Second Hint entries show solved/total Twofer progress for that word in that position, and completed entries are struck through.
 - Newly discovered words briefly fade from chartreuse in Found Words and Hints. Their exact Words-by-Length row highlights as well, and newly solved Twofers receive the same effect. Structurally valid NYT-invalid submissions update only the custom-dictionary header control and must not restart a fade already in progress.
 - Completion highlights for every newly discovered dictionary word. Longest Found highlights when the new word establishes a new maximum or ties the current maximum length.
 - Words by Length contains one row for every exact word length present in the current dictionary; absent lengths are omitted rather than rolled into `7+`.
-- The NYT global header and Letter Boxed title area each have an on-page vertical resize grip. Their Settings values are percentages of native size; 0% hides the region and Reset returns it to 100%.
-- **Compact title layout** keeps the game title, date, and byline on a single left-justified row with vertical centers aligned, removes the title section's native top margin, and preserves the title bar's native left edge while the region is scaled up or down.
+- The NYT global header and Letter Boxed title area each have an on-page vertical resize grip. Their Settings values are percentages of native size; 0% hides the region and Reset returns it to 100%. **Footer size** appears at the bottom of Display and applies the same 0%-200%/Reset behavior to the native NYT Games footer.
+- **Compact title layout** keeps the game title, date, and byline on a single left-justified row with vertical centers aligned, removes the title section's native top margin, and preserves the title bar's rendered native left edge while the region is scaled up or down.
 - **Hide Yesterday/Help row** simply hides the native row containing those controls; it does not clone or proxy Yesterday.
 
 ## Automated source commits and stale previews

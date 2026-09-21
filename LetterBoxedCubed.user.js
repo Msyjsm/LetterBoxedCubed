@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed
 // @namespace    https://nathanburgdorff.com/userscripts/
-// @version      1.12.0-beta.17
+// @version      1.12.0-beta.18
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -242,6 +242,7 @@
     let LayoutGapPx = LeftColumnGap;
     let NytHeaderScale = 1.0;
     let NytTitleScale = 1.0;
+    let NytFooterScale = 1.0;
     let CompactTitleLayout = false;
     let HideYesterdayHelpRow = false;
 
@@ -379,6 +380,7 @@
             LayoutGapPx,
             NytHeaderScale,
             NytTitleScale,
+            NytFooterScale,
             CompactTitleLayout,
             HideYesterdayHelpRow,
             TwofersGrouped,
@@ -1143,6 +1145,13 @@
             MaximumNytPageScale
         );
 
+        NytFooterScale = GetFiniteGuiNumber(
+            "NytFooterScale",
+            1.0,
+            MinimumNytPageScale,
+            MaximumNytPageScale
+        );
+
         CompactTitleLayout = Boolean(
             GetGuiSetting("CompactTitleLayout", false)
         );
@@ -1598,6 +1607,23 @@
         );
 
         DisplaySection.appendChild(GapGroup);
+        DisplaySection.appendChild(
+            CreateSettingsNumberWithReset(
+                "Footer size",
+                Math.round(NytFooterScale * 100),
+                0,
+                200,
+                1,
+                "%",
+                100,
+                "NytFooterScale",
+                Value => {
+                    NytFooterScale = Clamp(Value / 100, MinimumNytPageScale, MaximumNytPageScale);
+                    SetGuiSetting("NytFooterScale", NytFooterScale);
+                    ApplyNytPagePreferences();
+                }
+            )
+        );
 
         const SyncSection = CreateSettingsSection("Sync");
         const DriveRow = document.createElement("div");
@@ -1666,7 +1692,8 @@
     function GetNytPageTargets() {
         return {
             Header: document.querySelector("header.pz-header.pz-game-header"),
-            Title: document.querySelector("#letter-boxed-container .pz-game-title-bar")
+            Title: document.querySelector("#letter-boxed-container .pz-game-title-bar"),
+            Footer: document.querySelector("footer.pz-footer")
         };
     }
 
@@ -1980,17 +2007,28 @@
 
         ApplyNytElementScale(Targets.Header, NytHeaderScale);
         ApplyNytElementScale(Targets.Title, NytTitleScale);
+        ApplyNytElementScale(Targets.Footer, NytFooterScale);
 
         /*
-            NYT normally centers the title bar with auto margins. CSS zoom then
-            changes its used width, so the whole title region appears to shrink
-            toward the middle. Preserve the title bar's native left edge within
-            its parent and let all scaling grow/shrink to the right from there.
+            NYT normally centers the title bar with auto margins. CSS zoom also
+            scales the margin itself, so a fixed captured margin drifts right as
+            zoom increases. Divide the native offset by the active zoom so its
+            rendered left edge remains fixed while the region grows/shrinks only
+            to the right.
         */
         if (Targets.Title && NytOriginalTitleLeftOffset !== null) {
+            const NormalizedTitleScale = Clamp(
+                Number(NytTitleScale) || 0,
+                MinimumNytPageScale,
+                MaximumNytPageScale
+            );
+            const CompensatedLeftOffset = NormalizedTitleScale > 0.001
+                ? NytOriginalTitleLeftOffset / NormalizedTitleScale
+                : 0;
+
             Targets.Title.style.setProperty(
                 "margin-left",
-                `${NytOriginalTitleLeftOffset}px`,
+                `${CompensatedLeftOffset}px`,
                 "important"
             );
             Targets.Title.style.setProperty(
@@ -2001,6 +2039,17 @@
         }
 
         ApplyNytTitleArrangement();
+
+        /*
+            Header/title resizing moves LBC vertically without resizing the TI or
+            GB themselves, so their ResizeObserver does not fire. Re-anchor the
+            document-absolute preview controls after the browser has applied the
+            new page geometry.
+        */
+        requestAnimationFrame(() => {
+            PositionPreviewDebugPane();
+            PositionPreviewVersionLabel();
+        });
     }
 
     function EnsureLayoutGapResizeHandle() {
@@ -7725,8 +7774,7 @@
                 top margin so hiding/shrinking the title region actually
                 recovers that vertical space too.
             */
-            #letter-boxed-container
-            .pz-section.lb-cubed-compact-title-section {
+            #letter-boxed-container.lb-cubed-compact-title-section {
                 margin-top: 0 !important;
             }
 
