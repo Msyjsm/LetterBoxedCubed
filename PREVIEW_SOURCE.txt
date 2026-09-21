@@ -1,5 +1,5 @@
 Generated userscript preview. Do not edit this branch directly.
 Source branch: feature/qol-4-10-12-13-14
-Source commit: aace1aa5a2987afcc9ae737d758beacc8a028d41
-Workflow run: 35597891030
+Source commit: 1a66a68c76deeab1418839905466dd2e2b5ab8e1
+Workflow run: 35632821114
 Preview selector: #lbc-preview
