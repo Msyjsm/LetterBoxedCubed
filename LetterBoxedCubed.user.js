@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed
 // @namespace    https://nathanburgdorff.com/userscripts/
-// @version      1.12.0-beta.15
+// @version      1.12.0-beta.16
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -271,6 +271,22 @@
     let SquareFeedbackObserver = null;
     let ValidFeedbackPlacementTimer = null;
     let RenderedValidFeedbackKey = null;
+
+    /*
+        A native success box can appear before NYT commits the accepted word to
+        the history DOM. Do not use the live history count itself as the toast
+        identity: that value changes mid-toast and caused Cubed to recreate the
+        same proxy. Instead, one non-empty native-toast lifecycle owns one
+        monotonic generation.
+    */
+    let ValidFeedbackGeneration = 0;
+    let ActiveValidFeedbackSource = null;
+    let ActiveValidFeedbackText = "";
+    let PendingValidFeedbackBaselineChainLength = null;
+    let PendingValidFeedbackStartedAt = 0;
+    const ValidFeedbackSettlePollMs = 30;
+    const ValidFeedbackSettleMaximumMs = 400;
+
     let ScanTimer = null;
     let LayoutTimer = null;
 
@@ -4657,6 +4673,10 @@
         clearTimeout(ValidFeedbackPlacementTimer);
         ValidFeedbackPlacementTimer = null;
         RenderedValidFeedbackKey = null;
+        ActiveValidFeedbackSource = null;
+        ActiveValidFeedbackText = "";
+        PendingValidFeedbackBaselineChainLength = null;
+        PendingValidFeedbackStartedAt = 0;
 
         document.querySelectorAll(".lb-cubed-valid-feedback-proxy")
             .forEach(Element => Element.remove());
@@ -4765,14 +4785,39 @@
         }
 
         /*
-            Accepted count is the stable identity of one valid submission.
-            NYT can mutate/re-render the same toast more than once while that
-            submission settles. Keeping the same key prevents Cubed from
-            recreating the proxy and restarting its fade. The next accepted
-            word increments the count, intentionally creating one fresh toast.
+            Wait until NYT has committed the accepted word to history before
+            making Cubed's proxy visible. The native box appears first; the
+            history DOM can lag it by a couple hundred milliseconds. Showing
+            the proxy before that commit made it appear in the old normal
+            position and then jump above TI when wrapping finally settled.
+
+            The 400ms ceiling is only a safety fallback for an unexpected NYT
+            state where the history count does not advance.
+        */
+        const CurrentChainLength = ReadCurrentChain().length;
+        const WaitingForHistoryCommit =
+            PendingValidFeedbackBaselineChainLength !== null &&
+            CurrentChainLength <= PendingValidFeedbackBaselineChainLength &&
+            (performance.now() - PendingValidFeedbackStartedAt) <
+                ValidFeedbackSettleMaximumMs;
+
+        if (WaitingForHistoryCommit) {
+            ValidFeedbackPlacementTimer = setTimeout(
+                UpdateValidWordFeedbackPlacement,
+                ValidFeedbackSettlePollMs
+            );
+            return;
+        }
+
+        PendingValidFeedbackBaselineChainLength = null;
+
+        /*
+            One native-toast lifecycle is one submission identity. Unlike the
+            old live-chain-length key, this generation cannot change halfway
+            through NYT's delayed history update.
         */
         const FeedbackKey =
-            `${ReadCurrentChain().length}\u001F${MessageText}`;
+            `${ValidFeedbackGeneration}\u001F${MessageText}`;
 
         let Proxy = GameContainer.querySelector(
             ":scope > .lb-cubed-valid-feedback-proxy"
@@ -4806,18 +4851,34 @@
 
     function QueueValidWordFeedbackPlacement() {
         const Source = GetNativeValidWordFeedbackSource();
+        const MessageText = String(Source?.textContent || "").trim();
 
         if (Source) {
             /*
                 MutationObserver callbacks run before paint, so this is an
                 additional guard on top of the CSS selector that suppresses
-                native praise immediately. The visible proxy is deliberately
-                delayed until NYT has inserted the accepted word and wrapping
-                has settled.
+                native praise immediately.
             */
             Source.classList.add(
                 "lb-cubed-valid-feedback-relocated-source"
             );
+        }
+
+        if (Source && MessageText) {
+            const StartsNewLifecycle =
+                ActiveValidFeedbackSource !== Source ||
+                !ActiveValidFeedbackText;
+
+            if (StartsNewLifecycle) {
+                ActiveValidFeedbackSource = Source;
+                ActiveValidFeedbackText = MessageText;
+                ValidFeedbackGeneration++;
+                PendingValidFeedbackBaselineChainLength =
+                    ReadCurrentChain().length;
+                PendingValidFeedbackStartedAt = performance.now();
+            } else {
+                ActiveValidFeedbackText = MessageText;
+            }
         }
 
         clearTimeout(ValidFeedbackPlacementTimer);

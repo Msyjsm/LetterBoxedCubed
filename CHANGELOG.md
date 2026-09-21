@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.12.0-beta.16
+- Fixed the remaining double-toast/re-fade bug: Cubed no longer keys a valid-word toast to the live accepted-word count, which changes while NYT asynchronously commits the same accepted word to history. One non-empty native-toast lifecycle now owns one monotonic proxy generation.
+- Cubed now keeps its praise proxy hidden until the accepted-word history count advances (with a 400ms safety ceiling), then measures the settled history geometry once and reveals the proxy in its final location. This prevents the normal-position flash followed by a jump above TI when a submission creates a new wrapped history line.
+
 ## 1.12.0-beta.15
 - Suppress NYT valid-word praise by DOM location from the moment a native `.lb-message-box` is inserted, rather than waiting for NYT to add the later `success-message` class. This closes the one-paint race that caused a native toast followed by Cubed's proxy.
 - Hardened native-toast suppression with visibility, opacity, clipping, animation, and transition overrides while preserving the source element's layout geometry for proxy positioning.
