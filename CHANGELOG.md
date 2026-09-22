@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.12.0-beta.20
+- Decoupled success-toast relocation from NYT's native toast rectangle: praise now remains in the lower slot for exactly one rendered history line and relocates above TI as soon as history wraps to line two.
+- Anchored normal lower praise in the calibrated spare second-history-line slot, ending just inside the par's normal top margin. A visible par still pushes GB down, but showing/hiding the par no longer changes the toast's lower position or relocation threshold.
+- Kept the 90px baseline history geometry and 22px structural TI/GB gutter unchanged; no additional toast-only whitespace is added.
+
 ## 1.12.0-beta.19
 - Reserved the visible direct-child par prompt's full outer height in the fixed TI grid track, so an unhidden par pushes GB (and its normal-position success toast) downward instead of overlapping it.
 - Par visibility/DOM-shape changes now trigger a targeted layout recalculation; hiding the par immediately collapses the extra space again without reintroducing general gameplay-driven GB movement.
