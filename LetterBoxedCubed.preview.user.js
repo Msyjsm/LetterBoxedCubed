@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed [PREVIEW]
 // @namespace    https://nathanburgdorff.com/userscripts/preview/
-// @version      1.12.0-beta.19.95
+// @version      1.12.0-beta.20.96
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -170,7 +170,9 @@
     const MaximumLayoutGap = 200;
     const MaximumHistoryLaneHeight =
         MinimumHistoryLaneHeight + MaximumLayoutGap;
-    const ValidFeedbackHistoryClearance = 10;
+    const ValidFeedbackHistoryLineThreshold = 2;
+    const ValidFeedbackNormalSlotInset = 1;
+    const ValidFeedbackParMarginFallback = 10;
     const MinimumNytPageScale = 0;
     const MaximumNytPageScale = 2;
 
@@ -4717,17 +4719,8 @@
         QueueValidWordFeedbackPlacement();
     }
 
-    function GetVisibleHistoryContentBottom(ListContainer) {
-        if (!ListContainer) {
-            return null;
-        }
-
-        /*
-            The count label is intentionally outside the scrolling viewport.
-            Collision detection therefore measures only the actually visible
-            accepted-word content inside .lb-word-list-container.
-        */
-        const HistoryViewport = ListContainer.querySelector(
+    function CountRenderedHistoryLines(ListContainer) {
+        const HistoryViewport = ListContainer?.querySelector(
             ":scope > .lb-word-list-container"
         );
         const HistoryList = HistoryViewport?.querySelector(
@@ -4735,25 +4728,77 @@
         );
 
         if (!HistoryViewport || !HistoryList) {
-            return null;
+            return 0;
         }
 
-        const ViewportRect = HistoryViewport.getBoundingClientRect();
-        const ListRect = HistoryList.getBoundingClientRect();
+        /*
+            The toast's jump rule is semantic now: the lower slot is available
+            for exactly one rendered history line. Do not infer that from NYT's
+            toast rectangle, because moving GB for a visible par also moves that
+            native rectangle and changes the answer for the wrong reason.
 
-        if (
-            ViewportRect.height <= 0 ||
-            ListRect.height <= 0 ||
-            ListRect.bottom <= ViewportRect.top ||
-            ListRect.top >= ViewportRect.bottom
-        ) {
-            return null;
+            Range fragments let us count wrapped visual lines even when the
+            history is made of several inline/span fragments. Group fragments
+            that share the same vertical center into one rendered line.
+        */
+        const Range = document.createRange();
+        Range.selectNodeContents(HistoryList);
+
+        const LineCenters = [];
+        for (const Rect of Range.getClientRects()) {
+            if (Rect.width <= 0 || Rect.height <= 0) {
+                continue;
+            }
+
+            const CenterY = (Rect.top + Rect.bottom) / 2;
+            const ExistingLine = LineCenters.some(
+                Existing => Math.abs(Existing - CenterY) <= 2
+            );
+
+            if (!ExistingLine) {
+                LineCenters.push(CenterY);
+            }
         }
 
-        return Math.min(
-            ListRect.bottom,
-            ViewportRect.bottom
+        if (LineCenters.length) {
+            return LineCenters.length;
+        }
+
+        /* Fallback for browsers that return no Range fragments. */
+        const Rect = HistoryList.getBoundingClientRect();
+        if (Rect.height <= 0) {
+            return 0;
+        }
+
+        const Style = getComputedStyle(HistoryList);
+        let LineHeight = Number.parseFloat(Style.lineHeight);
+        if (!Number.isFinite(LineHeight) || LineHeight <= 0) {
+            const FontSize = Number.parseFloat(Style.fontSize) || 16;
+            LineHeight = FontSize * 1.2;
+        }
+
+        return Math.max(
+            1,
+            Math.round(Rect.height / LineHeight)
         );
+    }
+
+    function GetNormalFeedbackParMarginTop(WordContainer) {
+        const Par = WordContainer?.querySelector(
+            ":scope > .lb-par"
+        );
+
+        if (!Par) {
+            return ValidFeedbackParMarginFallback;
+        }
+
+        const MarginTop = Number.parseFloat(
+            getComputedStyle(Par).marginTop
+        );
+
+        return Number.isFinite(MarginTop)
+            ? Math.max(0, MarginTop)
+            : ValidFeedbackParMarginFallback;
     }
 
     function GetNativeValidWordFeedbackSource() {
@@ -4816,23 +4861,28 @@
 
     function PositionValidWordFeedbackProxy(
         Proxy,
-        Source,
         GameContainer,
+        WordContainer,
         TextFieldWrapper,
-        ListContainer
+        ListContainer,
+        SquareContainer
     ) {
         const GameRect = GameContainer.getBoundingClientRect();
         const InputRect = TextFieldWrapper.getBoundingClientRect();
-        const SourceRect = Source.getBoundingClientRect();
+        const HistoryRect = ListContainer.getBoundingClientRect();
+        const SquareRect = SquareContainer.getBoundingClientRect();
         const ProxyRect = Proxy.getBoundingClientRect();
-        const HistoryBottom = GetVisibleHistoryContentBottom(ListContainer);
+        const HistoryLineCount = CountRenderedHistoryLines(ListContainer);
 
+        /*
+            One history line leaves the calibrated second-line slot available
+            for praise. As soon as the history actually wraps to line two, that
+            slot belongs to history and praise jumps above TI. This decision is
+            deliberately independent of par visibility and of NYT's native
+            toast rectangle.
+        */
         const ShouldRelocate =
-            Number.isFinite(HistoryBottom) &&
-            SourceRect.width > 0 &&
-            SourceRect.height > 0 &&
-            SourceRect.top <
-                HistoryBottom + ValidFeedbackHistoryClearance;
+            HistoryLineCount >= ValidFeedbackHistoryLineThreshold;
 
         let Left;
         let Top;
@@ -4851,12 +4901,28 @@
             );
         } else {
             /*
-                Native praise is always suppressed while Cubed controls TI/GB.
-                When there is no collision, reproduce NYT's final rendered
-                position exactly rather than briefly showing NYT's own box.
+                The 90px baseline history lane is calibrated for the pinned word
+                count plus two rendered history lines. With only one line, the
+                unused second-line slot is exactly where lower-position praise
+                belongs. Anchor its bottom just inside the par's normal 10px top
+                margin: the toast therefore fits between line one and the par,
+                while Hide par does not move the toast at all. GB may move for
+                the visible par, but the toast's rule and lower position do not.
             */
-            Left = SourceRect.left - GameRect.left;
-            Top = SourceRect.top - GameRect.top;
+            const ParMarginTop = GetNormalFeedbackParMarginTop(WordContainer);
+            const SlotBottom =
+                HistoryRect.bottom +
+                ParMarginTop -
+                ValidFeedbackNormalSlotInset;
+
+            Left =
+                ((SquareRect.left + SquareRect.right) / 2) -
+                GameRect.left -
+                (ProxyRect.width / 2);
+            Top =
+                SlotBottom -
+                GameRect.top -
+                ProxyRect.height;
         }
 
         Proxy.style.setProperty(
@@ -4886,12 +4952,17 @@
         const ListContainer = WordContainer?.querySelector(
             ":scope > .lb-list-container"
         );
+        const SquareContainer = GameContainer?.querySelector(
+            ":scope > .lb-square-container"
+        );
         const Source = GetNativeValidWordFeedbackSource();
 
         if (
             !GameContainer ||
+            !WordContainer ||
             !TextFieldWrapper ||
             !ListContainer ||
+            !SquareContainer ||
             !Source
         ) {
             ClearValidWordFeedbackProxy();
@@ -4958,10 +5029,11 @@
 
         PositionValidWordFeedbackProxy(
             Proxy,
-            Source,
             GameContainer,
+            WordContainer,
             TextFieldWrapper,
-            ListContainer
+            ListContainer,
+            SquareContainer
         );
 
         Source.classList.add(
