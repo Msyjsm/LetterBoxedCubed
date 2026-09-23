@@ -1,0 +1,55 @@
+name: Apply v1.13 beta.2 history parity
+
+on:
+  push:
+    branches:
+      - feature/global-word-memory-v1.13.0
+    paths:
+      - .github/workflows/apply-v1-13-beta2-history-parity.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/global-word-memory-v1.13.0
+          fetch-depth: 0
+
+      - name: Apply beta.2 history parity patch
+        run: python tools/apply_v1_13_beta2_history_parity.py
+
+      - name: Validate source, storage semantics, and generated preview
+        run: |
+          node --check LetterBoxedCubed.user.js
+          node tests/merge-tests.js
+          python tools/build_preview.py \
+            --source LetterBoxedCubed.user.js \
+            --output "$RUNNER_TEMP/LetterBoxedCubed.preview.user.js" \
+            --preview-url "https://raw.githubusercontent.com/Msyjsm/LetterBoxedCubed/preview/LetterBoxedCubed.preview.user.js" \
+            --build-number "1302" \
+            --preview-hash "#lbc-preview"
+          node --check "$RUNNER_TEMP/LetterBoxedCubed.preview.user.js"
+          grep -q 'GM_info' "$RUNNER_TEMP/LetterBoxedCubed.preview.user.js"
+          grep -q 'Show Debug Pane' "$RUNNER_TEMP/LetterBoxedCubed.preview.user.js"
+          grep -q '1.13.0-beta.2' LetterBoxedCubed.user.js
+
+      - name: Commit finalized beta.2 source
+        run: |
+          git config user.name "Nathan Burgdorff + Ari (ChatGPT)"
+          git config user.email "6709230+Msyjsm@users.noreply.github.com"
+          git rm .github/workflows/apply-v1-13-beta2-history-parity.yml
+          git rm tools/apply_v1_13_beta2_history_parity.py
+          git add LetterBoxedCubed.user.js tests/merge-tests.js CHANGELOG.md docs/PREVIEW_TESTING.md
+          git commit -m "Align Browse History with global word memory"
+          git push origin HEAD:feature/global-word-memory-v1.13.0
+
+      - name: Rebuild Preview from finalized source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run preview-channel.yml --ref feature/global-word-memory-v1.13.0
