@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.12.3
+- Replaced the corrupted generated logo Base64 with a byte-for-byte encoding of the original uploaded temporary logo (4,406 bytes; SHA-256 `4198a3a363878ed16e09937ccc71a5277bd4fd431ac4cbed1508a5bb70b1402f`).
+- Added release validation for Base64 length, decoded byte length, SHA-256, PNG signature/chunk boundaries, and every PNG chunk CRC so future image-byte corruption fails CI instead of shipping.
+
 ## 1.12.2
 - Fixed the embedded-logo canvas remaining transparent when PNG decoding completed before the newly constructed canvas had been attached to the DOM. Canvas pixels can be drawn while detached and persist after insertion, so logo rendering no longer depends on `Canvas.isConnected`.
 
