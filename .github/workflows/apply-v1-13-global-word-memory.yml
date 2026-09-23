@@ -1,3 +1,4 @@
+# retry after patcher test-string escaping fix
 name: Apply v1.13 global word memory
 
 on:
