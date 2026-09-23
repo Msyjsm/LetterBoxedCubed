@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed [PREVIEW]
 // @namespace    https://nathanburgdorff.com/userscripts/preview/
-// @version      1.13.0-beta.2.141
+// @version      1.13.0-beta.2.143
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -72,12 +72,19 @@
     const PreviewDebugPanelId = "lb-cubed-preview-debug";
     const PreviewDebugStyleId = "lb-cubed-preview-debug-styles";
     const PreviewDebugToggleButtonId = "lb-cubed-preview-debug-toggle";
+    const PreviewHistoryTestButtonId = "lb-cubed-preview-history-test-toggle";
+    const PreviewHistoryTestOverlayId = "lb-cubed-preview-history-test-overlay";
+    const PreviewHistoryTestPanelId = "lb-cubed-preview-history-test-panel";
     const PreviewVersionLabelId = "lb-cubed-preview-version";
 
     let PreviewDebugObserver = null;
     let PreviewDebugRenderTimer = null;
     let PreviewDebugNextElementId = 1;
     let PreviewDebugPaneVisible = false;
+    let PreviewHistoricalTestModeActive = false;
+    let PreviewHistoricalInjectedWords = new Set();
+    let PreviewHistoricalBaseline = null;
+    let PreviewHistoricalSelectedTwoferKey = null;
     const PreviewDebugElementIds = new WeakMap();
     const PreviewDebugElementsById = new Map();
     const PreviewDebugOriginalDisplay = new WeakMap();
@@ -129,7 +136,9 @@
     function IsPreviewDebugTypingContext(Target) {
         return Boolean(
             Target instanceof Element &&
-            Target.closest(`#${PreviewDebugPanelId}`)
+            Target.closest(
+                `#${PreviewDebugPanelId}, #${PreviewHistoryTestOverlayId}`
+            )
         );
     }
 
@@ -158,7 +167,8 @@
                 user-select: none;
             }
 
-            #${PreviewDebugToggleButtonId} {
+            #${PreviewDebugToggleButtonId},
+            #${PreviewHistoryTestButtonId} {
                 position: absolute;
                 z-index: 100001;
                 padding: 4px 7px;
@@ -172,8 +182,114 @@
                 cursor: pointer;
             }
 
-            #${PreviewDebugToggleButtonId}:hover {
+            #${PreviewDebugToggleButtonId}:hover,
+            #${PreviewHistoryTestButtonId}:hover {
                 background: #303038;
+            }
+
+            #${PreviewHistoryTestButtonId}.lbc-history-test-active {
+                border-color: #ffd166;
+                background: #4a3510;
+                color: #fff3c4;
+            }
+
+            #${PreviewHistoryTestOverlayId} {
+                position: fixed;
+                inset: 0;
+                z-index: 100010;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 18px;
+                background: rgba(0, 0, 0, 0.42);
+            }
+
+            #${PreviewHistoryTestPanelId} {
+                width: min(620px, calc(100vw - 36px));
+                max-height: calc(100vh - 36px);
+                overflow: auto;
+                padding: 14px;
+                border: 1px solid #777;
+                border-radius: 6px;
+                background: #18181d;
+                color: #f4f4f4;
+                box-shadow: 0 8px 36px rgba(0, 0, 0, 0.52);
+                font: 12px/1.4 Arial, sans-serif;
+            }
+
+            #${PreviewHistoryTestPanelId} * {
+                box-sizing: border-box;
+            }
+
+            #${PreviewHistoryTestPanelId} h2 {
+                margin: 0 0 8px;
+                font-size: 16px;
+            }
+
+            #${PreviewHistoryTestPanelId} .lbc-history-test-warning {
+                margin: 0 0 10px;
+                padding: 8px;
+                border: 1px solid #8b6b1f;
+                border-radius: 4px;
+                background: #34290f;
+                color: #ffe7a3;
+            }
+
+            #${PreviewHistoryTestPanelId} .lbc-history-test-grid {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 8px;
+                margin: 8px 0;
+            }
+
+            #${PreviewHistoryTestPanelId} .lbc-history-test-block {
+                padding: 8px;
+                border: 1px solid #555;
+                border-radius: 4px;
+                background: #222229;
+            }
+
+            #${PreviewHistoryTestPanelId} .lbc-history-test-actions {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 5px;
+                margin-top: 6px;
+            }
+
+            #${PreviewHistoryTestPanelId} button,
+            #${PreviewHistoryTestPanelId} select {
+                min-height: 28px;
+                border: 1px solid #777;
+                border-radius: 3px;
+                background: #303038;
+                color: #fff;
+                font: 12px/1.3 Arial, sans-serif;
+            }
+
+            #${PreviewHistoryTestPanelId} button {
+                padding: 4px 8px;
+                cursor: pointer;
+            }
+
+            #${PreviewHistoryTestPanelId} select {
+                width: 100%;
+                padding: 3px 5px;
+            }
+
+            #${PreviewHistoryTestPanelId} .lbc-history-test-status {
+                margin-top: 10px;
+                padding: 8px;
+                border: 1px solid #555;
+                border-radius: 4px;
+                background: #101014;
+                font: 11px/1.45 Consolas, "Courier New", monospace;
+                white-space: pre-wrap;
+            }
+
+            @media (max-width: 680px) {
+                #${PreviewHistoryTestPanelId} .lbc-history-test-grid {
+                    grid-template-columns: 1fr;
+                }
             }
 
             #${PreviewDebugPanelId} {
@@ -526,6 +642,7 @@
 
         const DebugPanel = document.getElementById(PreviewDebugPanelId);
         const ToggleButton = document.getElementById(PreviewDebugToggleButtonId);
+        const HistoryTestButton = document.getElementById(PreviewHistoryTestButtonId);
         const Panel = document.getElementById(PanelId);
 
         if (!DebugPanel || !ToggleButton || !Panel) {
@@ -561,6 +678,20 @@
 
         ToggleButton.style.left = `${ToggleLeft}px`;
         ToggleButton.style.top = `${ToggleTop}px`;
+
+        if (HistoryTestButton) {
+            const HistoryWidth = Math.max(1, HistoryTestButton.offsetWidth);
+            const HistoryLeft = Clamp(
+                ToggleLeft - HistoryWidth - 4,
+                ScrollX + 8,
+                Math.max(
+                    ScrollX + 8,
+                    ScrollX + window.innerWidth - HistoryWidth - 8
+                )
+            );
+            HistoryTestButton.style.left = `${HistoryLeft}px`;
+            HistoryTestButton.style.top = `${ToggleTop}px`;
+        }
 
         const ToggleRect = ToggleButton.getBoundingClientRect();
         const DebugWidth = Math.min(
@@ -713,6 +844,530 @@
         Label.style.top = `${Math.round(Top)}px`;
     }
 
+
+
+    // -------------------------------------------------------------------------
+    // Preview-only historical-word sandbox
+    // -------------------------------------------------------------------------
+
+    function GetPreviewHistoricalSelectedTwofer() {
+        if (!PreviewHistoricalSelectedTwoferKey) {
+            return null;
+        }
+
+        return Twofers.find(
+            Twofer => Twofer.Key === PreviewHistoricalSelectedTwoferKey
+        ) || null;
+    }
+
+    function ChoosePreviewHistoricalDefaultTwofer() {
+        if (!Twofers.length) {
+            PreviewHistoricalSelectedTwoferKey = null;
+            return;
+        }
+
+        const Candidate =
+            Twofers.find(Twofer =>
+                !FoundTwofers.has(Twofer.Key) &&
+                (!KnownWordsForPuzzle.has(Twofer.First) ||
+                    !KnownWordsForPuzzle.has(Twofer.Second))
+            ) ||
+            Twofers.find(Twofer => !FoundTwofers.has(Twofer.Key)) ||
+            Twofers[0];
+
+        PreviewHistoricalSelectedTwoferKey = Candidate?.Key || null;
+    }
+
+    function RecomputePreviewHistoricalSandboxState() {
+        if (!PreviewHistoricalTestModeActive || !PreviewHistoricalBaseline) {
+            return;
+        }
+
+        PreviouslyFoundWordsForPuzzle = new Set([
+            ...PreviewHistoricalBaseline.PreviouslyFoundWordsForPuzzle,
+            ...PreviewHistoricalInjectedWords
+        ]);
+
+        KnownWordsForPuzzle = new Set([
+            ...PreviouslyFoundWordsForPuzzle,
+            ...FoundWords
+        ]);
+    }
+
+    function SnapshotPreviewHistoricalBaseline() {
+        PreviewHistoricalBaseline = {
+            FoundWords: new Set(FoundWords),
+            FoundTwofers: new Set(FoundTwofers),
+            PreviouslyFoundWordsForPuzzle:
+                new Set(PreviouslyFoundWordsForPuzzle),
+            KnownWordsForPuzzle: new Set(KnownWordsForPuzzle),
+            RecentWordHighlights: new Map(RecentWordHighlights),
+            RecentTwoferHighlights: new Map(RecentTwoferHighlights)
+        };
+    }
+
+    function RestorePreviewHistoricalBaseline({ KeepActive = false } = {}) {
+        if (!PreviewHistoricalBaseline) {
+            return;
+        }
+
+        FoundWords = new Set(PreviewHistoricalBaseline.FoundWords);
+        FoundTwofers = new Set(PreviewHistoricalBaseline.FoundTwofers);
+        PreviouslyFoundWordsForPuzzle = new Set(
+            PreviewHistoricalBaseline.PreviouslyFoundWordsForPuzzle
+        );
+        KnownWordsForPuzzle = new Set(
+            PreviewHistoricalBaseline.KnownWordsForPuzzle
+        );
+
+        RecentWordHighlights.clear();
+        for (const [Key, Value] of PreviewHistoricalBaseline.RecentWordHighlights) {
+            RecentWordHighlights.set(Key, Value);
+        }
+
+        RecentTwoferHighlights.clear();
+        for (const [Key, Value] of PreviewHistoricalBaseline.RecentTwoferHighlights) {
+            RecentTwoferHighlights.set(Key, Value);
+        }
+
+        PreviewHistoricalInjectedWords = new Set();
+
+        if (!KeepActive) {
+            PreviewHistoricalTestModeActive = false;
+            PreviewHistoricalBaseline = null;
+        }
+
+        RenderPanel();
+        QueuePanelLayoutUpdate();
+        UpdatePreviewHistoricalTestButton();
+        RenderPreviewHistoricalTestPanel();
+    }
+
+    function EnterPreviewHistoricalTestMode() {
+        if (PreviewHistoricalTestModeActive) {
+            return true;
+        }
+
+        if (CloudSyncInFlight) {
+            alert(
+                "LBC is currently syncing with Google Drive. Wait for that sync to finish, then start History Test mode again."
+            );
+            return false;
+        }
+
+        if (CloudSyncTimer) {
+            clearTimeout(CloudSyncTimer);
+            CloudSyncTimer = null;
+        }
+        CloudSyncPending = false;
+
+        SnapshotPreviewHistoricalBaseline();
+        PreviewHistoricalTestModeActive = true;
+        PreviewHistoricalInjectedWords = new Set();
+        ChoosePreviewHistoricalDefaultTwofer();
+        RecomputePreviewHistoricalSandboxState();
+        UpdatePreviewHistoricalTestButton();
+
+        console.info(
+            "[Letter Boxed Cubed][preview] Historical test mode enabled. " +
+            "LBC progress persistence and Google Drive sync are paused."
+        );
+        return true;
+    }
+
+    function ExitPreviewHistoricalTestMode() {
+        if (!PreviewHistoricalTestModeActive) {
+            return;
+        }
+
+        RestorePreviewHistoricalBaseline();
+
+        console.info(
+            "[Letter Boxed Cubed][preview] Historical test mode disabled; " +
+            "real LBC state restored."
+        );
+    }
+
+    function SetPreviewHistoricalInjection(Mode) {
+        if (!EnterPreviewHistoricalTestMode()) {
+            return;
+        }
+
+        const Twofer = GetPreviewHistoricalSelectedTwofer();
+        if (!Twofer) {
+            return;
+        }
+
+        PreviewHistoricalInjectedWords = new Set();
+
+        if (Mode === "First" || Mode === "Both") {
+            PreviewHistoricalInjectedWords.add(Twofer.First);
+        }
+        if (Mode === "Second" || Mode === "Both") {
+            PreviewHistoricalInjectedWords.add(Twofer.Second);
+        }
+
+        RecomputePreviewHistoricalSandboxState();
+        RenderPanel();
+        QueuePanelLayoutUpdate();
+        RenderPreviewHistoricalTestPanel();
+    }
+
+    function SimulatePreviewHistoricalWordDiscovery(Position) {
+        if (!EnterPreviewHistoricalTestMode()) {
+            return;
+        }
+
+        const Twofer = GetPreviewHistoricalSelectedTwofer();
+        const Word = Position === "Second"
+            ? Twofer?.Second
+            : Twofer?.First;
+
+        if (!Word || FoundWords.has(Word)) {
+            RenderPreviewHistoricalTestPanel();
+            return;
+        }
+
+        const ShouldHighlight = ShouldHighlightWordDiscovery(Word);
+        FoundWords.add(Word);
+
+        if (ShouldHighlight) {
+            MarkWordForHighlight(Word);
+        }
+
+        RecomputePreviewHistoricalSandboxState();
+        RenderPanel();
+        QueuePanelLayoutUpdate();
+        RenderPreviewHistoricalTestPanel();
+    }
+
+    function SimulatePreviewHistoricalTwoferSolve() {
+        if (!EnterPreviewHistoricalTestMode()) {
+            return;
+        }
+
+        const Twofer = GetPreviewHistoricalSelectedTwofer();
+        if (!Twofer) {
+            return;
+        }
+
+        MarkTwoferFound(Twofer.First, Twofer.Second);
+        RecomputePreviewHistoricalSandboxState();
+        RenderPanel();
+        QueuePanelLayoutUpdate();
+        RenderPreviewHistoricalTestPanel();
+    }
+
+    function UpdatePreviewHistoricalTestButton() {
+        const Button = document.getElementById(PreviewHistoryTestButtonId);
+        if (!Button) {
+            return;
+        }
+
+        Button.textContent = PreviewHistoricalTestModeActive
+            ? "History Test (ACTIVE)"
+            : "History Test";
+        Button.classList.toggle(
+            "lbc-history-test-active",
+            PreviewHistoricalTestModeActive
+        );
+        Button.title = PreviewHistoricalTestModeActive
+            ? "Historical-word sandbox is active. Google Drive sync and LBC progress writes are paused."
+            : "Open preview-only historical-word/twofer sandbox";
+    }
+
+    function RenderPreviewHistoricalTestPanel() {
+        const Panel = document.getElementById(PreviewHistoryTestPanelId);
+        if (!Panel) {
+            return;
+        }
+
+        const Select = Panel.querySelector("select[data-lbc-history-test-twofer]");
+        if (Select) {
+            const ExistingValue = PreviewHistoricalSelectedTwoferKey || "";
+            Select.replaceChildren();
+
+            for (const Twofer of Twofers) {
+                const Option = document.createElement("option");
+                Option.value = Twofer.Key;
+                const Category = GetTwoferCategory(Twofer);
+                Option.textContent = `${Twofer.First} -> ${Twofer.Second}  [${Category}]`;
+                Select.appendChild(Option);
+            }
+
+            if (
+                ExistingValue &&
+                [...Select.options].some(Option => Option.value === ExistingValue)
+            ) {
+                Select.value = ExistingValue;
+            } else if (Select.options.length) {
+                Select.selectedIndex = 0;
+                PreviewHistoricalSelectedTwoferKey = Select.value;
+            }
+        }
+
+        const Status = Panel.querySelector(".lbc-history-test-status");
+        const Twofer = GetPreviewHistoricalSelectedTwofer();
+
+        if (!Status) {
+            return;
+        }
+
+        if (!Twofer) {
+            Status.textContent = "No valid twofers are available for this puzzle.";
+            return;
+        }
+
+        const Category = GetTwoferCategory(Twofer);
+        const Visibility = GetTwoferWordVisibility(Twofer, Category);
+        const HintStats = CalculateTwoferHintStats();
+        const DescribeWord = Word => {
+            const Flags = [];
+            if (PreviewHistoricalInjectedWords.has(Word)) {
+                Flags.push("TEST historical");
+            } else if (PreviewHistoricalBaseline?.PreviouslyFoundWordsForPuzzle.has(Word)) {
+                Flags.push("real historical");
+            }
+            if (FoundWords.has(Word)) {
+                Flags.push("found today/in sandbox");
+            }
+            if (!Flags.length) {
+                Flags.push("unknown");
+            }
+            return `${Word}: ${Flags.join(", ")}`;
+        };
+
+        Status.textContent = [
+            `Mode: ${PreviewHistoricalTestModeActive ? "ACTIVE - persistence/sync paused" : "inactive"}`,
+            DescribeWord(Twofer.First),
+            DescribeWord(Twofer.Second),
+            `Twofer category: ${Category}`,
+            `Visible words: first=${Visibility.FirstVisible}, second=${Visibility.SecondVisible}`,
+            `Independent-solution indicator: ${HintStats.HasUnconnectedFoundSolution}`,
+            `Exact pair solved in sandbox: ${FoundTwofers.has(Twofer.Key)}`,
+            `Word highlights active: first=${RecentWordHighlights.has(Twofer.First)}, second=${RecentWordHighlights.has(Twofer.Second)}`
+        ].join("\n");
+    }
+
+    function OpenPreviewHistoricalTestPanel() {
+        if (!EnterPreviewHistoricalTestMode()) {
+            return;
+        }
+
+        let Overlay = document.getElementById(PreviewHistoryTestOverlayId);
+        if (Overlay) {
+            RenderPreviewHistoricalTestPanel();
+            return;
+        }
+
+        Overlay = document.createElement("div");
+        Overlay.id = PreviewHistoryTestOverlayId;
+
+        const Panel = document.createElement("section");
+        Panel.id = PreviewHistoryTestPanelId;
+
+        const Heading = document.createElement("h2");
+        Heading.textContent = "PREVIEW Historical Word Sandbox";
+
+        const Warning = document.createElement("div");
+        Warning.className = "lbc-history-test-warning";
+        Warning.textContent =
+            "Safe LBC sandbox: progress writes and Google Drive sync are paused. " +
+            "This does NOT replace NYT's own internal game state, so use these simulation buttons rather than typing into NYT if you want zero effect on today's real NYT progress.";
+
+        const SelectLabel = document.createElement("label");
+        SelectLabel.textContent = "Current-board twofer to test:";
+        const Select = document.createElement("select");
+        Select.dataset.lbcHistoryTestTwofer = "true";
+        Select.addEventListener("change", () => {
+            PreviewHistoricalSelectedTwoferKey = Select.value;
+            RestorePreviewHistoricalBaseline({ KeepActive: true });
+            RecomputePreviewHistoricalSandboxState();
+            RenderPanel();
+            RenderPreviewHistoricalTestPanel();
+        });
+        SelectLabel.appendChild(Select);
+
+        const Grid = document.createElement("div");
+        Grid.className = "lbc-history-test-grid";
+
+        const HistoricalBlock = document.createElement("div");
+        HistoricalBlock.className = "lbc-history-test-block";
+        HistoricalBlock.innerHTML = "<strong>Pretend these were found on an earlier day</strong>";
+        const HistoricalActions = document.createElement("div");
+        HistoricalActions.className = "lbc-history-test-actions";
+
+        for (const [Label, Mode] of [
+            ["First only", "First"],
+            ["Second only", "Second"],
+            ["Both", "Both"],
+            ["Neither", "Neither"]
+        ]) {
+            const Button = document.createElement("button");
+            Button.type = "button";
+            Button.textContent = Label;
+            Button.addEventListener("click", () => SetPreviewHistoricalInjection(Mode));
+            HistoricalActions.appendChild(Button);
+        }
+        HistoricalBlock.appendChild(HistoricalActions);
+
+        const DiscoveryBlock = document.createElement("div");
+        DiscoveryBlock.className = "lbc-history-test-block";
+        DiscoveryBlock.innerHTML = "<strong>Simulate today's discoveries</strong>";
+        const DiscoveryActions = document.createElement("div");
+        DiscoveryActions.className = "lbc-history-test-actions";
+
+        const FindFirst = document.createElement("button");
+        FindFirst.type = "button";
+        FindFirst.textContent = "Find first today";
+        FindFirst.addEventListener(
+            "click",
+            () => SimulatePreviewHistoricalWordDiscovery("First")
+        );
+
+        const FindSecond = document.createElement("button");
+        FindSecond.type = "button";
+        FindSecond.textContent = "Find second today";
+        FindSecond.addEventListener(
+            "click",
+            () => SimulatePreviewHistoricalWordDiscovery("Second")
+        );
+
+        const SolvePair = document.createElement("button");
+        SolvePair.type = "button";
+        SolvePair.textContent = "Solve exact pair";
+        SolvePair.addEventListener("click", SimulatePreviewHistoricalTwoferSolve);
+
+        DiscoveryActions.append(
+            FindFirst,
+            FindSecond,
+            SolvePair
+        );
+        DiscoveryBlock.appendChild(DiscoveryActions);
+
+        Grid.append(
+            HistoricalBlock,
+            DiscoveryBlock
+        );
+
+        const Status = document.createElement("pre");
+        Status.className = "lbc-history-test-status";
+
+        const Footer = document.createElement("div");
+        Footer.className = "lbc-history-test-actions";
+
+        const Reset = document.createElement("button");
+        Reset.type = "button";
+        Reset.textContent = "Reset sandbox";
+        Reset.addEventListener("click", () => {
+            RestorePreviewHistoricalBaseline({ KeepActive: true });
+            RecomputePreviewHistoricalSandboxState();
+            RenderPanel();
+            RenderPreviewHistoricalTestPanel();
+        });
+
+        const Close = document.createElement("button");
+        Close.type = "button";
+        Close.textContent = "Hide panel (keep sandbox active)";
+        Close.addEventListener("click", () => Overlay.remove());
+
+        const Exit = document.createElement("button");
+        Exit.type = "button";
+        Exit.textContent = "EXIT TEST MODE + restore real state";
+        Exit.addEventListener("click", () => {
+            Overlay.remove();
+            ExitPreviewHistoricalTestMode();
+        });
+
+        Footer.append(
+            Reset,
+            Close,
+            Exit
+        );
+
+        Panel.append(
+            Heading,
+            Warning,
+            SelectLabel,
+            Grid,
+            Status,
+            Footer
+        );
+        Overlay.appendChild(Panel);
+        document.body.appendChild(Overlay);
+
+        Overlay.addEventListener("click", Event => {
+            if (Event.target === Overlay) {
+                Overlay.remove();
+            }
+        });
+
+        RenderPreviewHistoricalTestPanel();
+    }
+
+    function CreatePreviewHistoricalTestControls() {
+        if (
+            UserscriptBuildChannel !== "preview" ||
+            document.getElementById(PreviewHistoryTestButtonId)
+        ) {
+            return;
+        }
+
+        const Button = document.createElement("button");
+        Button.id = PreviewHistoryTestButtonId;
+        Button.type = "button";
+        Button.addEventListener("click", OpenPreviewHistoricalTestPanel);
+        document.body.appendChild(Button);
+        UpdatePreviewHistoricalTestButton();
+        PositionPreviewDebugPane();
+    }
+
+    function InstallPreviewHistoricalSandboxGuards() {
+        const OriginalScheduleCloudSync = ScheduleCloudSync;
+        ScheduleCloudSync = function (...Args) {
+            if (PreviewHistoricalTestModeActive) {
+                return;
+            }
+            return OriginalScheduleCloudSync(...Args);
+        };
+
+        const OriginalSyncWithGoogleDrive = SyncWithGoogleDrive;
+        SyncWithGoogleDrive = async function (...Args) {
+            if (PreviewHistoricalTestModeActive) {
+                console.info(
+                    "[Letter Boxed Cubed][preview] Google Drive sync suppressed by History Test mode."
+                );
+                return;
+            }
+            return OriginalSyncWithGoogleDrive(...Args);
+        };
+
+        const OriginalSaveFoundWords = SaveFoundWords;
+        SaveFoundWords = function (...Args) {
+            if (PreviewHistoricalTestModeActive) {
+                RecomputePreviewHistoricalSandboxState();
+                return;
+            }
+            return OriginalSaveFoundWords(...Args);
+        };
+
+        const OriginalSaveFoundTwofers = SaveFoundTwofers;
+        SaveFoundTwofers = function (...Args) {
+            if (PreviewHistoricalTestModeActive) {
+                return;
+            }
+            return OriginalSaveFoundTwofers(...Args);
+        };
+
+        const OriginalSaveGlobalWordHistory = SaveGlobalWordHistory;
+        SaveGlobalWordHistory = function (...Args) {
+            if (PreviewHistoricalTestModeActive) {
+                return;
+            }
+            return OriginalSaveGlobalWordHistory(...Args);
+        };
+    }
+
     function CreatePreviewDebugPane() {
         if (
             UserscriptBuildChannel !== "preview" ||
@@ -845,11 +1500,15 @@
         StartPreviewDebugObserver();
         RenderPreviewDebugPane();
 
+        CreatePreviewHistoricalTestControls();
+
         window.addEventListener(
             "resize",
             PositionPreviewDebugPane
         );
     }
+
+    InstallPreviewHistoricalSandboxGuards();
 
     const LogoPngBase64 =
         "iVBORw0KGgoAAAANSUhEUgAAASwAAAEsCAYAAAB5fY51AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAAZdEVYdFNvZnR3YXJlAFBhaW50Lk5FVCA1LjEuMTITAUd0AAAAuGVYSWZJSSoACAAAAAUAGgEFAAEAAABKAAAAGwEFAAEAAABSAAAAKAEDAAEAAAACAAAAMQECABEAAABaAAAAaYcEAAEAAABsAAAAAAAAAPZ2AQDoAwAA9nYBAOgDAABQYWludC5ORVQgNS4xLjEyAAADAACQBwAEAAAAMDIzMAGgAwABAAAAAQAAAAWgBAABAAAAlgAAAAAAAAACAAEAAgAEAAAAUjk4AAIABwAEAAAAMDEwMAAAAADquHT8XxiVaAAAD+JJREFUeF7t3W9sXXUdx/HvOWVtA5fQ0qEkqCBbt2GUrM6OILKJZF4W4cmogVAJGh8awxOBwVa3tuv8+wAT4yNDIBoIBPYEVgIkMg2KYYxFIOKA7ba9U4NMBlJZJ7TXB9stt797u97z+51z7vme3/uV/Ay59z67u2/v+ey0CwSZsWPHjk8dOHDgxpMnT940MzNz5cGDB2V6etp8GeCVK664Yubss8/+4bPPPvuzwHwSrTEwMHD75OTk8GuvvXYekQLqbdy48U7zMaRsaGioc/PmzQ+HYVgRkYqIVGr/m8PhnDr9/f0nzM8PUjQ5Odm+YcOGxwkUh9P0QSuUy+X2wcHBJ5YvX26+IRwOZ/GDtE1MTLQPDg4+0d3dXRGRShAE5pvC4XAaH6SpVCotiBWHw4l0kJbqZSCx4nCsD9IQJVZtQf1jHI7m09MWVDpimD64DysFpVKpffv27XvGx8e/cfz4cfPpBdoCkdmKyG0rL5C716+Us89qk0qlYr4MUGNZWygH3npPbnjyZfOpyAhWwmxiNXjpcvn5xs/Jhed0ijSKVXD6fxo9B2RJGMib70zL9373ijz9z/fNZyMjWAkql8vtW7dutYxVh8zNnSlIwelvyUA2hWEgh96ZlluePCgvHZ+RNhGZNV8UEcFKSLKxArItDAP52zvTMjh+UF56N55YiYiE5gNwVyqViBW8NR+rJ+ONlRCs+LltVsQKulVj9a0YLwNrcUkYIy4D4bMkNisT37BiQqzgs+o3q1vGo8Wqrea/O5r4+kSwYsBmBZ8tuAyMsFlVX7fpwnPl8c2Xy7nh0sUiWI4mJibYrOCt2lgdiPjNalZE+ro65VfXfkHWffI8OTa79GeBYDkol8vt27ZtI1bwUnWzGhy3i9Xarg55cHOfrDy/IB/Ozpkva4hgWWKzgs/mB/aI91nVfrN6aPMXZU1PQSTCZ4FgWWCzgs9s77OqjdWDm/tkTU8h8meBYEXEZgWfuW5Wax1iJQQrGjYr+CyOzeohh1gJwWoemxV8tuA+K8vLwOpm5fJZIFhNYLOCl4JT90W53mflslmZCNYS2KzgrUql5ZuViWCdAZsVfJaFzcpEsBbBZgWfZWWzMhGsBtis4LMsbVYmgmVgs4LPqpeBWdmsTASrBpsVfFb74zZ2sYp/szIRrNOmpqa4DIS3srpZmQiWiBw5cqT97rvvJlbwUpY3K5P3wZqcnGwfGhoiVvCS+31Wp35FTBqxEt+DdfTo0fZ77rmHWMFL8dxnlfxlYC1vgzU1NdV+1113ESt4Kc7fZ5XmZ8HLYLFZwWet/H1WrrwLFpsVfKZtszJ5FSw2K/hM42Zl8iZYbFbwmZb7rJbiRbDYrOAzTfdZLSX3wWKzgs+0b1amXAeLzQo+y8NmZcptsNis4LO8bFamXAaLzQo+y9NmZcpdsNis4DP332eVrc3KlKtgsVnBZ/H8PqvsXQbWyk2w2Kzgs7xuVqZcBIvNCj7L82ZlUh+sqakpNit4K2/3WS1FdbCOHj3KNyt4y/0+Kx2XgbXUBmtycpLNCt6a36wcLgOT/gcjkqAyWEeOHOFvA+GtBZuVxTcrTZuVSV2w2Kzgs2qsBmPbrALzpZmmKlhsVvBZ7WZl882q8Wal6zOhJlhsVvCZr5uVSUWw2KzgM583K1Pmg8VmBZ/Fv1nplulgsVnBZ8lsVrplNlhsVvAZm1VjmQwWmxV8xma1uMwFi80KPpu/DGSzaihTwWKzgs9qf5+V7TervG1WpswEi80KPotjs8rzN6uqTASLzQo+Y7NqXsuDxWYFn7FZRdPSYJXLZTYreIvNKrqWBWtiYqJ969atxApeYrOy05JglUql9m3bthEreInNyl7qwSqXy+3bt28nVvASm5WbVINVLpe5DIS32KzcpRYsNiv4jM0qHqkEi80KPmOzik/iwWKzgs/YrOKVaLDYrOAzNqv4JRYsNiv4jM0qGYkEi80KPmOzSk7swWKzgs/YrJIVa7DYrOCl4NQ/RspmlbzYgsVmBZ+xWaUjlmCxWcFnYSBsVilxDhabFXzGZpUup2CxWcFn85eBbFapsQ5WqVQiVvBWNVaDbFapsgpWqVTiMhDe4j6r1okcLDYr+IzNqrUiBYvNCj5js2q9poPFZgWfsVllQ1PBYrOCz9issmPJYLFZwWdsVtlyxmCxWcFnbFbZs2iw2KzgswWXgWxWmdEwWBMTE1wGwlu1sbK5DCRWyakLVrlc5geZ4a35zWrcLlZsVslaEKzJyUkuA+GtBb/PyvIykM0qWfPBGhoa6rz11lsfe+qpp4gVvMN9VjrMB+vFF1984Lnnnrv+2LFjC19hIFbIG9fNai2xSk0gIjIwMHD7nj177p2bmzOfXyAQkYqIfHfVJ+RHX7lMLjinQ4Q3CJqd/uV7g5aXgWu7OrgMdBQGgUz95wO5+Dd/NJ+qE+zYseNT4+Pjr+7fv/8888lGvvqJgvzya5+XT5/bKR/xBkGxMAjkH9Mz8p2n/yIvvHMicqy4DIxHpGBdf/31t+/bt+/e6elp87mGLulok4sKy+Tdk7Onvp4BSoWByMvvfyhSE6GlEKv4RQrWpk2b/vTMM89caT7RSPWSEMiTZv9c125WDxGr2EQJVjgzM9NUrKTJNxXQppk/1ws3K2LVKuHBgwfNxwDU4D6r7Aib3a4AH7FZZUvdj+YAOIX7rLKHYAENBKdj9aVuBvYsIVhAA9U03V9cS6wyhGABi7j83GVyUaGzub9GRCqaCtZZ3CGKnFnWxJ/puYrIXIVaZUmz98zJlk93yQ0rPsmPDkK1tkBkX/nfcv/hM/+Qv4jI5wvL5Pc3fVnO72wnXAmKcuNo08H66frPyh1X9IrwxkGzMJQHXp6Qb+87ZD5Th2ClI0qwmrokFDn91XiuInMcjuIjc3MyS3vUajpYANBqBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAtAywVBYD7UEMEC0FpBIB98NGs+WqdQKBAsAK0ThoG89d8Z+fELb5pP1enr6yNYAFrjVKxOyg/+8Fe5/823pW2Jq8LOzs7nCRaA1NXG6reHj0lbIDJbMV/1sUKhIB0dHQ8TLACpihorEZHLLrvsvXXr1j1GsACkxiZWYRjKxRdfvGN4ePgowQKQCttYFYvFRx599NFfCLc1AEiDTax6enrkqquueqK/v/+26mMEC0CibGLV3d0tmzZt2nvffffdODIyMlN9nGABSIxtrIrF4t6xsbEtvb29/6t9jmABSIRLrEZGRrasWLFiQayEYAFIgk2surq6pFgs7h0eHt6yatWqulgJwQIQN9tYXXfddXvHxsa2rF69umGshGABiJNNrLq7u+dj1egysBbBAhAL21idabMyESwAzmxi1cxmZSJYAJzYxqqZzcpEsABYs4lVlM3KRLAAWLGNVfUyMGqshGABsGETq+pmNTIyEukysBbBAhCJbayql4HNDuyNECwATbOJlctmZSJYAJpiGyuXzcpEsAAsySVWLpuViWABOCObWFUHdtfNykSwACzKJlZxblYmggWgIdtYxblZmQgWgDousYpzszIRLAAL2MQqqc3KRLAAzLOJVZKblYlgARBxiFWSm5WJYAFwilWSm5WJYAGes4lVWpuViWABHrOJVZqblYlgAZ6yjVWam5WJYAEecolVmpuViWABnrGJVXWz2r17d6qblYlgAR6xiVV1s9q1a9eWSy+9tGWxEoIF+MM2VtXNauXKlS2NlRAswA8usRodHW3ZZmUiWEDO2cSqdrPq7e3NRKyEYAH5ZhOrLG1WJoIF5JRtrIrF4t6dO3dmYrMyESwgh1xiNTo6umXNmjWZi5UQLCB/XGKVtc3KRLCAHHGJVRY3KxPBAnLCJVZZ3axMBAvIAZdYZXmzMhEsQDmXWGV9szIRLEAxl1hp2KxMBAtQyiVWWjYrE8ECFHKJlabNykSwAGVcYqVtszIRLEARl1hp3KxMBAtQwiVWWjcrE8ECFHCJ1a5du9RuViaCBWScS6x2796di29WVQQLyDCXWI2OjqrfrEwEC8gol1jt3LlT9d8GLoZgARnkEqs8bVYmggVkjEus8rZZmQgWkCEuscrjZmUiWEBGuMQqr5uViWABGeASqzxvViaCBbSYS6zyvlmZCBbQQi6x8mGzMhEsoEVsYlX9F5l92axMBAtoAZtYddf8i8y+bFYmggWkzDZWPm5WJoIFpMglVj5uViaCBaTEJlbVzWp4eNjLzcpEsIAU2MSqdrNavXq197ESggUkzzZWbFb1CBaQIJdYjYyMeL9ZmQgWkBCbWNVuVqtWrSJWBoIFJMAmVtXNamxsjM1qEQQLiJltrIrF4t6xsbEtK1asIFaLIFhAjFxiNTIyQqyWQLCAmNjEis0qGoIFxMAmVmxW0REswJFtrNisoiNYgAOXWLFZRUewgMUEgYgE5qPzbGLFZuWGYAGLqVREpHGBbGLFZuWOYAER2caKzcodwQIicIkVm5U7ggU0ySZWbFbxIlhAE2xjxWYVL4IFLMUiVrUDO5eB8SFYwCIqInJWGMjbFrFis0oGwQIW0dXeJuX3Z+Se515rOlZsVskiWMAi/v7fD+X7z74qv379X03His0qWcGid8YZfrL+ErlzfW+TrwYyKgzk/lcm5Tv7DpnPLFD7wWjmQ8J9Vulo5r0QEZGvX1iQaz+z/NTNv4BSYRDIn/95XPaU3zWfslaN1fDwMN+sUlBZ6rQ1eIzD0XzOCuofszldXV2Vm2+++YnXX3+93fxgIRl1bwKHw1n6VGN1+PBhYpWiujeCw+Gc+XR3dxOrVgjDsO7N4HA4i59qrA4dOkSs0hYEQd0bwuFwGp9qrNisWqfuTeFwOPWnp6eHy8AMqHtjOBzOwhOGYeXqq69+/I033iBWLRSuX79+xnwQwMfCMJRisfjINddc883e3l7us2qljRs33mH+vwmHw5FKoVCo9Pf3vzswMHC7+blBawQiIhs2bLjjxIkTI/v37+80XwD4pFAoSF9fn3R2dj7f0dHx8Lp16x4bHh4+ar4OrfF/IYnZolzvvf0AAAAASUVORK5CYII=";
