@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed
 // @namespace    https://nathanburgdorff.com/userscripts/
-// @version      1.11.0
+// @version      1.12.0
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -47,6 +47,19 @@
 
     const PageWindow = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
 
+    // Preview-only implementation is injected by tools/build_preview.py.
+    // Production releases contain only these inert hooks.
+    function RecordBootstrapDiagnostic() {}
+    function CreatePreviewDebugPane() {}
+    function CreatePreviewVersionLabel() {}
+    function PositionPreviewDebugPane() {}
+    function PositionPreviewVersionLabel() {}
+    function IsPreviewDebugTypingContext() { return false; }
+
+    // PREVIEW_RUNTIME_INJECTION_POINT
+
+    const LogoPngDataUrl =
+        "data:image/png;base64,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";
     const PanelId = "lb-cubed-panel";
     const StyleId = "lb-cubed-styles";
     const LayoutClass = "lb-cubed-layout-active";
@@ -57,15 +70,6 @@
     const LeftColumnGap = 16;
     const EdgePadding = 18;
     const MinimumPanelWidth = 300;
-
-    /*
-        TI and GB are stacked in Cubed's left meta-column. Give TI a stable
-        vertical slot so accepting words cannot move GB up or down. The slot
-        is intentionally roomy enough for the active chain while keeping GB
-        close to the entry area; the page can still scroll if a very long
-        chain eventually outgrows it.
-    */
-    const StableWordAreaHeight = 250;
 
     /*
         v1.7's automatic width was 75% of the horizontal space left after
@@ -79,6 +83,9 @@
 
     const ResizeHandleWidth = 16;
     const RightResizeHandleGap = 3;
+    const ResizeGripLineOffset =
+        (ResizeHandleWidth / 2) + RightResizeHandleGap;
+    const TiGbGripGutter = ResizeGripLineOffset * 2;
 
     const LegacyPanelWidthStorageKey = "LetterBoxedCubed_PanelWidth";
     const PanelWidthStorageKey = "LetterBoxedCubed_PanelWidth_v2";
@@ -103,10 +110,34 @@
     const GoogleDriveConfigStorageKey = "LetterBoxedCubed_GoogleDriveConfig";
     const GoogleDriveConfigVersion = 1;
     const GoogleDriveButtonId = "lb-cubed-google-drive-button";
+    const GoogleDriveStatusId = "lb-cubed-google-drive-status";
     const BrowseHistoryButtonId = "lb-cubed-browse-history-button";
+    const SettingsMenuId = "lb-cubed-settings-menu";
     const HistoryOverlayId = "lb-cubed-history-overlay";
+    const LayoutGapHandleId = "lb-cubed-layout-gap-handle";
+    const NytHeaderResizeHandleId = "lb-cubed-nyt-header-resize-handle";
+    const NytTitleResizeHandleId = "lb-cubed-nyt-title-resize-handle";
     const CloudSyncDebounceMs = 2500;
     const CloudSyncProtocolVersion = 1;
+
+    const DefaultNewItemHighlightSeconds = 1.0;
+    const MinimumNewItemHighlightSeconds = 0.1;
+    const MaximumNewItemHighlightSeconds = 10.0;
+    /*
+        The NYT TI needs a real baseline lane beneath the text entry before
+        the board can sit any closer without visual collision. User-facing
+        "gap" is therefore EXTRA space above this calibrated minimum.
+    */
+    const MinimumHistoryLaneHeight = 90;
+    const MinimumLayoutGap = 0;
+    const MaximumLayoutGap = 200;
+    const MaximumHistoryLaneHeight =
+        MinimumHistoryLaneHeight + MaximumLayoutGap;
+    const ValidFeedbackHistoryLineThreshold = 2;
+    const ValidFeedbackNormalSlotInset = 1;
+    const ValidFeedbackParMarginFallback = 10;
+    const MinimumNytPageScale = 0;
+    const MaximumNytPageScale = 2;
 
     const ExportStoragePrefixes = [
         "LetterBoxedTracker_",
@@ -174,6 +205,26 @@
     let LineDrawingSpeed = 1.0;
     let GuiState = null;
 
+    let NewItemHighlightSeconds = DefaultNewItemHighlightSeconds;
+    let AdjustLayoutGap = false;
+    let LayoutGapPx = LeftColumnGap;
+    let NytHeaderScale = 1.0;
+    let NytTitleScale = 1.0;
+    let NytFooterScale = 1.0;
+    let CompactTitleLayout = false;
+    let HideYesterdayHelpRow = false;
+
+    const RecentWordHighlights = new Map();
+    const RecentTwoferHighlights = new Map();
+    const NytOriginalHeights = {
+        Header: null,
+        Title: null
+    };
+    let NytOriginalTitleLeftOffset = null;
+
+    let LayoutGapResizeState = null;
+    let NytPageResizeState = null;
+
     let GoogleDriveConfig = null;
     let CloudSyncTimer = null;
     let CloudSyncInFlight = false;
@@ -187,14 +238,37 @@
 
     let GameObserver = null;
     let LayoutObserver = null;
+    let SquareFeedbackObserver = null;
+    let ValidFeedbackPlacementTimer = null;
+    let RenderedValidFeedbackKey = null;
+
+    /*
+        A native success box can appear before NYT commits the accepted word to
+        the history DOM. Do not use the live history count itself as the toast
+        identity: that value changes mid-toast and caused Cubed to recreate the
+        same proxy. Instead, one non-empty native-toast lifecycle owns one
+        monotonic generation.
+    */
+    let ValidFeedbackGeneration = 0;
+    let ActiveValidFeedbackSource = null;
+    let ActiveValidFeedbackText = "";
+    let PendingValidFeedbackBaselineChainLength = null;
+    let PendingValidFeedbackStartedAt = 0;
+    const ValidFeedbackSettlePollMs = 30;
+    const ValidFeedbackSettleMaximumMs = 400;
+
     let ScanTimer = null;
     let LayoutTimer = null;
+    let LastParTrackHeight = null;
+
+    let DeleteWordShortcutInProgress = false;
 
     // -------------------------------------------------------------------------
     // Initialization
     // -------------------------------------------------------------------------
 
     async function Initialize() {
+        RecordBootstrapDiagnostic("initialize-start");
         AddStyles();
 
         const Ready = await WaitForGame();
@@ -209,6 +283,7 @@
         LoadCustomDictionary();
         LoadGoogleDriveConfig();
         LoadGuiState();
+        LoadQolPreferences();
         LoadHideParPreference();
         ApplyHideParPreference();
         LoadLineDrawingSpeed();
@@ -219,10 +294,19 @@
         CaptureNativeDimensions();
         NormalizeWordAreaFeedbackLayout();
         CreatePanel();
+        CreatePreviewDebugPane();
+        CreatePreviewVersionLabel();
+        EnsureLayoutGapResizeHandle();
+        EnsureNytPageResizeHandles();
+        ApplyNytPagePreferences();
         StartPanelResizeBehavior();
+        StartLayoutGapResizeBehavior();
+        StartNytPageResizeBehavior();
         ScanGameState(true);
         StartGameObserver();
+        StartSquareFeedbackObserver();
         StartSubmissionHooks();
+        StartKeyboardShortcuts();
         StartLayoutObserver();
         UpdatePanelLayout();
 
@@ -231,6 +315,11 @@
         if (GoogleDriveConfig?.Enabled) {
             ScheduleCloudSync(750);
         }
+
+        RecordBootstrapDiagnostic("initialize-complete", {
+            PuzzleId: GameData.id || null,
+            PrintDate: GameData.printDate || null
+        });
 
         console.log("[Letter Boxed Cubed] Initialized.", {
             PuzzleId: GameData.id,
@@ -246,6 +335,14 @@
             CustomWordsForCurrentPuzzle: CustomWordsForCurrentPuzzle.size,
             HidePar,
             LineDrawingSpeed,
+            NewItemHighlightSeconds,
+            AdjustLayoutGap,
+            LayoutGapPx,
+            NytHeaderScale,
+            NytTitleScale,
+            NytFooterScale,
+            CompactTitleLayout,
+            HideYesterdayHelpRow,
             TwofersGrouped,
             GuiState,
             GoogleDriveConfigured: Boolean(GoogleDriveConfig?.Enabled),
@@ -257,31 +354,55 @@
     }
 
     function WaitForGame() {
+        RecordBootstrapDiagnostic("wait-for-game-start");
+
         return new Promise((Resolve) => {
             const StartTime = Date.now();
             const TimeoutMs = 20000;
+            let SawGameData = false;
+            let SawWordContainer = false;
+            let SawSquareContainer = false;
 
             const Timer = setInterval(() => {
                 const HasGameData =
                     PageWindow.gameData &&
                     Array.isArray(PageWindow.gameData.dictionary);
-
-                const HasWordContainer = document.querySelector(
+                const HasWordContainer = Boolean(document.querySelector(
                     ".lb-game-container .lb-word-container"
-                );
-
-                const HasSquareContainer = document.querySelector(
+                ));
+                const HasSquareContainer = Boolean(document.querySelector(
                     ".lb-game-container .lb-square-container"
-                );
+                ));
+
+                if (HasGameData && !SawGameData) {
+                    SawGameData = true;
+                    RecordBootstrapDiagnostic("game-data-seen");
+                }
+                if (HasWordContainer && !SawWordContainer) {
+                    SawWordContainer = true;
+                    RecordBootstrapDiagnostic("word-container-seen");
+                }
+                if (HasSquareContainer && !SawSquareContainer) {
+                    SawSquareContainer = true;
+                    RecordBootstrapDiagnostic("square-container-seen");
+                }
 
                 if (HasGameData && HasWordContainer && HasSquareContainer) {
                     clearInterval(Timer);
+                    RecordBootstrapDiagnostic("wait-for-game-ready", {
+                        ElapsedMs: Date.now() - StartTime
+                    });
                     Resolve(true);
                     return;
                 }
 
                 if (Date.now() - StartTime >= TimeoutMs) {
                     clearInterval(Timer);
+                    RecordBootstrapDiagnostic("wait-for-game-timeout", {
+                        HasGameData: Boolean(HasGameData),
+                        HasWordContainer,
+                        HasSquareContainer
+                    });
                     Resolve(false);
                 }
             }, 250);
@@ -527,6 +648,42 @@
         ScheduleCloudSync();
     }
 
+    function UpdateInvalidWordControl() {
+        const InvalidWord = document.querySelector(
+            ".lb-cubed-invalid-word"
+        );
+        const AddDictionaryButton = document.querySelector(
+            ".lb-cubed-invalid-control .lb-cubed-header-button"
+        );
+
+        if (!InvalidWord || !AddDictionaryButton) {
+            return;
+        }
+
+        InvalidWord.textContent =
+            LastInvalidWord ||
+            "No invalid word";
+        InvalidWord.title = LastInvalidWord
+            ? "Last submitted word that obeys the board rules but is absent from NYT's dictionary"
+            : "No structurally valid NYT-dictionary rejection has been captured yet";
+
+        const InvalidAlreadyAdded =
+            LastInvalidWord &&
+            CustomDictionary.has(LastInvalidWord);
+
+        AddDictionaryButton.textContent = InvalidAlreadyAdded
+            ? "Added"
+            : "Add to dictionary";
+        AddDictionaryButton.disabled =
+            !LastInvalidWord ||
+            InvalidAlreadyAdded;
+        AddDictionaryButton.title = LastInvalidWord
+            ? InvalidAlreadyAdded
+                ? `${LastInvalidWord} is already in your custom dictionary`
+                : `Record ${LastInvalidWord} as a user-approved custom dictionary word`
+            : "Submit a structurally valid word that NYT does not recognize first";
+    }
+
     function AddLastInvalidWordToCustomDictionary() {
         const Word = NormalizeWord(LastInvalidWord);
 
@@ -557,7 +714,11 @@
             Word
         );
 
-        RenderPanel();
+        /*
+            Only the header control changed. Avoid rebuilding the entire LBC
+            panel, which would restart any in-progress new-word fade animation.
+        */
+        UpdateInvalidWordControl();
     }
 
     function IsStructurallyValidLetterBoxedWord(Word) {
@@ -605,7 +766,12 @@
             SaveCustomWordsForCurrentPuzzle();
         }
 
-        RenderPanel();
+        /*
+            An invalid submission only changes the small dictionary control in
+            LBC's header. A full RenderPanel() here recreated highlighted nodes
+            and visibly restarted an active new-word fade.
+        */
+        UpdateInvalidWordControl();
     }
 
     // -------------------------------------------------------------------------
@@ -850,6 +1016,10 @@
             "lb-cubed-hide-par",
             HidePar
         );
+
+        // Showing/hiding the real par changes the vertical space reserved
+        // between TI/history and GB. Recalculate that fixed grid track now.
+        QueuePanelLayoutUpdate();
     }
 
     // -------------------------------------------------------------------------
@@ -887,6 +1057,1119 @@
             "AnimationSpeed",
             SavedValue
         );
+    }
+
+    // -------------------------------------------------------------------------
+    // QoL display/layout preferences
+    // -------------------------------------------------------------------------
+
+    function GetFiniteGuiNumber(Name, DefaultValue, Minimum, Maximum) {
+        const Value = Number(GetGuiSetting(Name, DefaultValue));
+
+        return Number.isFinite(Value)
+            ? Clamp(Value, Minimum, Maximum)
+            : DefaultValue;
+    }
+
+    function LoadQolPreferences() {
+        NewItemHighlightSeconds = GetFiniteGuiNumber(
+            "NewItemHighlightSeconds",
+            DefaultNewItemHighlightSeconds,
+            MinimumNewItemHighlightSeconds,
+            MaximumNewItemHighlightSeconds
+        );
+
+        AdjustLayoutGap = Boolean(
+            GetGuiSetting("AdjustLayoutGap", false)
+        );
+
+        /*
+            LayoutGapPx remains the physical stored lane height for beta
+            compatibility. The UI presents only the extra amount above the
+            calibrated 90px minimum.
+        */
+        LayoutGapPx = GetFiniteGuiNumber(
+            "LayoutGapPx",
+            MinimumHistoryLaneHeight,
+            MinimumHistoryLaneHeight,
+            MaximumHistoryLaneHeight
+        );
+
+        NytHeaderScale = GetFiniteGuiNumber(
+            "NytHeaderScale",
+            1.0,
+            MinimumNytPageScale,
+            MaximumNytPageScale
+        );
+
+        NytTitleScale = GetFiniteGuiNumber(
+            "NytTitleScale",
+            1.0,
+            MinimumNytPageScale,
+            MaximumNytPageScale
+        );
+
+        NytFooterScale = GetFiniteGuiNumber(
+            "NytFooterScale",
+            1.0,
+            MinimumNytPageScale,
+            MaximumNytPageScale
+        );
+
+        CompactTitleLayout = Boolean(
+            GetGuiSetting("CompactTitleLayout", false)
+        );
+
+        HideYesterdayHelpRow = Boolean(
+            GetGuiSetting("HideYesterdayHelpRow", false)
+        );
+    }
+
+    function GetDisplayedLayoutGapPx() {
+        return Math.max(
+            0,
+            Math.round(LayoutGapPx - MinimumHistoryLaneHeight)
+        );
+    }
+
+    function SetDisplayedLayoutGapPx(Value) {
+        const Numeric = Number(Value);
+        const DisplayedGap = Number.isFinite(Numeric)
+            ? Clamp(Numeric, MinimumLayoutGap, MaximumLayoutGap)
+            : MinimumLayoutGap;
+
+        LayoutGapPx =
+            MinimumHistoryLaneHeight +
+            DisplayedGap;
+    }
+
+    function RegisterRecentHighlight(MapValue, Key) {
+        if (!Key) {
+            return;
+        }
+
+        const DurationMs = Math.max(
+            1,
+            Math.round(NewItemHighlightSeconds * 1000)
+        );
+
+        const ExpiresAt = Date.now() + DurationMs;
+        MapValue.set(Key, ExpiresAt);
+
+        setTimeout(() => {
+            if (MapValue.get(Key) === ExpiresAt) {
+                MapValue.delete(Key);
+            }
+        }, DurationMs + 75);
+    }
+
+    function MarkWordForHighlight(Word) {
+        RegisterRecentHighlight(
+            RecentWordHighlights,
+            NormalizeWord(Word)
+        );
+    }
+
+    function MarkTwoferForHighlight(Key) {
+        RegisterRecentHighlight(
+            RecentTwoferHighlights,
+            String(Key || "")
+        );
+    }
+
+    function ApplyRecentHighlight(Element, MapValue, Key) {
+        const ExpiresAt = MapValue.get(Key);
+        const RemainingMs = Number(ExpiresAt) - Date.now();
+
+        if (!Number.isFinite(RemainingMs) || RemainingMs <= 0) {
+            MapValue.delete(Key);
+            return false;
+        }
+
+        Element.classList.add("lb-cubed-new-highlight");
+        Element.style.setProperty(
+            "--lb-cubed-highlight-duration",
+            `${Math.max(1, Math.round(RemainingMs))}ms`
+        );
+
+        return true;
+    }
+
+    function ApplyRecentWordHighlight(Element, Word) {
+        const Normalized = NormalizeWord(Word);
+        Element.dataset.cubedWord = Normalized;
+        return ApplyRecentHighlight(
+            Element,
+            RecentWordHighlights,
+            Normalized
+        );
+    }
+
+    function ApplyRecentTwoferHighlight(Element, Key) {
+        Element.dataset.cubedTwofer = String(Key || "");
+        return ApplyRecentHighlight(
+            Element,
+            RecentTwoferHighlights,
+            String(Key || "")
+        );
+    }
+
+    function ApplyRecentLengthHighlight(Element, Bucket) {
+        let LatestExpiry = 0;
+        const RecentWords = [];
+
+        for (const [Word, ExpiresAt] of RecentWordHighlights) {
+            if (ExpiresAt <= Date.now()) {
+                RecentWordHighlights.delete(Word);
+                continue;
+            }
+
+            if (GetLengthBucket(Word.length) === Bucket) {
+                LatestExpiry = Math.max(LatestExpiry, ExpiresAt);
+                RecentWords.push(Word);
+            }
+        }
+
+        if (!LatestExpiry) {
+            return;
+        }
+
+        Element.classList.add("lb-cubed-new-highlight");
+        Element.style.setProperty(
+            "--lb-cubed-highlight-duration",
+            `${Math.max(1, Math.round(LatestExpiry - Date.now()))}ms`
+        );
+
+        if (RecentWords.length) {
+            Element.title = `Recently found: ${RecentWords.sort(Alphabetically).join(", ")}`;
+        }
+    }
+
+    function ApplyRecentWordGroupHighlight(Element, Predicate) {
+        let LatestExpiry = 0;
+        const Now = Date.now();
+
+        for (const [Word, ExpiresAt] of RecentWordHighlights) {
+            if (ExpiresAt <= Now) {
+                RecentWordHighlights.delete(Word);
+                continue;
+            }
+
+            if (Predicate(Word)) {
+                LatestExpiry = Math.max(LatestExpiry, ExpiresAt);
+            }
+        }
+
+        if (!LatestExpiry) {
+            return false;
+        }
+
+        Element.classList.add("lb-cubed-new-highlight");
+        Element.style.setProperty(
+            "--lb-cubed-highlight-duration",
+            `${Math.max(1, Math.round(LatestExpiry - Now))}ms`
+        );
+
+        return true;
+    }
+
+    function CreateSettingsSection(TitleText) {
+        const Section = document.createElement("section");
+        Section.className = "lb-cubed-settings-section";
+
+        const Heading = document.createElement("div");
+        Heading.className = "lb-cubed-settings-section-title";
+        Heading.textContent = TitleText;
+        Section.appendChild(Heading);
+
+        return Section;
+    }
+
+    function CreateSettingsCheckbox(LabelText, Checked, OnChange, TitleText = "") {
+        const Label = document.createElement("label");
+        Label.className = "lb-cubed-settings-checkbox";
+        if (TitleText) {
+            Label.title = TitleText;
+        }
+
+        const Input = document.createElement("input");
+        Input.type = "checkbox";
+        Input.checked = Boolean(Checked);
+        Input.addEventListener("change", Event => {
+            OnChange(Boolean(Event.currentTarget.checked));
+        });
+
+        const Text = document.createElement("span");
+        Text.textContent = LabelText;
+
+        Label.append(Input, Text);
+        return Label;
+    }
+
+    function CreateSettingsRange(
+        LabelText,
+        Value,
+        Minimum,
+        Maximum,
+        Step,
+        FormatValue,
+        OnInput,
+        OnCommit
+    ) {
+        const Row = document.createElement("label");
+        Row.className = "lb-cubed-settings-range";
+
+        const Label = document.createElement("span");
+        Label.className = "lb-cubed-settings-label";
+        Label.textContent = LabelText;
+
+        const Input = document.createElement("input");
+        Input.type = "range";
+        Input.min = String(Minimum);
+        Input.max = String(Maximum);
+        Input.step = String(Step);
+        Input.value = String(Value);
+
+        const ValueText = document.createElement("span");
+        ValueText.className = "lb-cubed-settings-range-value";
+        ValueText.textContent = FormatValue(Value);
+
+        Input.addEventListener("input", Event => {
+            const Next = Number(Event.currentTarget.value);
+            ValueText.textContent = FormatValue(Next);
+            OnInput(Next);
+        });
+
+        Input.addEventListener("change", Event => {
+            const Next = Number(Event.currentTarget.value);
+            ValueText.textContent = FormatValue(Next);
+            OnCommit(Next);
+        });
+
+        Row.append(Label, Input, ValueText);
+        return Row;
+    }
+
+    function CreateSettingsNumberWithReset(
+        LabelText,
+        Value,
+        Minimum,
+        Maximum,
+        Step,
+        Suffix,
+        DefaultValue,
+        SettingName,
+        OnCommit
+    ) {
+        const Row = document.createElement("div");
+        Row.className = "lb-cubed-settings-number-row";
+
+        const Label = document.createElement("label");
+        Label.className = "lb-cubed-settings-label";
+        Label.textContent = LabelText;
+
+        const InputWrap = document.createElement("span");
+        InputWrap.className = "lb-cubed-settings-number-wrap";
+
+        const Input = document.createElement("input");
+        Input.type = "number";
+        Input.min = String(Minimum);
+        Input.max = String(Maximum);
+        Input.step = String(Step);
+        Input.value = String(Value);
+        Input.dataset.cubedSettingInput = SettingName;
+
+        const SuffixText = document.createElement("span");
+        SuffixText.className = "lb-cubed-settings-suffix";
+        SuffixText.textContent = Suffix;
+
+        const Commit = RawValue => {
+            const Numeric = Number(RawValue);
+            const Next = Number.isFinite(Numeric)
+                ? Clamp(Numeric, Minimum, Maximum)
+                : DefaultValue;
+
+            Input.value = String(Next);
+            OnCommit(Next);
+        };
+
+        Input.addEventListener("change", Event => {
+            Commit(Event.currentTarget.value);
+        });
+
+        const Reset = document.createElement("button");
+        Reset.type = "button";
+        Reset.className = "lb-cubed-settings-mini-button";
+        Reset.textContent = "Reset";
+        Reset.addEventListener("click", Event => {
+            Event.preventDefault();
+            Event.stopPropagation();
+            Commit(DefaultValue);
+        });
+
+        Label.htmlFor = "";
+        InputWrap.append(Input, SuffixText);
+        Row.append(Label, InputWrap, Reset);
+        return Row;
+    }
+
+    function CreateSettingsMenu() {
+        const Details = document.createElement("details");
+        Details.id = SettingsMenuId;
+        Details.className = "lb-cubed-settings-menu";
+
+        const Summary = document.createElement("summary");
+        Summary.className = "lb-cubed-header-button lb-cubed-settings-summary";
+        Summary.textContent = "⚙ Settings";
+        Details.appendChild(Summary);
+
+        const Menu = document.createElement("div");
+        Menu.className = "lb-cubed-settings-panel";
+
+        const AnimationSection = CreateSettingsSection("Feedback & animation");
+        AnimationSection.append(
+            CreateSettingsRange(
+                "Line animation speed",
+                LineDrawingSpeed,
+                0,
+                1,
+                0.1,
+                Value => Value.toFixed(1),
+                Value => {
+                    LineDrawingSpeed = Clamp(Value, 0, 1);
+                },
+                Value => {
+                    LineDrawingSpeed = Clamp(Value, 0, 1);
+                    SaveLineDrawingSpeed();
+                }
+            ),
+            CreateSettingsRange(
+                "New word highlight",
+                NewItemHighlightSeconds,
+                MinimumNewItemHighlightSeconds,
+                MaximumNewItemHighlightSeconds,
+                0.1,
+                Value => `${Value.toFixed(1)}s`,
+                Value => {
+                    NewItemHighlightSeconds = Clamp(
+                        Value,
+                        MinimumNewItemHighlightSeconds,
+                        MaximumNewItemHighlightSeconds
+                    );
+                },
+                Value => {
+                    NewItemHighlightSeconds = Clamp(
+                        Value,
+                        MinimumNewItemHighlightSeconds,
+                        MaximumNewItemHighlightSeconds
+                    );
+                    SetGuiSetting(
+                        "NewItemHighlightSeconds",
+                        Number(NewItemHighlightSeconds.toFixed(1))
+                    );
+                }
+            )
+        );
+
+        const DisplaySection = CreateSettingsSection("Display");
+        DisplaySection.append(
+            CreateSettingsNumberWithReset(
+                "Header size",
+                Math.round(NytHeaderScale * 100),
+                0,
+                200,
+                1,
+                "%",
+                100,
+                "NytHeaderScale",
+                Value => {
+                    NytHeaderScale = Clamp(Value / 100, MinimumNytPageScale, MaximumNytPageScale);
+                    SetGuiSetting("NytHeaderScale", NytHeaderScale);
+                    ApplyNytPagePreferences();
+                }
+            ),
+            CreateSettingsNumberWithReset(
+                "Game title size",
+                Math.round(NytTitleScale * 100),
+                0,
+                200,
+                1,
+                "%",
+                100,
+                "NytTitleScale",
+                Value => {
+                    NytTitleScale = Clamp(Value / 100, MinimumNytPageScale, MaximumNytPageScale);
+                    SetGuiSetting("NytTitleScale", NytTitleScale);
+                    ApplyNytPagePreferences();
+                }
+            ),
+            CreateSettingsCheckbox(
+                "Compact title layout",
+                CompactTitleLayout,
+                Checked => {
+                    CompactTitleLayout = Checked;
+                    SetGuiSetting("CompactTitleLayout", CompactTitleLayout);
+                    ApplyNytPagePreferences();
+                }
+            ),
+            CreateSettingsCheckbox(
+                "Hide Yesterday/Help row",
+                HideYesterdayHelpRow,
+                Checked => {
+                    HideYesterdayHelpRow = Checked;
+                    SetGuiSetting("HideYesterdayHelpRow", HideYesterdayHelpRow);
+                    ApplyNytPagePreferences();
+                }
+            ),
+            CreateSettingsCheckbox(
+                "Hide par",
+                HidePar,
+                Checked => {
+                    HidePar = Checked;
+                    SaveHideParPreference();
+                    ApplyHideParPreference();
+                },
+                "Hide NYT's 'Try to solve in X words' par text"
+            )
+        );
+
+        const GapGroup = document.createElement("div");
+        GapGroup.className = "lb-cubed-settings-subgroup";
+
+        const GapHeading = document.createElement("div");
+        GapHeading.className = "lb-cubed-settings-subgroup-title";
+        GapHeading.textContent = "Adjust layout gap between text input and letter box:";
+
+        GapGroup.append(
+            GapHeading,
+            CreateSettingsCheckbox(
+                "Enable draggable grip line",
+                AdjustLayoutGap,
+                Checked => {
+                    AdjustLayoutGap = Checked;
+                    SetGuiSetting("AdjustLayoutGap", AdjustLayoutGap);
+                    UpdateLayoutGapHandleVisibility();
+                    PositionLayoutGapResizeHandle();
+                },
+                "Show a draggable horizontal grip that adjusts the same gap value as the manual input"
+            ),
+            CreateSettingsNumberWithReset(
+                "Manually set gap",
+                GetDisplayedLayoutGapPx(),
+                MinimumLayoutGap,
+                MaximumLayoutGap,
+                1,
+                "px",
+                0,
+                "LayoutGapPx",
+                Value => {
+                    SetDisplayedLayoutGapPx(Value);
+                    SetGuiSetting("LayoutGapPx", LayoutGapPx);
+                    UpdatePanelLayout();
+                }
+            )
+        );
+
+        DisplaySection.appendChild(GapGroup);
+        DisplaySection.appendChild(
+            CreateSettingsNumberWithReset(
+                "Footer size",
+                Math.round(NytFooterScale * 100),
+                0,
+                200,
+                1,
+                "%",
+                100,
+                "NytFooterScale",
+                Value => {
+                    NytFooterScale = Clamp(Value / 100, MinimumNytPageScale, MaximumNytPageScale);
+                    SetGuiSetting("NytFooterScale", NytFooterScale);
+                    ApplyNytPagePreferences();
+                }
+            )
+        );
+
+        const SyncSection = CreateSettingsSection("Sync");
+        const DriveRow = document.createElement("div");
+        DriveRow.className = "lb-cubed-settings-action-row";
+
+        const DriveLabel = document.createElement("span");
+        DriveLabel.className = "lb-cubed-settings-label";
+        DriveLabel.textContent = "Google Drive";
+
+        const GoogleDriveButton = document.createElement("button");
+        GoogleDriveButton.id = GoogleDriveButtonId;
+        GoogleDriveButton.type = "button";
+        GoogleDriveButton.className = "lb-cubed-header-button";
+        GoogleDriveButton.addEventListener("click", Event => {
+            Event.preventDefault();
+            Event.stopPropagation();
+
+            if (!GoogleDriveConfig?.Enabled || Event.shiftKey) {
+                ConfigureGoogleDriveSync();
+                return;
+            }
+
+            SyncWithGoogleDrive({ Manual: true });
+        });
+
+        DriveRow.append(DriveLabel, GoogleDriveButton);
+
+        const SyncButtons = document.createElement("div");
+        SyncButtons.className = "lb-cubed-settings-button-row";
+
+        const ExportButton = document.createElement("button");
+        ExportButton.type = "button";
+        ExportButton.className = "lb-cubed-header-button";
+        ExportButton.textContent = "Export";
+        ExportButton.title = "Export all retained Letter Boxed Cubed puzzle/player data as a text backup";
+        ExportButton.addEventListener("click", Event => {
+            Event.preventDefault();
+            Event.stopPropagation();
+            ExportAllData();
+        });
+
+        const ImportButton = document.createElement("button");
+        ImportButton.type = "button";
+        ImportButton.className = "lb-cubed-header-button";
+        ImportButton.textContent = "Import";
+        ImportButton.title = "Restore or merge data from a Letter Boxed Cubed backup";
+        ImportButton.addEventListener("click", Event => {
+            Event.preventDefault();
+            Event.stopPropagation();
+            PromptForImport();
+        });
+
+        SyncButtons.append(ExportButton, ImportButton);
+        SyncSection.append(DriveRow, SyncButtons);
+
+        Menu.append(
+            AnimationSection,
+            DisplaySection,
+            SyncSection
+        );
+        Details.appendChild(Menu);
+
+        return Details;
+    }
+
+    function GetNytPageTargets() {
+        return {
+            Header: document.querySelector("header.pz-header.pz-game-header"),
+            Title: document.querySelector("#letter-boxed-container .pz-game-title-bar"),
+            Footer: document.querySelector("footer.pz-footer")
+        };
+    }
+
+    function CaptureNytOriginalHeight(Kind, Element) {
+        if (!Element || NytOriginalHeights[Kind]) {
+            return;
+        }
+
+        const Height = Element.getBoundingClientRect().height;
+        if (Number.isFinite(Height) && Height > 0) {
+            NytOriginalHeights[Kind] = Height;
+        }
+    }
+
+    function CaptureNytTitleLeftAnchor(Element) {
+        if (!Element || NytOriginalTitleLeftOffset !== null) {
+            return;
+        }
+
+        const Parent = Element.parentElement;
+        if (!Parent) {
+            return;
+        }
+
+        const Rect = Element.getBoundingClientRect();
+        const ParentRect = Parent.getBoundingClientRect();
+        const Offset = Rect.left - ParentRect.left;
+
+        if (Number.isFinite(Offset)) {
+            NytOriginalTitleLeftOffset = Math.max(0, Offset);
+        }
+    }
+
+    function ApplyNytElementScale(Element, Scale) {
+        if (!Element) {
+            return;
+        }
+
+        const Normalized = Clamp(
+            Number(Scale) || 0,
+            MinimumNytPageScale,
+            MaximumNytPageScale
+        );
+
+        Element.classList.toggle(
+            "lb-cubed-page-fluff-hidden",
+            Normalized <= 0.001
+        );
+
+        if (Normalized > 0.001 && Math.abs(Normalized - 1) > 0.001) {
+            Element.style.setProperty("zoom", String(Normalized));
+        } else {
+            Element.style.removeProperty("zoom");
+        }
+    }
+
+    function EnsureNytPageResizeHandles() {
+        const Targets = GetNytPageTargets();
+        const Definitions = [
+            {
+                Kind: "Header",
+                Element: Targets.Header,
+                HandleId: NytHeaderResizeHandleId,
+                SettingName: "NytHeaderScale",
+                Label: "Resize NYT header"
+            },
+            {
+                Kind: "Title",
+                Element: Targets.Title,
+                HandleId: NytTitleResizeHandleId,
+                SettingName: "NytTitleScale",
+                Label: "Resize Letter Boxed title area"
+            }
+        ];
+
+        for (const Definition of Definitions) {
+            if (!Definition.Element) {
+                continue;
+            }
+
+            CaptureNytOriginalHeight(
+                Definition.Kind,
+                Definition.Element
+            );
+
+            if (document.getElementById(Definition.HandleId)) {
+                continue;
+            }
+
+            const Handle = document.createElement("div");
+            Handle.id = Definition.HandleId;
+            Handle.className = "lb-cubed-page-resize-handle";
+            Handle.dataset.cubedTargetKind = Definition.Kind;
+            Handle.dataset.cubedScaleSetting = Definition.SettingName;
+            Handle.setAttribute("role", "separator");
+            Handle.setAttribute("aria-orientation", "horizontal");
+            Handle.setAttribute("aria-label", Definition.Label);
+            Handle.title = `${Definition.Label}; drag vertically, or use Settings for a precise percentage/reset`;
+
+            Definition.Element.insertAdjacentElement("afterend", Handle);
+        }
+    }
+
+    function GetNytScaleBySettingName(SettingName) {
+        return SettingName === "NytHeaderScale"
+            ? NytHeaderScale
+            : NytTitleScale;
+    }
+
+    function SetNytScaleBySettingName(SettingName, Scale, Persist = false) {
+        const Normalized = Clamp(
+            Scale,
+            MinimumNytPageScale,
+            MaximumNytPageScale
+        );
+
+        if (SettingName === "NytHeaderScale") {
+            NytHeaderScale = Normalized;
+        } else if (SettingName === "NytTitleScale") {
+            NytTitleScale = Normalized;
+        } else {
+            return;
+        }
+
+        const Input = document.querySelector(
+            `[data-cubed-setting-input="${SettingName}"]`
+        );
+        if (Input) {
+            Input.value = String(Math.round(Normalized * 100));
+        }
+
+        if (Persist) {
+            SetGuiSetting(SettingName, Normalized);
+        }
+
+        ApplyNytPagePreferences();
+    }
+
+    function StartNytPageResizeBehavior() {
+        EnsureNytPageResizeHandles();
+
+        for (const Handle of [
+            document.getElementById(NytHeaderResizeHandleId),
+            document.getElementById(NytTitleResizeHandleId)
+        ].filter(Boolean)) {
+            Handle.addEventListener("pointerdown", HandleNytPageResizePointerDown, true);
+            Handle.addEventListener("pointermove", HandleNytPageResizePointerMove, true);
+            Handle.addEventListener("pointerup", EndNytPageResize, true);
+            Handle.addEventListener("pointercancel", EndNytPageResize, true);
+        }
+    }
+
+    function HandleNytPageResizePointerDown(Event) {
+        if (Event.button !== 0) {
+            return;
+        }
+
+        const Handle = Event.currentTarget;
+        const Kind = Handle.dataset.cubedTargetKind;
+        const SettingName = Handle.dataset.cubedScaleSetting;
+        const OriginalHeight = Number(NytOriginalHeights[Kind]) || 60;
+
+        NytPageResizeState = {
+            PointerId: Event.pointerId,
+            StartY: Event.clientY,
+            StartScale: GetNytScaleBySettingName(SettingName),
+            OriginalHeight: Math.max(20, OriginalHeight),
+            SettingName,
+            Handle
+        };
+
+        Handle.classList.add("lb-cubed-page-resize-handle-active");
+
+        try {
+            Handle.setPointerCapture(Event.pointerId);
+        } catch {
+            // Pointer capture is helpful but not required.
+        }
+
+        Event.preventDefault();
+        Event.stopPropagation();
+    }
+
+    function HandleNytPageResizePointerMove(Event) {
+        if (!NytPageResizeState || Event.pointerId !== NytPageResizeState.PointerId) {
+            return;
+        }
+
+        const DeltaY = Event.clientY - NytPageResizeState.StartY;
+        const NextScale =
+            NytPageResizeState.StartScale +
+            (DeltaY / NytPageResizeState.OriginalHeight);
+
+        SetNytScaleBySettingName(
+            NytPageResizeState.SettingName,
+            NextScale,
+            false
+        );
+
+        Event.preventDefault();
+    }
+
+    function EndNytPageResize(Event) {
+        if (!NytPageResizeState) {
+            return;
+        }
+
+        const State = NytPageResizeState;
+        NytPageResizeState = null;
+
+        State.Handle.classList.remove("lb-cubed-page-resize-handle-active");
+
+        try {
+            State.Handle.releasePointerCapture(State.PointerId);
+        } catch {
+            // Ignore browsers that already released pointer capture.
+        }
+
+        SetNytScaleBySettingName(
+            State.SettingName,
+            GetNytScaleBySettingName(State.SettingName),
+            true
+        );
+
+        if (Event) {
+            Event.preventDefault();
+        }
+    }
+
+    function FindYesterdayHelpRow() {
+        const Yesterday = document.querySelector(
+            '#yesterday-button, [data-testid="yesterday-button"]'
+        );
+
+        if (!Yesterday) {
+            return null;
+        }
+
+        const Root = document.querySelector("#letter-boxed-container") || document.body;
+        let Candidate = Yesterday.parentElement;
+        const ImmediateParent = Candidate;
+
+        const ContainsHelpControl = Element =>
+            [...Element.querySelectorAll("button, a")].some(Control => {
+                const Description = [
+                    Control.textContent,
+                    Control.getAttribute("aria-label"),
+                    Control.getAttribute("title"),
+                    Control.getAttribute("data-testid")
+                ]
+                    .filter(Boolean)
+                    .join(" ");
+
+                return /help/i.test(Description);
+            });
+
+        while (Candidate && Candidate !== Root && Candidate !== document.body) {
+            if (ContainsHelpControl(Candidate)) {
+                return Candidate;
+            }
+
+            Candidate = Candidate.parentElement;
+        }
+
+        return ImmediateParent;
+    }
+
+    function ApplyNytTitleArrangement() {
+        const Host = document.querySelector("#portal-game-header");
+        const TitleBar = document.querySelector(
+            "#letter-boxed-container .pz-game-title-bar"
+        );
+        const TitleSection = TitleBar?.closest(".pz-section");
+
+        // Remove beta.1's proxy behavior if this script was hot-updated.
+        Host?.querySelectorAll(".lb-cubed-yesterday-proxy")
+            .forEach(Element => Element.remove());
+        document.querySelectorAll(".lb-cubed-original-yesterday-hidden")
+            .forEach(Element => Element.classList.remove("lb-cubed-original-yesterday-hidden"));
+
+        if (Host) {
+            Host.classList.toggle(
+                "lb-cubed-compact-title-layout",
+                CompactTitleLayout
+            );
+        }
+
+        if (TitleSection) {
+            TitleSection.classList.toggle(
+                "lb-cubed-compact-title-section",
+                CompactTitleLayout
+            );
+        }
+
+        document.querySelectorAll(".lb-cubed-yesterday-help-row-hidden")
+            .forEach(Element => Element.classList.remove("lb-cubed-yesterday-help-row-hidden"));
+
+        const YesterdayHelpRow = FindYesterdayHelpRow();
+        if (HideYesterdayHelpRow && YesterdayHelpRow) {
+            YesterdayHelpRow.classList.add("lb-cubed-yesterday-help-row-hidden");
+        }
+    }
+
+    function ApplyNytPagePreferences() {
+        EnsureNytPageResizeHandles();
+
+        const Targets = GetNytPageTargets();
+        CaptureNytOriginalHeight("Header", Targets.Header);
+        CaptureNytOriginalHeight("Title", Targets.Title);
+        CaptureNytTitleLeftAnchor(Targets.Title);
+
+        ApplyNytElementScale(Targets.Header, NytHeaderScale);
+        ApplyNytElementScale(Targets.Title, NytTitleScale);
+        ApplyNytElementScale(Targets.Footer, NytFooterScale);
+
+        /*
+            NYT normally centers the title bar with auto margins. CSS zoom also
+            scales the margin itself, so a fixed captured margin drifts right as
+            zoom increases. Divide the native offset by the active zoom so its
+            rendered left edge remains fixed while the region grows/shrinks only
+            to the right.
+        */
+        if (Targets.Title && NytOriginalTitleLeftOffset !== null) {
+            const NormalizedTitleScale = Clamp(
+                Number(NytTitleScale) || 0,
+                MinimumNytPageScale,
+                MaximumNytPageScale
+            );
+            const CompensatedLeftOffset = NormalizedTitleScale > 0.001
+                ? NytOriginalTitleLeftOffset / NormalizedTitleScale
+                : 0;
+
+            Targets.Title.style.setProperty(
+                "margin-left",
+                `${CompensatedLeftOffset}px`,
+                "important"
+            );
+            Targets.Title.style.setProperty(
+                "margin-right",
+                "auto",
+                "important"
+            );
+        }
+
+        ApplyNytTitleArrangement();
+
+        /*
+            Header/title resizing moves LBC vertically without resizing the TI or
+            GB themselves, so their ResizeObserver does not fire. Re-anchor the
+            document-absolute preview controls after the browser has applied the
+            new page geometry.
+        */
+        requestAnimationFrame(() => {
+            PositionPreviewDebugPane();
+            PositionPreviewVersionLabel();
+        });
+    }
+
+    function EnsureLayoutGapResizeHandle() {
+        const GameContainer = document.querySelector(".lb-game-container");
+        if (!GameContainer || document.getElementById(LayoutGapHandleId)) {
+            return;
+        }
+
+        const Handle = document.createElement("div");
+        Handle.id = LayoutGapHandleId;
+        Handle.className = "lb-cubed-layout-gap-handle";
+        Handle.setAttribute("role", "separator");
+        Handle.setAttribute("aria-orientation", "horizontal");
+        Handle.setAttribute("aria-label", "Adjust gap between word entry and puzzle box");
+        Handle.title = "Drag to adjust the gap between the word-entry area and puzzle box";
+
+        GameContainer.appendChild(Handle);
+        UpdateLayoutGapHandleVisibility();
+    }
+
+    function UpdateLayoutGapHandleVisibility() {
+        const GameContainer = document.querySelector(".lb-game-container");
+        GameContainer?.classList.toggle(
+            "lb-cubed-adjust-layout-gap",
+            AdjustLayoutGap
+        );
+    }
+
+    function PositionLayoutGapResizeHandle() {
+        const GameContainer = document.querySelector(".lb-game-container");
+        const WordContainer = GameContainer?.querySelector(".lb-word-container");
+        const SquareContainer = GameContainer?.querySelector(".lb-square-container");
+        const Handle = document.getElementById(LayoutGapHandleId);
+
+        if (!GameContainer || !WordContainer || !SquareContainer || !Handle || !AdjustLayoutGap) {
+            return;
+        }
+
+        requestAnimationFrame(() => {
+            if (!AdjustLayoutGap || !Handle.isConnected) {
+                return;
+            }
+
+            const GameRect = GameContainer.getBoundingClientRect();
+            const WordRect = WordContainer.getBoundingClientRect();
+            const SquareRect = SquareContainer.getBoundingClientRect();
+
+            const Left = Math.max(
+                0,
+                Math.min(WordRect.left, SquareRect.left) - GameRect.left
+            );
+            const Right = Math.min(
+                GameRect.width,
+                Math.max(WordRect.right, SquareRect.right) - GameRect.left
+            );
+
+            /*
+                The grid reserves a gutter exactly twice the normal external
+                grip offset. Put the visible line one offset ABOVE GB, which
+                centers it between the history lane and the first GB pixels.
+            */
+            const GripLineY =
+                SquareRect.top -
+                ResizeGripLineOffset -
+                GameRect.top;
+
+            Handle.style.left = `${Math.round(Left)}px`;
+            Handle.style.width = `${Math.max(24, Math.round(Right - Left))}px`;
+            Handle.style.top = `${Math.round(GripLineY - 5)}px`;
+        });
+    }
+
+    function StartLayoutGapResizeBehavior() {
+        EnsureLayoutGapResizeHandle();
+        const Handle = document.getElementById(LayoutGapHandleId);
+        if (!Handle) {
+            return;
+        }
+
+        Handle.addEventListener("pointerdown", HandleLayoutGapPointerDown, true);
+        Handle.addEventListener("pointermove", HandleLayoutGapPointerMove, true);
+        Handle.addEventListener("pointerup", EndLayoutGapResize, true);
+        Handle.addEventListener("pointercancel", EndLayoutGapResize, true);
+    }
+
+    function HandleLayoutGapPointerDown(Event) {
+        if (Event.button !== 0 || !AdjustLayoutGap) {
+            return;
+        }
+
+        const Handle = Event.currentTarget;
+        LayoutGapResizeState = {
+            PointerId: Event.pointerId,
+            StartY: Event.clientY,
+            StartGap: LayoutGapPx,
+            Handle
+        };
+
+        Handle.classList.add("lb-cubed-layout-gap-handle-active");
+
+        try {
+            Handle.setPointerCapture(Event.pointerId);
+        } catch {
+            // Pointer capture is helpful but not required.
+        }
+
+        Event.preventDefault();
+        Event.stopPropagation();
+    }
+
+    function HandleLayoutGapPointerMove(Event) {
+        if (!LayoutGapResizeState || Event.pointerId !== LayoutGapResizeState.PointerId) {
+            return;
+        }
+
+        LayoutGapPx = Clamp(
+            LayoutGapResizeState.StartGap +
+            (Event.clientY - LayoutGapResizeState.StartY),
+            MinimumHistoryLaneHeight,
+            MaximumHistoryLaneHeight
+        );
+
+        const Input = document.querySelector(
+            '[data-cubed-setting-input="LayoutGapPx"]'
+        );
+        if (Input) {
+            Input.value = String(GetDisplayedLayoutGapPx());
+        }
+
+        UpdatePanelLayout();
+        Event.preventDefault();
+    }
+
+    function EndLayoutGapResize(Event) {
+        if (!LayoutGapResizeState) {
+            return;
+        }
+
+        const State = LayoutGapResizeState;
+        LayoutGapResizeState = null;
+
+        State.Handle.classList.remove("lb-cubed-layout-gap-handle-active");
+
+        try {
+            State.Handle.releasePointerCapture(State.PointerId);
+        } catch {
+            // Ignore browsers that already released pointer capture.
+        }
+
+        LayoutGapPx = Math.round(LayoutGapPx);
+        SetGuiSetting("LayoutGapPx", LayoutGapPx);
+        UpdatePanelLayout();
+
+        if (Event) {
+            Event.preventDefault();
+        }
     }
 
     function InstallLineDrawingSpeedHook() {
@@ -2864,46 +4147,55 @@
 
     function ReloadRuntimeStateFromStorage() {
         LoadGuiState();
+        LoadQolPreferences();
         LoadFoundWords();
         LoadCustomDictionary();
         LoadHideParPreference();
         ApplyHideParPreference();
         LoadLineDrawingSpeed();
         LoadFoundTwofers();
+        ApplyNytPagePreferences();
+        UpdateLayoutGapHandleVisibility();
         RenderPanel();
         QueuePanelLayoutUpdate();
     }
 
     function UpdateGoogleDriveButton() {
-        const Button = document.getElementById(
-            GoogleDriveButtonId
-        );
+        const Button = document.getElementById(GoogleDriveButtonId);
+        const Status = document.getElementById(GoogleDriveStatusId);
 
-        if (!Button) {
-            return;
-        }
+        const StatusParts = [];
 
         if (!GoogleDriveConfig?.Enabled) {
-            Button.textContent = "Drive: Setup";
-            Button.title =
-                "Configure automatic Google Drive sync";
+            if (Button) {
+                Button.textContent = "Drive: Setup";
+                Button.title = "Configure automatic Google Drive sync";
+            }
+
+            if (Status) {
+                Status.textContent = "Drive: Off";
+                Status.title = "Google Drive sync is not configured on this browser.";
+            }
             return;
         }
 
-        const TextByStatus = {
+        const ButtonTextByStatus = {
             Ready: "Drive: Sync",
             Syncing: "Drive: Syncing…",
             Synced: "Drive: ✓",
             Error: "Drive: Error"
         };
 
-        Button.textContent =
-            TextByStatus[CloudSyncStatus] ||
-            "Drive: Sync";
+        const StatusTextByStatus = {
+            Ready: "Drive: Ready",
+            Syncing: "Drive: Syncing…",
+            Synced: "Drive: Synced",
+            Error: "Drive: Error"
+        };
 
-        const StatusParts = [
-            "Click to sync now. Shift-click to reconfigure or disconnect."
-        ];
+        StatusParts.push(
+            "Use Settings to sync now; Shift-click the Drive button there to reconfigure or disconnect."
+        );
 
         if (LastCloudSyncAt) {
             StatusParts.push(
@@ -2917,7 +4209,17 @@
             );
         }
 
-        Button.title = StatusParts.join("\n");
+        const Title = StatusParts.join("\n");
+
+        if (Button) {
+            Button.textContent = ButtonTextByStatus[CloudSyncStatus] || "Drive: Sync";
+            Button.title = Title;
+        }
+
+        if (Status) {
+            Status.textContent = StatusTextByStatus[CloudSyncStatus] || "Drive: Ready";
+            Status.title = Title;
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -3164,9 +4466,22 @@
             return false;
         }
 
+        const FirstWasFound = FoundWords.has(NormalizedFirst);
+        const SecondWasFound = FoundWords.has(NormalizedSecond);
+
         FoundTwofers.add(Key);
         FoundWords.add(NormalizedFirst);
         FoundWords.add(NormalizedSecond);
+
+        if (!FirstWasFound) {
+            MarkWordForHighlight(NormalizedFirst);
+        }
+
+        if (!SecondWasFound) {
+            MarkWordForHighlight(NormalizedSecond);
+        }
+
+        MarkTwoferForHighlight(Key);
 
         SaveFoundTwofers();
         SaveFoundWords();
@@ -3290,9 +4605,11 @@
             clearTimeout(ScanTimer);
             ScanTimer = setTimeout(() => {
                 /*
-                    Gameplay mutations update player data, but they must not
-                    reflow the TI/GB meta-column. GB's vertical position is
-                    intentionally stable until an actual viewport resize.
+                    Gameplay mutations update player data without generally
+                    reflowing the TI/GB meta-column. The one intentional
+                    exception is the actual par prompt: NormalizeWordAreaFeedbackLayout
+                    queues a layout update only when its visible direct-child
+                    footprint changes, so GB makes room for the par when needed.
                 */
                 NormalizeWordAreaFeedbackLayout();
                 ScanGameState();
@@ -3343,6 +4660,400 @@
                 );
             }
         }
+
+        const ParTrackHeight = GetVisibleParTrackHeight(WordContainer);
+        if (
+            LastParTrackHeight !== null &&
+            ParTrackHeight !== LastParTrackHeight
+        ) {
+            QueuePanelLayoutUpdate();
+        }
+        LastParTrackHeight = ParTrackHeight;
+
+        QueueValidWordFeedbackPlacement();
+    }
+
+    function CountRenderedHistoryLines(ListContainer) {
+        const HistoryViewport = ListContainer?.querySelector(
+            ":scope > .lb-word-list-container"
+        );
+        const HistoryList = HistoryViewport?.querySelector(
+            ":scope > .lb-word-list"
+        );
+
+        if (!HistoryViewport || !HistoryList) {
+            return 0;
+        }
+
+        /*
+            The toast's jump rule is semantic now: the lower slot is available
+            for exactly one rendered history line. Do not infer that from NYT's
+            toast rectangle, because moving GB for a visible par also moves that
+            native rectangle and changes the answer for the wrong reason.
+
+            Range fragments let us count wrapped visual lines even when the
+            history is made of several inline/span fragments. Group fragments
+            that share the same vertical center into one rendered line.
+        */
+        const Range = document.createRange();
+        Range.selectNodeContents(HistoryList);
+
+        const LineCenters = [];
+        for (const Rect of Range.getClientRects()) {
+            if (Rect.width <= 0 || Rect.height <= 0) {
+                continue;
+            }
+
+            const CenterY = (Rect.top + Rect.bottom) / 2;
+            const ExistingLine = LineCenters.some(
+                Existing => Math.abs(Existing - CenterY) <= 2
+            );
+
+            if (!ExistingLine) {
+                LineCenters.push(CenterY);
+            }
+        }
+
+        if (LineCenters.length) {
+            return LineCenters.length;
+        }
+
+        /* Fallback for browsers that return no Range fragments. */
+        const Rect = HistoryList.getBoundingClientRect();
+        if (Rect.height <= 0) {
+            return 0;
+        }
+
+        const Style = getComputedStyle(HistoryList);
+        let LineHeight = Number.parseFloat(Style.lineHeight);
+        if (!Number.isFinite(LineHeight) || LineHeight <= 0) {
+            const FontSize = Number.parseFloat(Style.fontSize) || 16;
+            LineHeight = FontSize * 1.2;
+        }
+
+        return Math.max(
+            1,
+            Math.round(Rect.height / LineHeight)
+        );
+    }
+
+    function GetNormalFeedbackParMarginTop(WordContainer) {
+        const Par = WordContainer?.querySelector(
+            ":scope > .lb-par"
+        );
+
+        if (!Par) {
+            return ValidFeedbackParMarginFallback;
+        }
+
+        const MarginTop = Number.parseFloat(
+            getComputedStyle(Par).marginTop
+        );
+
+        return Number.isFinite(MarginTop)
+            ? Math.max(0, MarginTop)
+            : ValidFeedbackParMarginFallback;
+    }
+
+    function GetNativeValidWordFeedbackSource() {
+        const GameContainer = document.querySelector(
+            ".lb-game-container"
+        );
+
+        if (!GameContainer) {
+            return null;
+        }
+
+        /*
+            Do not wait for NYT to add `success-message`. The first visible
+            paint can happen while the toast is still only `.lb-message-box`,
+            which is exactly how the native flash escaped beta.14's selector.
+            Validation errors are nested in the text-field wrapper and carry
+            `error-message`, so they remain outside this source set.
+        */
+        const Candidates = [
+            ...GameContainer.querySelectorAll(
+                ":scope > .lb-square-container .lb-message-box"
+            ),
+            ...GameContainer.querySelectorAll(
+                ":scope > .lb-word-container > .lb-message-box:not(.error-message)"
+            )
+        ];
+
+        return Candidates.find(Element =>
+            !Element.classList.contains(
+                "lb-cubed-valid-feedback-proxy"
+            ) &&
+            String(Element.textContent || "").trim()
+        ) || null;
+    }
+
+    function ClearValidWordFeedbackProxy(Source = null) {
+        clearTimeout(ValidFeedbackPlacementTimer);
+        ValidFeedbackPlacementTimer = null;
+        RenderedValidFeedbackKey = null;
+        ActiveValidFeedbackSource = null;
+        ActiveValidFeedbackText = "";
+        PendingValidFeedbackBaselineChainLength = null;
+        PendingValidFeedbackStartedAt = 0;
+
+        document.querySelectorAll(".lb-cubed-valid-feedback-proxy")
+            .forEach(Element => Element.remove());
+
+        if (Source) {
+            Source.classList.remove(
+                "lb-cubed-valid-feedback-relocated-source"
+            );
+        } else {
+            document.querySelectorAll(
+                ".lb-cubed-valid-feedback-relocated-source"
+            ).forEach(Element => Element.classList.remove(
+                "lb-cubed-valid-feedback-relocated-source"
+            ));
+        }
+    }
+
+    function PositionValidWordFeedbackProxy(
+        Proxy,
+        GameContainer,
+        WordContainer,
+        TextFieldWrapper,
+        ListContainer,
+        SquareContainer
+    ) {
+        const GameRect = GameContainer.getBoundingClientRect();
+        const InputRect = TextFieldWrapper.getBoundingClientRect();
+        const HistoryRect = ListContainer.getBoundingClientRect();
+        const SquareRect = SquareContainer.getBoundingClientRect();
+        const ProxyRect = Proxy.getBoundingClientRect();
+        const HistoryLineCount = CountRenderedHistoryLines(ListContainer);
+
+        /*
+            One history line leaves the calibrated second-line slot available
+            for praise. As soon as the history actually wraps to line two, that
+            slot belongs to history and praise jumps above TI. This decision is
+            deliberately independent of par visibility and of NYT's native
+            toast rectangle.
+        */
+        const ShouldRelocate =
+            HistoryLineCount >= ValidFeedbackHistoryLineThreshold;
+
+        let Left;
+        let Top;
+
+        if (ShouldRelocate) {
+            Left =
+                ((InputRect.left + InputRect.right) / 2) -
+                GameRect.left -
+                (ProxyRect.width / 2);
+            Top = Math.max(
+                0,
+                InputRect.top -
+                GameRect.top -
+                ProxyRect.height -
+                8
+            );
+        } else {
+            /*
+                The 90px baseline history lane is calibrated for the pinned word
+                count plus two rendered history lines. With only one line, the
+                unused second-line slot is exactly where lower-position praise
+                belongs. Anchor its bottom just inside the par's normal 10px top
+                margin: the toast therefore fits between line one and the par,
+                while Hide par does not move the toast at all. GB may move for
+                the visible par, but the toast's rule and lower position do not.
+            */
+            const ParMarginTop = GetNormalFeedbackParMarginTop(WordContainer);
+            const SlotBottom =
+                HistoryRect.bottom +
+                ParMarginTop -
+                ValidFeedbackNormalSlotInset;
+
+            Left =
+                ((SquareRect.left + SquareRect.right) / 2) -
+                GameRect.left -
+                (ProxyRect.width / 2);
+            Top =
+                SlotBottom -
+                GameRect.top -
+                ProxyRect.height;
+        }
+
+        Proxy.style.setProperty(
+            "left",
+            `${Math.round(Left)}px`,
+            "important"
+        );
+        Proxy.style.setProperty(
+            "top",
+            `${Math.round(Top)}px`,
+            "important"
+        );
+    }
+
+    function UpdateValidWordFeedbackPlacement() {
+        ValidFeedbackPlacementTimer = null;
+
+        const GameContainer = document.querySelector(
+            ".lb-game-container"
+        );
+        const WordContainer = GameContainer?.querySelector(
+            ":scope > .lb-word-container"
+        );
+        const TextFieldWrapper = WordContainer?.querySelector(
+            ":scope > .lb-text-field-wrapper"
+        );
+        const ListContainer = WordContainer?.querySelector(
+            ":scope > .lb-list-container"
+        );
+        const SquareContainer = GameContainer?.querySelector(
+            ":scope > .lb-square-container"
+        );
+        const Source = GetNativeValidWordFeedbackSource();
+
+        if (
+            !GameContainer ||
+            !WordContainer ||
+            !TextFieldWrapper ||
+            !ListContainer ||
+            !SquareContainer ||
+            !Source
+        ) {
+            ClearValidWordFeedbackProxy();
+            return;
+        }
+
+        const MessageText = String(Source.textContent || "").trim();
+        if (!MessageText) {
+            ClearValidWordFeedbackProxy(Source);
+            return;
+        }
+
+        /*
+            Wait until NYT has committed the accepted word to history before
+            making Cubed's proxy visible. The native box appears first; the
+            history DOM can lag it by a couple hundred milliseconds. Showing
+            the proxy before that commit made it appear in the old normal
+            position and then jump above TI when wrapping finally settled.
+
+            The 400ms ceiling is only a safety fallback for an unexpected NYT
+            state where the history count does not advance.
+        */
+        const CurrentChainLength = ReadCurrentChain().length;
+        const WaitingForHistoryCommit =
+            PendingValidFeedbackBaselineChainLength !== null &&
+            CurrentChainLength <= PendingValidFeedbackBaselineChainLength &&
+            (performance.now() - PendingValidFeedbackStartedAt) <
+                ValidFeedbackSettleMaximumMs;
+
+        if (WaitingForHistoryCommit) {
+            ValidFeedbackPlacementTimer = setTimeout(
+                UpdateValidWordFeedbackPlacement,
+                ValidFeedbackSettlePollMs
+            );
+            return;
+        }
+
+        PendingValidFeedbackBaselineChainLength = null;
+
+        /*
+            One native-toast lifecycle is one submission identity. Unlike the
+            old live-chain-length key, this generation cannot change halfway
+            through NYT's delayed history update.
+        */
+        const FeedbackKey =
+            `${ValidFeedbackGeneration}\u001F${MessageText}`;
+
+        let Proxy = GameContainer.querySelector(
+            ":scope > .lb-cubed-valid-feedback-proxy"
+        );
+
+        if (!Proxy || RenderedValidFeedbackKey !== FeedbackKey) {
+            Proxy?.remove();
+
+            Proxy = document.createElement("div");
+            Proxy.className =
+                "lb-message-box success-message lb-cubed-valid-feedback-proxy";
+            Proxy.replaceChildren(
+                ...[...Source.childNodes].map(Node => Node.cloneNode(true))
+            );
+            GameContainer.appendChild(Proxy);
+            RenderedValidFeedbackKey = FeedbackKey;
+        }
+
+        PositionValidWordFeedbackProxy(
+            Proxy,
+            GameContainer,
+            WordContainer,
+            TextFieldWrapper,
+            ListContainer,
+            SquareContainer
+        );
+
+        Source.classList.add(
+            "lb-cubed-valid-feedback-relocated-source"
+        );
+    }
+
+    function QueueValidWordFeedbackPlacement() {
+        const Source = GetNativeValidWordFeedbackSource();
+        const MessageText = String(Source?.textContent || "").trim();
+
+        if (Source) {
+            /*
+                MutationObserver callbacks run before paint, so this is an
+                additional guard on top of the CSS selector that suppresses
+                native praise immediately.
+            */
+            Source.classList.add(
+                "lb-cubed-valid-feedback-relocated-source"
+            );
+        }
+
+        if (Source && MessageText) {
+            const StartsNewLifecycle =
+                ActiveValidFeedbackSource !== Source ||
+                !ActiveValidFeedbackText;
+
+            if (StartsNewLifecycle) {
+                ActiveValidFeedbackSource = Source;
+                ActiveValidFeedbackText = MessageText;
+                ValidFeedbackGeneration++;
+                PendingValidFeedbackBaselineChainLength =
+                    ReadCurrentChain().length;
+                PendingValidFeedbackStartedAt = performance.now();
+            } else {
+                ActiveValidFeedbackText = MessageText;
+            }
+        }
+
+        clearTimeout(ValidFeedbackPlacementTimer);
+        ValidFeedbackPlacementTimer = setTimeout(
+            UpdateValidWordFeedbackPlacement,
+            60
+        );
+    }
+
+    function StartSquareFeedbackObserver() {
+        const SquareContainer = document.querySelector(
+            ".lb-game-container .lb-square-container"
+        );
+
+        if (!SquareContainer) {
+            return;
+        }
+
+        SquareFeedbackObserver?.disconnect();
+        SquareFeedbackObserver = new MutationObserver(
+            QueueValidWordFeedbackPlacement
+        );
+        SquareFeedbackObserver.observe(SquareContainer, {
+            childList: true,
+            subtree: true,
+            characterData: true
+        });
+
+        QueueValidWordFeedbackPlacement();
     }
 
     function StartSubmissionHooks() {
@@ -3416,6 +5127,7 @@
         for (const Word of CurrentChain) {
             if (!FoundWords.has(Word)) {
                 FoundWords.add(Word);
+                MarkWordForHighlight(Word);
                 FoundWordsChanged = true;
 
                 console.log("[Letter Boxed Cubed] Found:", Word);
@@ -3470,6 +5182,146 @@
     }
 
     // -------------------------------------------------------------------------
+    // Keyboard QoL shortcuts
+    // -------------------------------------------------------------------------
+
+    function IsLbcShortcutTypingContext(Target) {
+        if (!(Target instanceof Element)) {
+            return false;
+        }
+
+        if (
+            Target.closest(`#${SettingsMenuId}, #${HistoryOverlayId}`) ||
+            IsPreviewDebugTypingContext(Target)
+        ) {
+            return true;
+        }
+
+        return Boolean(Target.closest(
+            "input, textarea, select, [contenteditable='true']"
+        ));
+    }
+
+    function StartKeyboardShortcuts() {
+        document.addEventListener("keydown", Event => {
+            if (
+                Event.defaultPrevented ||
+                Event.repeat ||
+                Event.ctrlKey ||
+                Event.altKey ||
+                Event.metaKey ||
+                IsLbcShortcutTypingContext(Event.target)
+            ) {
+                return;
+            }
+
+            if (Event.key === "Escape") {
+                const RestartButton = document.querySelector(
+                    "#pz-game-root [data-testid='restart']"
+                );
+
+                if (!RestartButton || RestartButton.disabled) {
+                    return;
+                }
+
+                Event.preventDefault();
+                Event.stopImmediatePropagation();
+                RestartButton.click();
+                QueuePostSubmissionScans();
+                return;
+            }
+
+            if (Event.key === "Delete") {
+                const DeleteButton = document.querySelector(
+                    "#pz-game-root [data-testid='delete']"
+                );
+
+                if (!DeleteButton || DeleteButton.disabled) {
+                    return;
+                }
+
+                Event.preventDefault();
+                Event.stopImmediatePropagation();
+                HandleDeleteWordShortcut();
+            }
+        }, true);
+    }
+
+    function ReadDeleteShortcutState() {
+        return {
+            AcceptedCount: ReadCurrentChain().length,
+            InputWord: ReadCurrentInputWord()
+        };
+    }
+
+    function WaitForDeleteShortcutStep() {
+        return new Promise(Resolve => {
+            setTimeout(Resolve, 30);
+        });
+    }
+
+    async function HandleDeleteWordShortcut() {
+        if (DeleteWordShortcutInProgress) {
+            return;
+        }
+
+        const Initial = ReadDeleteShortcutState();
+        const InitialInputLength = Initial.InputWord.length;
+
+        if (!InitialInputLength && !Initial.AcceptedCount) {
+            return;
+        }
+
+        DeleteWordShortcutInProgress = true;
+
+        try {
+            const TargetInputLength = Initial.AcceptedCount > 0
+                ? Math.min(1, InitialInputLength)
+                : 0;
+            const TargetAcceptedCount = Math.max(
+                0,
+                Initial.AcceptedCount - 1
+            );
+
+            for (let Step = 0; Step < 64; Step++) {
+                const DeleteButton = document.querySelector(
+                    "#pz-game-root [data-testid='delete']"
+                );
+
+                if (!DeleteButton || DeleteButton.disabled) {
+                    break;
+                }
+
+                DeleteButton.click();
+                await WaitForDeleteShortcutStep();
+
+                const Current = ReadDeleteShortcutState();
+
+                if (Current.AcceptedCount < Initial.AcceptedCount) {
+                    break;
+                }
+
+                if (
+                    InitialInputLength > TargetInputLength &&
+                    Current.InputWord.length <= TargetInputLength
+                ) {
+                    break;
+                }
+
+                if (
+                    InitialInputLength <= TargetInputLength &&
+                    Current.AcceptedCount <= TargetAcceptedCount
+                ) {
+                    break;
+                }
+            }
+        } finally {
+            DeleteWordShortcutInProgress = false;
+            QueuePostSubmissionScans();
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // Layout
     // -------------------------------------------------------------------------
 
@@ -3499,6 +5351,110 @@
 
         NativeSquareHeight = Math.ceil(
             SquareRect.height
+        );
+    }
+
+    function GetVisibleParTrackHeight(WordContainer) {
+        const Par = WordContainer?.querySelector(
+            ":scope > .lb-par"
+        );
+
+        if (!Par) {
+            return 0;
+        }
+
+        const Style = getComputedStyle(Par);
+        if (
+            Style.display === "none" ||
+            Style.visibility === "hidden"
+        ) {
+            return 0;
+        }
+
+        const Height = Math.max(
+            0,
+            Par.getBoundingClientRect().height
+        );
+        const MarginTop = Math.max(
+            0,
+            Number.parseFloat(Style.marginTop) || 0
+        );
+        const MarginBottom = Math.max(
+            0,
+            Number.parseFloat(Style.marginBottom) || 0
+        );
+
+        return Math.ceil(
+            Height + MarginTop + MarginBottom
+        );
+    }
+
+    function UpdateHistoryLaneGeometry(GameContainer, WordContainer) {
+        const TextFieldWrapper = WordContainer?.querySelector(
+            ":scope > .lb-text-field-wrapper"
+        );
+
+        if (!GameContainer || !WordContainer || !TextFieldWrapper) {
+            return;
+        }
+
+        const InputHeight = Math.max(
+            1,
+            Math.ceil(TextFieldWrapper.getBoundingClientRect().height)
+        );
+        const HistoryLaneHeight = Math.round(
+            Clamp(
+                LayoutGapPx,
+                MinimumHistoryLaneHeight,
+                MaximumHistoryLaneHeight
+            )
+        );
+        const WordStyle = getComputedStyle(WordContainer);
+        const WordMarginTop = Math.max(
+            0,
+            Number.parseFloat(WordStyle.marginTop) || 0
+        );
+        const WordMarginBottom = Math.max(
+            0,
+            Number.parseFloat(WordStyle.marginBottom) || 0
+        );
+        const WordAreaHeight = InputHeight + HistoryLaneHeight;
+        const ParTrackHeight = GetVisibleParTrackHeight(WordContainer);
+        LastParTrackHeight = ParTrackHeight;
+
+        /*
+            NYT vertically offsets the TI with a native top margin. Because TI
+            and GB are now separate rows in Cubed's grid, that margin has to be
+            part of the ROW TRACK height as well as the rendered TI position.
+            Otherwise the TI overflows its own row and the following GB row
+            begins underneath the visible word history. The geometry dumps made
+            this measurable: the missing amount was exactly the TI margin.
+        */
+        /*
+            The accepted-word DOM variant places the real par as a direct flex
+            child after the history lane. Because Cubed uses an explicit grid
+            track, that child otherwise overflows the track and collides with
+            GB (and its normal-position success toast). Reserve only the actual
+            visible par's outer height; hiding the par collapses this space.
+        */
+        const WordGridTrackHeight = Math.ceil(
+            WordMarginTop +
+            WordAreaHeight +
+            ParTrackHeight +
+            WordMarginBottom
+        );
+
+        GameContainer.style.setProperty(
+            "--lb-cubed-history-lane-height",
+            `${HistoryLaneHeight}px`
+        );
+        GameContainer.style.setProperty(
+            "--lb-cubed-word-area-height",
+            `${WordAreaHeight}px`
+        );
+        GameContainer.style.setProperty(
+            "--lb-cubed-word-grid-track-height",
+            `${WordGridTrackHeight}px`
         );
     }
 
@@ -3557,6 +5513,13 @@
                 Panel
             );
         }
+
+        UpdateLayoutGapHandleVisibility();
+        PositionLayoutGapResizeHandle();
+        UpdateLogoSize();
+        PositionPreviewDebugPane();
+        PositionPreviewVersionLabel();
+        QueueValidWordFeedbackPlacement();
     }
 
     function GetLeftColumnWidth() {
@@ -3683,8 +5646,13 @@
         );
 
         GameContainer.style.setProperty(
-            "--lb-cubed-word-area-height",
-            `${StableWordAreaHeight}px`
+            "--lb-cubed-layout-gap",
+            `${LayoutGapPx}px`
+        );
+
+        UpdateHistoryLaneGeometry(
+            GameContainer,
+            WordContainer
         );
 
         GameContainer.style.setProperty(
@@ -3704,7 +5672,7 @@
 
         GameContainer.style.setProperty(
             "--lb-cubed-left-column-gap",
-            `${LeftColumnGap}px`
+            `${TiGbGripGutter}px`
         );
 
         GameContainer.style.setProperty(
@@ -3770,8 +5738,13 @@
         );
 
         GameContainer.style.setProperty(
-            "--lb-cubed-word-area-height",
-            `${StableWordAreaHeight}px`
+            "--lb-cubed-layout-gap",
+            `${LayoutGapPx}px`
+        );
+
+        UpdateHistoryLaneGeometry(
+            GameContainer,
+            WordContainer
         );
 
         GameContainer.style.setProperty(
@@ -3786,7 +5759,7 @@
 
         GameContainer.style.setProperty(
             "--lb-cubed-left-column-gap",
-            `${LeftColumnGap}px`
+            `${TiGbGripGutter}px`
         );
 
         GameContainer.style.setProperty(
@@ -4274,15 +6247,26 @@
 
         PanelContent.scrollTop =
             PreviousScrollTop;
+
+        requestAnimationFrame(() => {
+            PositionPreviewDebugPane();
+            PositionPreviewVersionLabel();
+        });
     }
 
     function RenderHeader(Panel) {
         const Header = document.createElement("div");
         Header.className = "lb-cubed-header";
 
-        const Title = document.createElement("h2");
-        Title.className = "lb-cubed-title";
-        Title.textContent = "Word Log";
+        const Logo = document.createElement("img");
+        Logo.className = "lb-cubed-logo";
+        Logo.src = LogoPngDataUrl;
+        Logo.alt = "Letter Boxed Cubed";
+        Logo.draggable = false;
+
+        const DriveStatus = document.createElement("span");
+        DriveStatus.id = GoogleDriveStatusId;
+        DriveStatus.className = "lb-cubed-drive-status";
 
         const Subtitle = document.createElement("div");
         Subtitle.className = "lb-cubed-subtitle";
@@ -4291,39 +6275,20 @@
             GameData.printDate ||
             "Today's Letter Boxed";
 
+        const TitleMeta = document.createElement("div");
+        TitleMeta.className = "lb-cubed-title-meta";
+        TitleMeta.append(DriveStatus, Subtitle);
+
+        const TitleRow = document.createElement("div");
+        TitleRow.className = "lb-cubed-title-row";
+        TitleRow.append(Logo, TitleMeta);
+
         const HeaderText = document.createElement("div");
         HeaderText.className = "lb-cubed-header-text";
-        HeaderText.append(Title, Subtitle);
+        HeaderText.append(TitleRow);
 
         const HeaderActions = document.createElement("div");
         HeaderActions.className = "lb-cubed-header-actions";
-
-        // Global display preference for NYT's par text.
-        const HideParControl = document.createElement("label");
-        HideParControl.className = "lb-cubed-display-option";
-        HideParControl.title =
-            "Hide NYT's 'Try to solve in X words' par text";
-
-        const HideParCheckbox = document.createElement("input");
-        HideParCheckbox.type = "checkbox";
-        HideParCheckbox.checked = HidePar;
-
-        const HideParLabel = document.createElement("span");
-        HideParLabel.textContent = "Hide Par";
-
-        HideParCheckbox.addEventListener(
-            "change",
-            Event => {
-                HidePar = Boolean(Event.currentTarget.checked);
-                SaveHideParPreference();
-                ApplyHideParPreference();
-            }
-        );
-
-        HideParControl.append(
-            HideParCheckbox,
-            HideParLabel
-        );
 
         // Last NYT-invalid, structurally valid submission.
         const InvalidControl = document.createElement("div");
@@ -4355,66 +6320,16 @@
                 : `Record ${LastInvalidWord} as a user-approved custom dictionary word`
             : "Submit a structurally valid word that NYT does not recognize first";
 
-        AddDictionaryButton.addEventListener(
-            "click",
-            Event => {
-                Event.preventDefault();
-                Event.stopPropagation();
-                AddLastInvalidWordToCustomDictionary();
-            }
-        );
+        AddDictionaryButton.addEventListener("click", Event => {
+            Event.preventDefault();
+            Event.stopPropagation();
+            AddLastInvalidWordToCustomDictionary();
+        });
 
         InvalidControl.append(
             InvalidWord,
             AddDictionaryButton
         );
-
-        // Experimental canvas-animation speed control.
-        const LineSpeedControl = document.createElement("label");
-        LineSpeedControl.className = "lb-cubed-line-speed-control";
-        LineSpeedControl.title =
-            "Scale the Letter Boxed canvas line-drawing duration: 1.0 = NYT normal, 0.0 = effectively instant";
-
-        const LineSpeedLabel = document.createElement("span");
-        LineSpeedLabel.className = "lb-cubed-line-speed-label";
-        LineSpeedLabel.textContent = "Animation Speed";
-
-        const LineSpeedSlider = document.createElement("input");
-        LineSpeedSlider.className = "lb-cubed-line-speed-slider";
-        LineSpeedSlider.type = "range";
-        LineSpeedSlider.min = "0";
-        LineSpeedSlider.max = "1";
-        LineSpeedSlider.step = "0.1";
-        LineSpeedSlider.value = String(LineDrawingSpeed);
-
-        const LineSpeedValue = document.createElement("span");
-        LineSpeedValue.className = "lb-cubed-line-speed-value";
-        LineSpeedValue.textContent = LineDrawingSpeed.toFixed(1);
-
-        LineSpeedSlider.addEventListener(
-            "input",
-            Event => {
-                LineDrawingSpeed = Clamp(
-                    Number(Event.currentTarget.value),
-                    0,
-                    1
-                );
-
-                LineSpeedValue.textContent = LineDrawingSpeed.toFixed(1);
-            }
-        );
-
-        LineSpeedSlider.addEventListener(
-            "change",
-            () => SaveLineDrawingSpeed()
-        );
-
-        LineSpeedControl.append(
-            LineSpeedLabel,
-            LineSpeedSlider,
-            LineSpeedValue
-        );
-
 
         const BrowseHistoryButton = document.createElement("button");
         BrowseHistoryButton.id = BrowseHistoryButtonId;
@@ -4423,72 +6338,18 @@
         BrowseHistoryButton.textContent = "Browse History";
         BrowseHistoryButton.title =
             "Browse found-word and solved-Twofer history from the synced Google Drive backup";
-        BrowseHistoryButton.addEventListener(
-            "click",
-            Event => {
-                Event.preventDefault();
-                Event.stopPropagation();
-                OpenCloudHistoryBrowser();
-            }
-        );
+        BrowseHistoryButton.addEventListener("click", Event => {
+            Event.preventDefault();
+            Event.stopPropagation();
+            OpenCloudHistoryBrowser();
+        });
 
-        const GoogleDriveButton = document.createElement("button");
-        GoogleDriveButton.id = GoogleDriveButtonId;
-        GoogleDriveButton.type = "button";
-        GoogleDriveButton.className = "lb-cubed-header-button";
-        GoogleDriveButton.addEventListener(
-            "click",
-            Event => {
-                Event.preventDefault();
-                Event.stopPropagation();
-
-                if (!GoogleDriveConfig?.Enabled || Event.shiftKey) {
-                    ConfigureGoogleDriveSync();
-                    return;
-                }
-
-                SyncWithGoogleDrive({ Manual: true });
-            }
-        );
-
-        const ExportButton = document.createElement("button");
-        ExportButton.type = "button";
-        ExportButton.className = "lb-cubed-header-button";
-        ExportButton.textContent = "Export";
-        ExportButton.title =
-            "Export all retained Letter Boxed Cubed puzzle/player data as a text backup";
-        ExportButton.addEventListener(
-            "click",
-            Event => {
-                Event.preventDefault();
-                Event.stopPropagation();
-                ExportAllData();
-            }
-        );
-
-        const ImportButton = document.createElement("button");
-        ImportButton.type = "button";
-        ImportButton.className = "lb-cubed-header-button";
-        ImportButton.textContent = "Import";
-        ImportButton.title =
-            "Restore or merge data from a Letter Boxed Cubed backup";
-        ImportButton.addEventListener(
-            "click",
-            Event => {
-                Event.preventDefault();
-                Event.stopPropagation();
-                PromptForImport();
-            }
-        );
+        const SettingsMenu = CreateSettingsMenu();
 
         HeaderActions.append(
-            HideParControl,
             InvalidControl,
-            LineSpeedControl,
             BrowseHistoryButton,
-            GoogleDriveButton,
-            ExportButton,
-            ImportButton
+            SettingsMenu
         );
 
         Header.append(
@@ -4498,23 +6359,64 @@
 
         Panel.appendChild(Header);
         UpdateGoogleDriveButton();
+        UpdateLogoSize(Header, Logo, HeaderActions);
+    }
+
+    function UpdateLogoSize(
+        Header = document.querySelector(".lb-cubed-header"),
+        Logo = document.querySelector(".lb-cubed-logo"),
+        HeaderActions = document.querySelector(".lb-cubed-header-actions")
+    ) {
+        if (!Header || !Logo || !HeaderActions) {
+            return;
+        }
+        if (!Header.isConnected || !Logo.isConnected) {
+            return;
+        }
+
+        /*
+            Temporarily remove the logo from header sizing so its previous size
+            cannot feed back into the next measurement. The image then takes
+            the natural height required by the surrounding header content,
+            clamped to the same practical 20-96px range used by the prototype.
+        */
+        Logo.classList.add("lb-cubed-logo-measuring");
+        const HeaderHeight = Math.ceil(Header.getBoundingClientRect().height);
+        const ActionHeight = Math.ceil(HeaderActions.getBoundingClientRect().height);
+        const Side = Math.max(20, Math.min(96, Math.max(HeaderHeight, ActionHeight)));
+        Logo.classList.remove("lb-cubed-logo-measuring");
+
+        Logo.style.width = `${Side}px`;
+        Logo.style.height = `${Side}px`;
     }
 
     function RenderMainStats(Panel, Stats) {
         const StatGrid = document.createElement("div");
         StatGrid.className = "lb-cubed-stat-grid";
 
-        AddStat(
+        const CompletionCard = AddStat(
             StatGrid,
             "Completion",
             `${Stats.FoundCount.toLocaleString()} / ${Stats.TotalCount.toLocaleString()} (${Stats.PercentFound.toFixed(1)}%)`
         );
 
-        AddStat(
+        ApplyRecentWordGroupHighlight(
+            CompletionCard,
+            () => true
+        );
+
+        const LongestCard = AddStat(
             StatGrid,
             "Longest Found",
             Stats.LongestFoundText
         );
+
+        if (Stats.LongestLength > 0) {
+            ApplyRecentWordGroupHighlight(
+                LongestCard,
+                Word => Word.length === Stats.LongestLength
+            );
+        }
 
         Panel.appendChild(StatGrid);
     }
@@ -4604,11 +6506,14 @@
         const List = document.createElement("div");
         List.className = "lb-cubed-potential-word-list";
 
+        const Position = SectionName === "HintFirstWords"
+            ? "First"
+            : "Second";
+
         /*
             Only reveal potential first/second words that the player has
-            already found somewhere during today's play. The x / y counter
-            still uses the total number of valid positional words, but the
-            expanded list itself must never expose unfound candidates.
+            already found. Each revealed candidate also shows how many exact
+            twofers using it in that position have actually been solved.
         */
         const SortedWords = [...Words]
             .filter(Word => FoundWords.has(Word))
@@ -4623,15 +6528,42 @@
             const Fragment = document.createDocumentFragment();
 
             for (const Word of SortedWords) {
+                const RelevantTwofers = Twofers.filter(Twofer =>
+                    Position === "First"
+                        ? Twofer.First === Word
+                        : Twofer.Second === Word
+                );
+
+                const SolvedCount = RelevantTwofers.reduce(
+                    (Count, Twofer) => Count + (FoundTwofers.has(Twofer.Key) ? 1 : 0),
+                    0
+                );
+
                 const Item = document.createElement("div");
                 Item.className =
                     "lb-cubed-potential-word lb-cubed-potential-word-found";
-                Item.textContent = Word;
+
+                if (RelevantTwofers.length > 0 && SolvedCount === RelevantTwofers.length) {
+                    Item.classList.add("lb-cubed-potential-word-complete");
+                }
+
+                const WordText = document.createElement("span");
+                WordText.className = "lb-cubed-potential-word-label";
+                WordText.textContent = Word;
+
+                const Progress = document.createElement("span");
+                Progress.className = "lb-cubed-potential-word-progress";
+                Progress.textContent =
+                    `${SolvedCount.toLocaleString()} / ${RelevantTwofers.length.toLocaleString()}`;
+
+                Item.append(WordText, Progress);
+                ApplyRecentWordHighlight(Item, Word);
                 Fragment.appendChild(Item);
             }
 
             List.appendChild(Fragment);
         }
+
         Details.appendChild(List);
         return Details;
     }
@@ -4785,6 +6717,10 @@
 
         Row.append(FirstWord, Arrow, SecondWord);
 
+        if (Category === "Found") {
+            ApplyRecentTwoferHighlight(Row, Twofer.Key);
+        }
+
         if (!NytSolutionKey || Twofer.Key !== NytSolutionKey) {
             return Row;
         }
@@ -4832,11 +6768,20 @@
         const LengthGrid = document.createElement("div");
         LengthGrid.className = "lb-cubed-length-grid";
 
-        AddLengthStat(LengthGrid, "3 letters", Stats.LengthStats["3"]);
-        AddLengthStat(LengthGrid, "4 letters", Stats.LengthStats["4"]);
-        AddLengthStat(LengthGrid, "5 letters", Stats.LengthStats["5"]);
-        AddLengthStat(LengthGrid, "6 letters", Stats.LengthStats["6"]);
-        AddLengthStat(LengthGrid, "7+ letters", Stats.LengthStats["7+"]);
+        const Lengths = Object.keys(Stats.LengthStats)
+            .map(Number)
+            .filter(Number.isFinite)
+            .sort((A, B) => A - B);
+
+        for (const Length of Lengths) {
+            const Bucket = String(Length);
+            AddLengthStat(
+                LengthGrid,
+                `${Length} letters`,
+                Stats.LengthStats[Bucket],
+                Bucket
+            );
+        }
 
         LengthDetails.appendChild(LengthGrid);
         Panel.appendChild(LengthDetails);
@@ -4918,6 +6863,8 @@
 
                 if (Redacted) {
                     Item.setAttribute("aria-label", "Unfound word, redacted");
+                } else {
+                    ApplyRecentWordHighlight(Item, Word);
                 }
 
                 Fragment.appendChild(Item);
@@ -4980,9 +6927,10 @@
 
         Card.append(ValueElement, LabelElement);
         Container.appendChild(Card);
+        return Card;
     }
 
-    function AddLengthStat(Container, Label, Values) {
+    function AddLengthStat(Container, Label, Values, Bucket) {
         const Row = document.createElement("div");
         Row.className = "lb-cubed-length-stat";
 
@@ -4996,6 +6944,7 @@
             `${Values.Found.toLocaleString()} / ${Values.Total.toLocaleString()}`;
 
         Row.append(LabelElement, ValueElement);
+        ApplyRecentLengthHighlight(Row, Bucket);
         Container.appendChild(Row);
     }
 
@@ -5010,32 +6959,36 @@
             ? 0
             : (FoundCount / TotalCount) * 100;
 
-        const LengthStats = {
-            "3": { Found: 0, Total: 0 },
-            "4": { Found: 0, Total: 0 },
-            "5": { Found: 0, Total: 0 },
-            "6": { Found: 0, Total: 0 },
-            "7+": { Found: 0, Total: 0 }
-        };
+        const LengthStats = {};
 
         for (const Word of Dictionary) {
             const Bucket = GetLengthBucket(Word.length);
-            if (Bucket) {
-                LengthStats[Bucket].Total++;
+            if (!Bucket) {
+                continue;
             }
+
+            if (!LengthStats[Bucket]) {
+                LengthStats[Bucket] = {
+                    Found: 0,
+                    Total: 0
+                };
+            }
+
+            LengthStats[Bucket].Total++;
         }
 
         for (const Word of FoundDictionaryWords) {
             const Bucket = GetLengthBucket(Word.length);
-            if (Bucket) {
+            if (Bucket && LengthStats[Bucket]) {
                 LengthStats[Bucket].Found++;
             }
         }
 
         let LongestFoundText = "-";
+        let LongestLength = 0;
 
         if (FoundDictionaryWords.length > 0) {
-            const LongestLength = Math.max(
+            LongestLength = Math.max(
                 ...FoundDictionaryWords.map(Word => Word.length)
             );
 
@@ -5050,17 +7003,17 @@
             TotalCount,
             PercentFound,
             LengthStats,
-            LongestFoundText
+            LongestFoundText,
+            LongestLength
         };
     }
 
     function GetLengthBucket(Length) {
-        if (Length === 3) return "3";
-        if (Length === 4) return "4";
-        if (Length === 5) return "5";
-        if (Length === 6) return "6";
-        if (Length >= 7) return "7+";
-        return null;
+        const NumericLength = Number(Length);
+
+        return Number.isFinite(NumericLength) && NumericLength > 0
+            ? String(Math.trunc(NumericLength))
+            : null;
     }
 
     // -------------------------------------------------------------------------
@@ -5098,6 +7051,150 @@
 
             .lb-game-container.${LayoutClass} {
                 box-sizing: border-box !important;
+                position: relative !important;
+            }
+
+            /*
+                Once Cubed owns TI/GB positioning as grid rows, NYT's native
+                vertical square-container margins must not pull GB back upward
+                into the reserved history lane. Horizontal margins are left
+                untouched so NYT can keep its own board centering behavior.
+            */
+            .lb-game-container.${LayoutClass} > .lb-square-container {
+                margin-top: 0 !important;
+                margin-bottom: 0 !important;
+            }
+
+            /*
+                Issue #4: optional, explicit vertical-gap grip. It is physically
+                positioned between TI and GB by JavaScript so it follows either
+                side-by-side or stacked outer layout without becoming a grid item.
+            */
+            #${LayoutGapHandleId} {
+                display: none;
+                position: absolute;
+                z-index: 45;
+                height: 12px;
+                cursor: ns-resize;
+                touch-action: none;
+                user-select: none;
+            }
+
+            .lb-game-container.lb-cubed-adjust-layout-gap > #${LayoutGapHandleId} {
+                display: block;
+            }
+
+            #${LayoutGapHandleId}::after {
+                content: "";
+                position: absolute;
+                left: 0;
+                right: 0;
+                top: 5px;
+                height: 2px;
+                border-radius: 2px;
+                background: rgba(76, 34, 34, 0.58);
+                opacity: 0.62;
+                transition: opacity 100ms ease, height 100ms ease;
+            }
+
+            #${LayoutGapHandleId}:hover::after,
+            #${LayoutGapHandleId}.lb-cubed-layout-gap-handle-active::after {
+                opacity: 1;
+                height: 3px;
+            }
+
+            /*
+                Issue #14: small horizontal resize grips immediately below the
+                two NYT page-fluff regions. CSS zoom gives Chrome a proportional
+                layout resize, including the text inside each region.
+            */
+            .lb-cubed-page-resize-handle {
+                position: relative;
+                z-index: 9000;
+                width: 100%;
+                height: 9px;
+                margin: 0;
+                cursor: ns-resize;
+                touch-action: none;
+                user-select: none;
+            }
+
+            .lb-cubed-page-resize-handle::after {
+                content: "";
+                position: absolute;
+                left: 12px;
+                right: 12px;
+                top: 4px;
+                height: 1px;
+                background: rgba(128, 128, 128, 0.24);
+                transition: background 100ms ease, height 100ms ease;
+            }
+
+            .lb-cubed-page-resize-handle:hover::after,
+            .lb-cubed-page-resize-handle-active::after {
+                height: 2px;
+                background: rgba(92, 37, 37, 0.62);
+            }
+
+            .lb-cubed-page-fluff-hidden {
+                display: none !important;
+            }
+
+            #letter-boxed-container .pz-game-title-bar {
+                justify-content: flex-start !important;
+                text-align: left !important;
+                transform-origin: left top !important;
+            }
+
+            /*
+                Compact mode removes NYT's otherwise persistent 24px section
+                top margin so hiding/shrinking the title region actually
+                recovers that vertical space too.
+            */
+            #letter-boxed-container.lb-cubed-compact-title-section {
+                margin-top: 0 !important;
+            }
+
+            #portal-game-header {
+                margin-left: 0 !important;
+                margin-right: auto !important;
+                text-align: left !important;
+                transform-origin: left top !important;
+            }
+
+            #portal-game-header.lb-cubed-compact-title-layout {
+                display: flex !important;
+                flex-flow: row nowrap !important;
+                align-items: center !important;
+                justify-content: flex-start !important;
+                gap: 10px;
+                width: max-content !important;
+                max-width: 100% !important;
+                margin-left: 0 !important;
+                margin-right: auto !important;
+                text-align: left !important;
+            }
+
+            #portal-game-header.lb-cubed-compact-title-layout > h2 {
+                display: contents !important;
+            }
+
+            #portal-game-header.lb-cubed-compact-title-layout .pz-game-title,
+            #portal-game-header.lb-cubed-compact-title-layout .pz-game-date,
+            #portal-game-header.lb-cubed-compact-title-layout .pz-byline {
+                width: auto !important;
+                margin: 0 !important;
+                align-self: center !important;
+                text-align: left !important;
+                white-space: nowrap !important;
+            }
+
+            .lb-cubed-yesterday-help-row-hidden {
+                display: none !important;
+            }
+
+            .lb-cubed-original-yesterday-hidden {
+                display: none !important;
             }
 
             .lb-game-container.${SideModeClass} {
@@ -5114,12 +7211,13 @@
                     LBC's height completely.
                 */
                 grid-template-rows:
-                    var(--lb-cubed-word-area-height, 250px)
+                    var(--lb-cubed-word-grid-track-height, auto)
                     var(--lb-cubed-square-height, auto) !important;
                 column-gap: var(--lb-cubed-gap, 24px) !important;
                 row-gap: var(--lb-cubed-left-column-gap, 16px) !important;
                 justify-content: center !important;
                 align-items: start !important;
+                align-content: start !important;
                 width: 100% !important;
                 max-width: none !important;
                 padding-left: var(--lb-cubed-edge-padding, 18px) !important;
@@ -5135,9 +7233,10 @@
                 width: var(--lb-cubed-word-width) !important;
                 min-width: var(--lb-cubed-word-width) !important;
                 max-width: var(--lb-cubed-word-width) !important;
-                height: var(--lb-cubed-word-area-height, 250px) !important;
-                min-height: var(--lb-cubed-word-area-height, 250px) !important;
-                max-height: var(--lb-cubed-word-area-height, 250px) !important;
+                height: var(--lb-cubed-word-area-height, auto) !important;
+                min-height: var(--lb-cubed-word-area-height, 0) !important;
+                max-height: var(--lb-cubed-word-area-height, none) !important;
+                overflow: hidden !important;
             }
 
             .lb-game-container.${SideModeClass} > .lb-square-container {
@@ -5156,24 +7255,29 @@
             .lb-game-container.${SideModeClass} > #${PanelId} {
                 grid-column: 2 !important;
                 grid-row: 1 / span 2 !important;
-                position: relative;
+                position: absolute !important;
+                inset: 0;
                 align-self: stretch;
+                justify-self: stretch;
                 width: var(--lb-cubed-panel-width) !important;
                 min-width: var(--lb-cubed-panel-width) !important;
                 max-width: var(--lb-cubed-panel-width) !important;
+                height: auto !important;
                 min-height: 0;
+                max-height: none !important;
             }
 
             .lb-game-container.${StackedModeClass} {
                 display: grid !important;
                 grid-template-columns: minmax(0, 1fr) !important;
                 grid-template-rows:
-                    var(--lb-cubed-word-area-height, 250px)
+                    var(--lb-cubed-word-grid-track-height, auto)
                     var(--lb-cubed-square-height, auto)
                     auto !important;
                 row-gap: var(--lb-cubed-left-column-gap, 16px) !important;
                 justify-items: center !important;
                 align-items: start !important;
+                align-content: start !important;
                 width: 100% !important;
                 max-width: none !important;
                 padding-left: var(--lb-cubed-edge-padding, 18px) !important;
@@ -5187,9 +7291,10 @@
                 justify-self: center !important;
                 width: min(var(--lb-cubed-word-width), 100%) !important;
                 max-width: 100% !important;
-                height: var(--lb-cubed-word-area-height, 250px) !important;
-                min-height: var(--lb-cubed-word-area-height, 250px) !important;
-                max-height: var(--lb-cubed-word-area-height, 250px) !important;
+                height: var(--lb-cubed-word-area-height, auto) !important;
+                min-height: var(--lb-cubed-word-area-height, 0) !important;
+                max-height: var(--lb-cubed-word-area-height, none) !important;
+                overflow: hidden !important;
             }
 
             .lb-game-container.${StackedModeClass} > .lb-square-container {
@@ -5228,6 +7333,13 @@
                 display: flex !important;
                 flex-direction: column !important;
                 justify-content: flex-start !important;
+
+                /*
+                    NYT injects invalid-submission feedback as an absolutely
+                    positioned .lb-message-box inside the text-field wrapper.
+                    The fixed history lane must not clip those transient boxes.
+                    Accepted-word overflow remains owned by .lb-list-container.
+                */
                 overflow: visible !important;
             }
 
@@ -5235,14 +7347,142 @@
             > .lb-word-container
             > .lb-text-field-wrapper {
                 order: 1;
+                position: relative !important;
                 flex: 0 0 auto;
+                overflow: visible !important;
+            }
+
+            .lb-game-container.${LayoutClass}
+            > .lb-word-container
+            > .lb-text-field-wrapper
+            > .lb-message-box {
+                z-index: 4 !important;
+            }
+
+            /*
+                NYT renders success praise in the square container, unlike its
+                invalid-submission messages in the text-field wrapper. When the
+                native praise position would crowd accepted-word history, Cubed
+                mirrors it into the wrapper so NYT's own message-box positioning
+                puts it in the same safe feedback area as validation errors.
+            */
+            /*
+                Cubed is the sole renderer for valid-word praise. Hiding the
+                native success box by selector prevents even a single paint in
+                NYT's pre-wrap position before the delayed placement decision.
+                visibility:hidden preserves its geometry for normal-position
+                mirroring.
+            */
+            /*
+                Suppress NYT praise by LOCATION rather than by its eventual
+                success-message class. NYT initially paints the box as a plain
+                lb-message-box and decorates it afterward, so class-based
+                suppression was one mutation too late. Keep the native node in
+                layout for geometry, but make every possible native rendering
+                path visually inert before its first paint. Error messages live
+                under lb-text-field-wrapper and are deliberately untouched.
+            */
+            .lb-game-container.${LayoutClass}
+            > .lb-square-container .lb-message-box,
+            .lb-game-container.${LayoutClass}
+            > .lb-word-container
+            > .lb-message-box:not(.error-message),
+            .lb-cubed-valid-feedback-relocated-source {
+                visibility: hidden !important;
+                opacity: 0 !important;
+                clip-path: inset(100%) !important;
+                animation: none !important;
+                transition: none !important;
+                pointer-events: none !important;
+            }
+
+            .lb-cubed-valid-feedback-proxy {
+                position: absolute !important;
+                right: auto !important;
+                bottom: auto !important;
+                margin: 0 !important;
+                transform: none !important;
+                visibility: visible !important;
+                display: block !important;
+                z-index: 60 !important;
+                pointer-events: none !important;
+            }
+
+            .lb-game-container.${LayoutClass}
+            > .lb-word-container
+            > .lb-text-field-wrapper
+            > .lb-par.no-words {
+                position: absolute !important;
+                top: 100% !important;
+                left: 0 !important;
+                right: 0 !important;
+                margin-top: 10px !important;
+                text-align: center !important;
+                transform: none !important;
+                z-index: 2;
             }
 
             .lb-game-container.${LayoutClass}
             > .lb-word-container
             > .lb-list-container {
                 order: 2;
-                flex: 0 0 auto;
+
+                /*
+                    This is the history lane. Give it an exact physical height
+                    instead of asking flexbox to infer the remainder from NYT's
+                    changing child geometry. Its own overflow is therefore the
+                    authoritative clipping/scroll boundary, so accepted words
+                    scroll BEFORE they can enter GB territory.
+                */
+                flex: 0 0 var(
+                    --lb-cubed-history-lane-height,
+                    ${MinimumHistoryLaneHeight}px
+                );
+                box-sizing: border-box !important;
+                height: var(
+                    --lb-cubed-history-lane-height,
+                    ${MinimumHistoryLaneHeight}px
+                ) !important;
+                min-height: var(
+                    --lb-cubed-history-lane-height,
+                    ${MinimumHistoryLaneHeight}px
+                ) !important;
+                max-height: var(
+                    --lb-cubed-history-lane-height,
+                    ${MinimumHistoryLaneHeight}px
+                ) !important;
+                margin-top: 0 !important;
+                margin-bottom: 0 !important;
+                padding-bottom: 0 !important;
+                display: flex !important;
+                flex-direction: column !important;
+                overflow: hidden !important;
+                pointer-events: auto !important;
+            }
+
+            /*
+                Keep the count pinned. Only the word-history viewport scrolls,
+                eliminating the nested outer+inner scrollbar pair.
+            */
+            .lb-game-container.${LayoutClass}
+            > .lb-word-container
+            > .lb-list-container
+            > .lb-word-list-length {
+                flex: 0 0 auto !important;
+            }
+
+            .lb-game-container.${LayoutClass}
+            > .lb-word-container
+            > .lb-list-container
+            > .lb-word-list-container {
+                flex: 1 1 auto !important;
+                min-height: 0 !important;
+                height: auto !important;
+                max-height: none !important;
+                overflow-x: hidden !important;
+                overflow-y: auto !important;
+                pointer-events: auto !important;
+                scrollbar-width: thin;
             }
 
             .lb-game-container.${LayoutClass}
@@ -5256,9 +7496,22 @@
                 transform: none !important;
             }
 
-            .lb-game-container.${LayoutClass}.lb-cubed-hide-par
+            /*
+                Hide only NYT's actual par prompt. Validation messages such as
+                "Too short" and "Not a valid word" can also use lb-par,
+                so a blanket descendant selector incorrectly suppresses them.
+
+                NYT has two prompt DOM shapes:
+                - zero words: nested .lb-par.no-words in the text wrapper
+                - accepted words: direct-child .lb-par in the word container
+            */
+            .lb-game-container.lb-cubed-hide-par
             > .lb-word-container
-            > .lb-par {
+            > .lb-par,
+            .lb-game-container.lb-cubed-hide-par
+            > .lb-word-container
+            > .lb-text-field-wrapper
+            > .lb-par.no-words {
                 display: none !important;
             }
 
@@ -5357,7 +7610,7 @@
             }
 
             .lb-cubed-resize-handle-left {
-                left: -${ResizeHandleWidth / 2}px;
+                left: -${ResizeHandleWidth + RightResizeHandleGap}px;
             }
 
             .lb-cubed-resize-handle-right {
@@ -5399,6 +7652,14 @@
                 ================================================================
             */
 
+            .lb-cubed-logo-measuring {
+                position: absolute !important;
+                visibility: hidden !important;
+                width: 0 !important;
+                height: 0 !important;
+                pointer-events: none !important;
+            }
+
             .lb-cubed-header {
                 display: flex;
                 justify-content: space-between;
@@ -5411,13 +7672,188 @@
                 min-width: 0;
             }
 
+            .lb-cubed-title-row {
+                display: flex;
+                align-items: flex-start;
+                gap: 8px;
+                min-width: 0;
+            }
+
+            .lb-cubed-title-meta {
+                display: flex;
+                flex-direction: column;
+                align-items: flex-start;
+                min-width: 0;
+            }
+
+            .lb-cubed-drive-status {
+                flex: 0 0 auto;
+                color: rgba(92, 92, 92, 0.72);
+                font-size: 10px;
+                font-weight: 400;
+                white-space: nowrap;
+            }
+
             .lb-cubed-header-actions {
                 display: flex;
                 flex: 0 1 auto;
-                flex-wrap: wrap;
+                flex-wrap: nowrap;
                 gap: 5px;
                 justify-content: flex-end;
                 align-items: center;
+            }
+
+            .lb-cubed-settings-menu {
+                position: relative;
+                flex: 0 0 auto;
+            }
+
+            .lb-cubed-settings-menu > summary {
+                list-style: none;
+                white-space: nowrap;
+            }
+
+            .lb-cubed-settings-menu > summary::-webkit-details-marker {
+                display: none;
+            }
+
+            .lb-cubed-settings-panel {
+                position: absolute;
+                top: calc(100% + 5px);
+                right: 0;
+                z-index: 1000;
+                width: min(350px, 80vw);
+                max-height: min(72vh, 620px);
+                overflow: auto;
+                padding: 8px;
+                background: rgb(229, 160, 158);
+                border: 1px solid rgba(76, 34, 34, 0.70);
+                border-radius: 4px;
+                box-shadow: 0 8px 26px rgba(0, 0, 0, 0.28);
+            }
+
+            .lb-cubed-settings-section + .lb-cubed-settings-section {
+                margin-top: 9px;
+                padding-top: 8px;
+                border-top: 1px solid rgba(78, 34, 34, 0.20);
+            }
+
+            .lb-cubed-settings-section-title {
+                margin-bottom: 5px;
+                color: rgb(48, 24, 24);
+                font-size: 12px;
+                font-weight: 800;
+                letter-spacing: 0.04em;
+                text-transform: uppercase;
+            }
+
+            .lb-cubed-settings-subgroup {
+                margin-top: 6px;
+                padding: 6px;
+                border: 1px solid rgba(78, 34, 34, 0.18);
+                border-radius: 3px;
+                background: rgba(255, 255, 255, 0.07);
+            }
+
+            .lb-cubed-settings-subgroup-title {
+                margin-bottom: 2px;
+                color: rgba(48, 24, 24, 0.82);
+                font-size: 12px;
+                font-weight: 700;
+                line-height: 1.3;
+            }
+
+            .lb-cubed-settings-checkbox,
+            .lb-cubed-settings-range,
+            .lb-cubed-settings-number-row,
+            .lb-cubed-settings-action-row {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                min-height: 30px;
+                color: rgb(48, 24, 24);
+                font-size: 12px;
+            }
+
+            .lb-cubed-settings-checkbox {
+                cursor: pointer;
+            }
+
+            .lb-cubed-settings-checkbox input {
+                margin: 0;
+                accent-color: rgb(92, 37, 37);
+            }
+
+            .lb-cubed-settings-label {
+                flex: 1 1 auto;
+                min-width: 0;
+            }
+
+            .lb-cubed-settings-range input[type="range"] {
+                flex: 0 1 120px;
+                min-width: 70px;
+                accent-color: rgb(92, 37, 37);
+            }
+
+            .lb-cubed-settings-range-value {
+                flex: 0 0 34px;
+                font-family: Consolas, "Courier New", monospace;
+                font-weight: 700;
+                text-align: right;
+            }
+
+            .lb-cubed-settings-number-wrap {
+                display: inline-flex;
+                align-items: center;
+                gap: 2px;
+                flex: 0 0 auto;
+            }
+
+            .lb-cubed-settings-number-wrap input {
+                width: 62px;
+                padding: 2px 2px 2px 3px;
+                border: 1px solid rgba(78, 34, 34, 0.35);
+                border-radius: 3px;
+                background: rgba(255, 255, 255, 0.35);
+                color: rgb(48, 24, 24);
+                font: inherit;
+                font-family: Consolas, "Courier New", monospace;
+                text-align: right;
+            }
+
+            .lb-cubed-settings-number-wrap input[type="number"]::-webkit-inner-spin-button,
+            .lb-cubed-settings-number-wrap input[type="number"]::-webkit-outer-spin-button {
+                margin: 0;
+                width: 11px;
+                height: 16px;
+            }
+
+            .lb-cubed-settings-suffix {
+                min-width: 14px;
+                color: rgba(48, 24, 24, 0.68);
+                font-size: 12px;
+            }
+
+            .lb-cubed-settings-mini-button {
+                padding: 2px 5px;
+                border: 1px solid rgba(78, 34, 34, 0.32);
+                border-radius: 3px;
+                background: rgba(255, 255, 255, 0.20);
+                color: rgb(48, 24, 24);
+                font: inherit;
+                font-size: 12px;
+                cursor: pointer;
+            }
+
+            .lb-cubed-settings-panel .lb-cubed-header-button {
+                font-size: 12px;
+            }
+
+            .lb-cubed-settings-button-row {
+                display: flex;
+                justify-content: flex-end;
+                gap: 5px;
+                margin-top: 4px;
             }
 
             .lb-cubed-display-option,
@@ -5509,17 +7945,21 @@
                 transform: translateY(1px);
             }
 
-            .lb-cubed-title {
-                margin: 0;
-                padding: 0;
-                color: rgb(48, 24, 24);
-                font-size: 22px;
-                line-height: 1.1;
-                font-weight: 700;
+            .lb-cubed-logo {
+                flex: 0 0 auto;
+                display: block;
+                width: 28px;
+                height: 28px;
+                max-width: 96px;
+                max-height: 96px;
+                border: 0;
+                background: transparent;
+                object-fit: contain;
+                user-select: none;
             }
 
             .lb-cubed-subtitle {
-                margin-top: 3px;
+                margin-top: 2px;
                 color: rgba(48, 24, 24, 0.70);
                 font-size: 11px;
             }
@@ -5949,6 +8389,10 @@
             }
 
             .lb-cubed-potential-word {
+                display: flex;
+                align-items: baseline;
+                justify-content: space-between;
+                gap: 8px;
                 min-width: 0;
                 padding: 3px 5px;
                 background: rgba(255, 255, 255, 0.11);
@@ -5957,6 +8401,25 @@
                 font-family: Consolas, "Courier New", monospace;
                 font-size: 10px;
                 overflow-wrap: anywhere;
+            }
+
+            .lb-cubed-potential-word-label {
+                min-width: 0;
+                overflow-wrap: anywhere;
+            }
+
+            .lb-cubed-potential-word-progress {
+                flex: 0 0 auto;
+                margin-left: auto;
+                color: rgba(48, 24, 24, 0.68);
+                font-size: 9px;
+                font-weight: 700;
+                white-space: nowrap;
+            }
+
+            .lb-cubed-potential-word-complete {
+                text-decoration: line-through;
+                opacity: 0.70;
             }
 
             .lb-cubed-potential-word-found {
@@ -6241,6 +8704,23 @@
                 color: rgb(42, 20, 20);
             }
 
+            @keyframes lb-cubed-new-highlight-fade {
+                from {
+                    box-shadow: inset 0 0 0 9999px chartreuse;
+                }
+                to {
+                    box-shadow: inset 0 0 0 9999px rgba(127, 255, 0, 0);
+                }
+            }
+
+            .lb-cubed-new-highlight {
+                animation:
+                    lb-cubed-new-highlight-fade
+                    var(--lb-cubed-highlight-duration, 1000ms)
+                    ease-out
+                    1;
+            }
+
             .lb-cubed-redacted {
                 background: #000 !important;
                 color: #000 !important;
@@ -6389,15 +8869,17 @@
                 .lb-cubed-header-actions {
                     width: 100%;
                     justify-content: flex-start;
+                    flex-wrap: wrap;
                 }
 
-                .lb-cubed-line-speed-control {
-                    flex: 1 1 180px;
+                .lb-cubed-title-row {
+                    flex-wrap: wrap;
                 }
 
-                .lb-cubed-line-speed-slider {
-                    flex: 1 1 auto;
-                    width: auto;
+                .lb-cubed-settings-panel {
+                    left: 0;
+                    right: auto;
+                    width: min(340px, calc(100vw - 36px));
                 }
             }
         `;

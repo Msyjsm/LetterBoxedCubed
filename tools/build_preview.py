@@ -14,6 +14,7 @@ import re
 from pathlib import Path
 
 HEADER_END = "// ==/UserScript=="
+PREVIEW_RUNTIME_MARKER = "    // PREVIEW_RUNTIME_INJECTION_POINT"
 CHANNEL_MARKER_PRODUCTION = (
     'const UserscriptBuildChannel = "production"; // PREVIEW_CHANNEL_MARKER'
 )
@@ -28,6 +29,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--preview-url", required=True)
     parser.add_argument("--build-number", required=True)
+    parser.add_argument(
+        "--preview-runtime",
+        type=Path,
+        default=Path("tools/preview_runtime.js"),
+        help="Preview-only JS fragment injected at PREVIEW_RUNTIME_INJECTION_POINT.",
+    )
     parser.add_argument(
         "--preview-hash",
         default=None,
@@ -63,6 +70,38 @@ def remove_meta(text: str, key: str) -> str:
         "",
         text,
         flags=re.MULTILINE,
+    )
+
+
+def ensure_grant(text: str, grant: str) -> str:
+    if re.search(
+        rf"^// @grant\s+{re.escape(grant)}\s*$",
+        text,
+        flags=re.MULTILINE,
+    ):
+        return text
+
+    if HEADER_END not in text:
+        raise ValueError("Userscript metadata block is missing its closing marker.")
+
+    return text.replace(
+        HEADER_END,
+        f"// @grant        {grant}\n{HEADER_END}",
+        1,
+    )
+
+
+def inject_preview_runtime(text: str, runtime_path: Path) -> str:
+    if text.count(PREVIEW_RUNTIME_MARKER) != 1:
+        raise ValueError(
+            "Canonical source must contain exactly one PREVIEW_RUNTIME_INJECTION_POINT."
+        )
+
+    runtime = runtime_path.read_text(encoding="utf-8").rstrip()
+    return text.replace(
+        PREVIEW_RUNTIME_MARKER,
+        PREVIEW_RUNTIME_MARKER + "\n\n" + runtime,
+        1,
     )
 
 
@@ -181,6 +220,11 @@ def main() -> None:
         source_text,
         preview_url=args.preview_url,
         build_number=args.build_number,
+    )
+    preview_text = ensure_grant(preview_text, "GM_info")
+    preview_text = inject_preview_runtime(
+        preview_text,
+        args.preview_runtime,
     )
 
     if args.preview_hash:
