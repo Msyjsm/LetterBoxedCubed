@@ -1,5 +1,5 @@
 Generated userscript preview. Do not edit this branch directly.
 Source branch: hotfix/logo-csp
-Source commit: 41bcb00b5af26074ab714e1a417359b663602c85
-Workflow run: 35864977284
+Source commit: fad5682ea020173d32341c705083632b954520e8
+Workflow run: 35865066635
 Preview selector: #lbc-preview
