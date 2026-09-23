@@ -1,0 +1,75 @@
+name: Apply 1.12 release cleanup
+
+on:
+  push:
+    branches:
+      - feature/qol-4-10-12-13-14
+    paths:
+      - .github/workflows/apply-1-12-release-cleanup.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  release-cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/qol-4-10-12-13-14
+          fetch-depth: 0
+
+      - name: Apply release cleanup
+        run: python tools/apply_1_12_release_cleanup.py
+
+      - name: Validate production source
+        run: |
+          node --check LetterBoxedCubed.user.js
+          node tests/merge-tests.js
+          grep -q '^// @version      1.12.0$' LetterBoxedCubed.user.js
+          grep -q 'PREVIEW_RUNTIME_INJECTION_POINT' LetterBoxedCubed.user.js
+          if grep -q 'lb-cubed-preview-debug' LetterBoxedCubed.user.js; then
+            echo 'Preview debugger implementation leaked into production source.' >&2
+            exit 1
+          fi
+          if grep -q 'LetterBoxedCubed_PreviewBootstrapTrace' LetterBoxedCubed.user.js; then
+            echo 'Preview bootstrap diagnostics leaked into production source.' >&2
+            exit 1
+          fi
+          if grep -q '^// @grant        GM_info$' LetterBoxedCubed.user.js; then
+            echo 'GM_info should be preview-only.' >&2
+            exit 1
+          fi
+          grep -q 'data:image/png;base64,' LetterBoxedCubed.user.js
+          grep -q 'className = "lb-cubed-logo"' LetterBoxedCubed.user.js
+
+      - name: Validate generated preview still has preview tooling
+        run: |
+          python tools/build_preview.py \
+            --source LetterBoxedCubed.user.js \
+            --output "$RUNNER_TEMP/LetterBoxedCubed.preview.user.js" \
+            --preview-url 'https://example.invalid/LetterBoxedCubed.preview.user.js' \
+            --build-number '999999' \
+            --preview-hash '#lbc-preview'
+          node --check "$RUNNER_TEMP/LetterBoxedCubed.preview.user.js"
+          grep -q 'lb-cubed-preview-debug' "$RUNNER_TEMP/LetterBoxedCubed.preview.user.js"
+          grep -q 'LetterBoxedCubed_PreviewBootstrapTrace' "$RUNNER_TEMP/LetterBoxedCubed.preview.user.js"
+          grep -q '^// @grant        GM_info$' "$RUNNER_TEMP/LetterBoxedCubed.preview.user.js"
+          grep -q 'Show Debug Pane' "$RUNNER_TEMP/LetterBoxedCubed.preview.user.js"
+
+      - name: Commit finalized release source
+        run: |
+          git config user.name "Nathan Burgdorff + Ari (ChatGPT)"
+          git config user.email "6709230+Msyjsm@users.noreply.github.com"
+          git rm .github/workflows/apply-1-12-release-cleanup.yml
+          git rm tools/apply_1_12_release_cleanup.py
+          git add LetterBoxedCubed.user.js CHANGELOG.md docs/PREVIEW_TESTING.md tools/build_preview.py tools/preview_runtime.js
+          git commit -m "Prepare v1.12.0 release"
+          git push origin HEAD:feature/qol-4-10-12-13-14
+
+      - name: Rebuild Preview from finalized release source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run preview-channel.yml --ref feature/qol-4-10-12-13-14
