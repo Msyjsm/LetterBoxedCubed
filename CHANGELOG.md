@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.13.0-beta.2
+- Backfilled Browse History chronologically so each retained puzzle inherits only words actually found on earlier puzzles that are structurally valid on that day's sides; future discoveries are never allowed to leak backward.
+- Browse History now renders inherited words with the same darker previously-found styling used by the live panel, including solved-twofer constituents and first-found provenance tooltips when available. Completion/Longest/Found Words use the day's known-word projection.
+- Today's Browse History record is overlaid from the live local puzzle before rendering, then sanity-checked against the live Known/Previously Found sets; any mismatch is logged and the live values win so the two views remain identical.
+- Added a versioned, cloud-synced historical projection cache so the retroactive backfill persists instead of reparsing every retained day on every normal page load.
+- Suppressed new-word highlight animations when a word is first entered on the current day but was already known from an earlier puzzle; newly solved twofers still receive their own twofer highlight.
+
 ## 1.13.0-beta.1
 - Added persistent global word memory for issue #11. Existing `LetterBoxedTracker_*` puzzle histories are indexed once into a versioned global vocabulary; later discoveries update the index incrementally instead of rescanning every prior puzzle on each page load.
 - Each lifetime word stores a compact Letter Boxed signature: a 26-bit letter mask plus distinct adjacent-letter constraints. Current-board lookup enumerates at most the 4096 subsets of the board's 12-letter mask, then validates side adjacency, keeping lookup fast as lifetime history grows.

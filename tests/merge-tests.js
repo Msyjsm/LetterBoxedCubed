@@ -7,7 +7,7 @@ let source = fs.readFileSync(sourcePath, 'utf8');
 
 source = source.replace(
   /\n    Initialize\(\);\n\}\)\(\);\s*$/,
-  `\n    globalThis.__LbcTest = {\n      MergeBackupIntoStorage, MergeStorageValue, MergeGuiStates,\n      MergeCustomDictionaryValues, MergePuzzleMetadataValues,\n      MigrateBackupToCurrent, MigrateBackupV2ToV3,\n      CreateEmptyGuiState, NormalizeGuiState, BuildCloudSyncData,\n      GuiStateStorageKey, PanelWidthStorageKey, LegacyPanelWidthStorageKey,\n      HideParStorageKey, LineDrawingSpeedStorageKey,\n      CustomDictionaryStorageKey, CustomWordsPrefix, PuzzleMetadataPrefix,\n      GlobalWordHistoryStorageKey, GlobalWordHistoryVersion,\n      BuildGlobalWordRecord, MergeGlobalWordHistoryValues,\n      RebuildGlobalWordHistoryFromTrackerStorage\n    };\n})();\n`
+  `\n    globalThis.__LbcTest = {\n      MergeBackupIntoStorage, MergeStorageValue, MergeGuiStates,\n      MergeCustomDictionaryValues, MergePuzzleMetadataValues,\n      MigrateBackupToCurrent, MigrateBackupV2ToV3,\n      CreateEmptyGuiState, NormalizeGuiState, BuildCloudSyncData,\n      GuiStateStorageKey, PanelWidthStorageKey, LegacyPanelWidthStorageKey,\n      HideParStorageKey, LineDrawingSpeedStorageKey,\n      CustomDictionaryStorageKey, CustomWordsPrefix, PuzzleMetadataPrefix,\n      GlobalWordHistoryStorageKey, GlobalWordHistoryVersion,\n      BuildGlobalWordRecord, MergeGlobalWordHistoryValues,\n      RebuildGlobalWordHistoryFromTrackerStorage,\n      HistoricalWordProjectionStorageKey, HistoricalWordProjectionVersion,\n      BuildHistoricalWordProjection, MergeHistoricalWordProjectionValues,\n      ShouldHighlightWordDiscovery\n    };\n})();\n`
 );
 
 const Store = new Map();
@@ -189,6 +189,46 @@ test('Cloud payload includes persistent global word history', () => {
   put(T.GlobalWordHistoryStorageKey, history);
   const data = T.BuildCloudSyncData();
   assert(T.GlobalWordHistoryStorageKey in data.StorageSnapshot, 'global history omitted from cloud payload');
+});
+
+
+test('Historical projection only inherits words from earlier puzzles', () => {
+  const puzzles = [
+    {PuzzleId:'100',PrintDate:'2026-09-01',Date:'Sep 1',Sides:['AXD','BEF','CGH','IJK'],FoundWords:['ABC']},
+    {PuzzleId:'101',PrintDate:'2026-09-02',Date:'Sep 2',Sides:['AXD','BEF','CGH','IJK'],FoundWords:['CBA']}
+  ];
+  const projection = T.BuildHistoricalWordProjection(puzzles);
+  eq(projection.Puzzles['100'].PreviouslyFoundWords, [], 'future word leaked backward into first puzzle');
+  eq(projection.Puzzles['101'].PreviouslyFoundWords, ['ABC'], 'earlier valid word was not inherited by later puzzle');
+  assert(projection.Puzzles['101'].Origins.ABC.PuzzleId === '100', 'first-found provenance was not retained');
+});
+
+test('Historical projection excludes an earlier word when its adjacent letters share a side', () => {
+  const puzzles = [
+    {PuzzleId:'100',PrintDate:'2026-09-01',Sides:['AXD','BEF','CGH','IJK'],FoundWords:['ABC']},
+    {PuzzleId:'101',PrintDate:'2026-09-02',Sides:['ABX','CDE','FGH','IJK'],FoundWords:[]}
+  ];
+  const projection = T.BuildHistoricalWordProjection(puzzles);
+  eq(projection.Puzzles['101'].PreviouslyFoundWords, [], 'structurally invalid historical word was inherited');
+});
+
+test('Historical projection merge unions puzzle backfills and keeps earliest provenance', () => {
+  const local = {
+    Version:T.HistoricalWordProjectionVersion,
+    Puzzles:{'200':{PreviouslyFoundWords:['ABC'],Origins:{ABC:{PuzzleId:'100',PrintDate:'2026-09-01',Date:'Sep 1'}}}}
+  };
+  const incoming = {
+    Version:T.HistoricalWordProjectionVersion,
+    Puzzles:{'200':{PreviouslyFoundWords:['ABC','CBA'],Origins:{ABC:{PuzzleId:'101',PrintDate:'2026-09-02',Date:'Sep 2'},CBA:{PuzzleId:'150',PrintDate:'2026-09-03',Date:'Sep 3'}}}}
+  };
+  const merged = T.MergeHistoricalWordProjectionValues(local,incoming);
+  eq(merged.Puzzles['200'].PreviouslyFoundWords, ['ABC','CBA'], 'historical projection words did not union');
+  assert(merged.Puzzles['200'].Origins.ABC.PuzzleId === '100', 'earliest historical provenance did not win');
+});
+
+test('Previously known word discovery suppresses new-word highlighting', () => {
+  assert(T.ShouldHighlightWordDiscovery('ABC', new Set(['ABC'])) === false, 'historical word should not highlight');
+  assert(T.ShouldHighlightWordDiscovery('CBA', new Set(['ABC'])) === true, 'genuinely new word should highlight');
 });
 
 test('Cloud payload omits device-local panel width', () => {
