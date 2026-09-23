@@ -22,7 +22,9 @@ jobs:
           fetch-depth: 0
 
       - name: Apply beta.2 history parity patch
-        run: python tools/apply_v1_13_beta2_history_parity.py
+        run: |
+          python tools/fix_beta2_test_anchor.py
+          python tools/apply_v1_13_beta2_history_parity.py
 
       - name: Validate source, storage semantics, and generated preview
         run: |
@@ -45,6 +47,7 @@ jobs:
           git config user.email "6709230+Msyjsm@users.noreply.github.com"
           git rm .github/workflows/apply-v1-13-beta2-history-parity.yml
           git rm tools/apply_v1_13_beta2_history_parity.py
+          git rm tools/fix_beta2_test_anchor.py
           git add LetterBoxedCubed.user.js tests/merge-tests.js CHANGELOG.md docs/PREVIEW_TESTING.md
           git commit -m "Align Browse History with global word memory"
           git push origin HEAD:feature/global-word-memory-v1.13.0
