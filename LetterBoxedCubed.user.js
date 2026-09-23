@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed
 // @namespace    https://nathanburgdorff.com/userscripts/
-// @version      1.12.1
+// @version      1.12.2
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -6290,10 +6290,14 @@
         try {
             const Bitmap = await GetEmbeddedLogoBitmap();
 
-            if (!Canvas?.isConnected) {
-                return;
-            }
-
+            /*
+                A canvas may be painted before it is connected to the DOM; its
+                bitmap is retained when it is appended later. RenderHeader()
+                intentionally starts PNG decoding while constructing the header,
+                so do not gate drawing on Canvas.isConnected. The previous guard
+                made the async decode race the later DOM append and could leave
+                a permanently transparent logo canvas.
+            */
             const Context = Canvas.getContext("2d");
             if (!Context) {
                 return;

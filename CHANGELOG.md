@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.12.2
+- Fixed the embedded-logo canvas remaining transparent when PNG decoding completed before the newly constructed canvas had been attached to the DOM. Canvas pixels can be drawn while detached and persist after insertion, so logo rendering no longer depends on `Canvas.isConnected`.
+
 ## 1.12.1
 - Fixed the temporary cube logo rendering as Chrome's broken-image placeholder on NYT. The PNG remains embedded byte-for-byte, but LBC now decodes it locally with `createImageBitmap()` and paints it to a canvas instead of assigning a CSP-blockable `data:` URL to an `<img>`.
 - The logo canvas keeps the existing responsive square sizing logic, transparency, and 20-96px display range without external hosting or CORS dependencies.
