@@ -28,8 +28,13 @@ jobs:
         run: |
           node --check LetterBoxedCubed.user.js
           node tests/merge-tests.js
-          python tools/build_preview.py
-          node --check LetterBoxedCubed.preview.user.js
+          python tools/build_preview.py \
+            --source LetterBoxedCubed.user.js \
+            --output "$RUNNER_TEMP/LetterBoxedCubed.preview.user.js" \
+            --preview-url "https://raw.githubusercontent.com/Msyjsm/LetterBoxedCubed/preview/LetterBoxedCubed.preview.user.js" \
+            --build-number "112" \
+            --preview-hash "#lbc-preview"
+          node --check "$RUNNER_TEMP/LetterBoxedCubed.preview.user.js"
           grep -q '@version      1.12.2' LetterBoxedCubed.user.js
           ! grep -q 'if (!Canvas?.isConnected)' LetterBoxedCubed.user.js
           grep -q 'createImageBitmap(BlobValue)' LetterBoxedCubed.user.js
