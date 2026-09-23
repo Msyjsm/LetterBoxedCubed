@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.12.1
+- Fixed the temporary cube logo rendering as Chrome's broken-image placeholder on NYT. The PNG remains embedded byte-for-byte, but LBC now decodes it locally with `createImageBitmap()` and paints it to a canvas instead of assigning a CSP-blockable `data:` URL to an `<img>`.
+- The logo canvas keeps the existing responsive square sizing logic, transparency, and 20-96px display range without external hosting or CORS dependencies.
+
 ## 1.12.0
 - Released the completed v1.12 QoL/layout bundle after the beta.1-beta.20 preview cycle.
 - Replaced the bordered pixel-size logo prototype with Nathan's temporary cube PNG. The exact image is embedded in the userscript and scales with the natural LBC header height while preserving its square aspect ratio.
