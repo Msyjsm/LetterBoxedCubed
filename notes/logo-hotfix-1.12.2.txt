@@ -1,1 +1,0 @@
-v1.12.2 fixes the embedded logo canvas remaining transparent when PNG decoding completed before the canvas was connected to the DOM. Canvas drawing does not require DOM connection; removing that guard allows the rendered pixels to persist when the canvas is appended later.
