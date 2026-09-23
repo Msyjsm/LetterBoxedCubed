@@ -1,4 +1,4 @@
-# diagnostic rerun
+# exact repair run
 name: Apply 1.12.3 exact logo bytes
 
 on:
