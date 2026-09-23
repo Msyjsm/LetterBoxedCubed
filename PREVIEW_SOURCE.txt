@@ -1,5 +1,5 @@
 Generated userscript preview. Do not edit this branch directly.
-Source branch: main
+Source branch: hotfix/logo-exact-bytes
 Source commit: cb64003be69e6964c5c3d9618f7d6babd3b4e035
-Workflow run: 35865274777
+Workflow run: 35876515850
 Preview selector: #lbc-preview
