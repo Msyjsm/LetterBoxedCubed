@@ -22,7 +22,9 @@ jobs:
           fetch-depth: 0
 
       - name: Apply global word memory patch
-        run: python tools/apply_v1_13_global_word_memory.py
+        run: |
+          python tools/fix_v1_13_patcher_parser.py
+          python tools/apply_v1_13_global_word_memory.py
 
       - name: Validate source, merge semantics, and generated preview
         run: |
@@ -45,6 +47,7 @@ jobs:
           git config user.email "6709230+Msyjsm@users.noreply.github.com"
           git rm .github/workflows/apply-v1-13-global-word-memory.yml
           git rm tools/apply_v1_13_global_word_memory.py
+          git rm tools/fix_v1_13_patcher_parser.py
           git add LetterBoxedCubed.user.js tests/merge-tests.js CHANGELOG.md docs/PREVIEW_TESTING.md
           git commit -m "Add persistent global word memory preview"
           git push origin HEAD:feature/global-word-memory-v1.13.0
