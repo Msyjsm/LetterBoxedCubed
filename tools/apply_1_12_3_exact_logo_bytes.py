@@ -2,8 +2,12 @@ from pathlib import Path
 import base64
 import hashlib
 import re
+import struct
+import zlib
 
-EXPECTED_LENGTH = 5876
+EXPECTED_SHA256 = "4198a3a363878ed16e09937ccc71a5277bd4fd431ac4cbed1508a5bb70b1402f"
+EXPECTED_BYTE_LENGTH = 4406
+EXPECTED_BASE64_LENGTH = 5876
 CHUNK_SIZE = 256
 EXPECTED_HASHES = [
     "f54bf72277c5411c377c716af98b18636bd9427cc0abb8ca95c22e2413208555",
@@ -31,21 +35,117 @@ EXPECTED_HASHES = [
     "98ed5cd22b4d6b84e2e66a629d0b9065bacdd2b7ad9946f7a51fbed126a95d9d",
 ]
 
-source = Path("LetterBoxedCubed.user.js").read_text(encoding="utf-8")
-m = re.search(r'const LogoPngBase64\s*=\s*\n\s*"([A-Za-z0-9+/=]+)";', source)
-if not m:
-    raise RuntimeError("LogoPngBase64 not found")
-current = m.group(1)
-print("CURRENT_LENGTH", len(current))
-print("CURRENT_DECODED_LENGTH", len(base64.b64decode(current, validate=True)))
-print("CURRENT_DECODED_SHA256", hashlib.sha256(base64.b64decode(current, validate=True)).hexdigest())
+# These are the only three 256-character regions that differ from the original
+# uploaded PNG. Keeping replacements small prevents opaque long-string mutation
+# in the repository-update path, while the whole-file digest below proves that
+# the reconstructed image is exact.
+CORRECT_CHUNKS = {
+    4: "W7dutYxVh8zNnSlIwelvyUA2hWEgh96ZlluePCgvHZ+RNhGZNV8UEcFKSLKxArItDAP52zvTMjh+UF56N55YiYiE5gNwVyqViBW8NR+rJ+ONlRCs+LltVsQKulVj9a0YLwNrcUkYIy4D4bMkNisT37BiQqzgs+o3q1vGo8Wqrea/O5r4+kSwYsBmBZ8tuAyMsFlVX7fpwnPl8c2Xy7nh0sUiWI4mJibYrOCt2lgdiPjNalZE+ro65VfXfkHWffI8",
+    9: "VINVLpe5DIS32KzcpRYsNiv4jM0qHqkEi80KPmOzik/iwWKzgs/YrOKVaLDYrOAzNqv4JRYsNiv4jM0qGYkEi80KPmOzSk7swWKzgs/YrJIVa7DYrOCl4NQ/RspmlbzYgsVmBZ+xWaUjlmCxWcFnYSBsVilxDhabFXzGZpUup2CxWcFn85eBbFapsQ5WqVQiVvBWNVaDbFapsgpWqVTiMhDe4j6r1okcLDYr+IzNqrUiBYvNCj5js2q9poPFZgWf",
+    20: "BoIFJMAmVtXNamxsjM1qEQQLiJltrIrF4t6xsbEtK1asIFaLIFhAjFxiNTIyQqyWQLCAmNjEis0qGoIFxMAmVmxW0REswJFtrNisoiNYgAOXWLFZRUewgMUEgYgE5qPzbGLFZuWGYAGLqVREpHGBbGLFZuWOYAER2caKzcodwQIicIkVm5U7ggU0ySZWbFbxIlhAE2xjxWYVL4IFLMUiVrUDO5eB8SFYwCIqInJWGMjbFrFis0oGwQIW0dXeJuX3",
+}
+
+
+def validate_png_bytes(data: bytes) -> None:
+    if len(data) != EXPECTED_BYTE_LENGTH:
+        raise RuntimeError(f"logo byte length mismatch: {len(data)}")
+    digest = hashlib.sha256(data).hexdigest()
+    if digest != EXPECTED_SHA256:
+        raise RuntimeError(f"logo SHA-256 mismatch: {digest}")
+    if data[:8] != b"\x89PNG\r\n\x1a\n":
+        raise RuntimeError("logo is not a PNG")
+
+    pos = 8
+    saw_iend = False
+    while pos < len(data):
+        if pos + 12 > len(data):
+            raise RuntimeError("truncated PNG chunk")
+        length = struct.unpack(">I", data[pos:pos + 4])[0]
+        chunk_type = data[pos + 4:pos + 8]
+        end = pos + 12 + length
+        if end > len(data):
+            raise RuntimeError("PNG chunk extends past EOF")
+        payload = data[pos + 8:pos + 8 + length]
+        stored_crc = struct.unpack(">I", data[pos + 8 + length:end])[0]
+        crc = zlib.crc32(chunk_type)
+        crc = zlib.crc32(payload, crc) & 0xFFFFFFFF
+        if crc != stored_crc:
+            raise RuntimeError(f"PNG CRC failure in {chunk_type!r}")
+        pos = end
+        if chunk_type == b"IEND":
+            saw_iend = True
+            break
+
+    if not saw_iend or pos != len(data):
+        raise RuntimeError("PNG IEND/EOF mismatch")
+
+
+source_path = Path("LetterBoxedCubed.user.js")
+source = source_path.read_text(encoding="utf-8")
+match = re.search(
+    r'(const LogoPngBase64\s*=\s*\n\s*")([A-Za-z0-9+/=]+)(";)',
+    source,
+)
+if not match:
+    raise RuntimeError("LogoPngBase64 constant not found")
+
+current = match.group(2)
+if len(current) != EXPECTED_BASE64_LENGTH:
+    raise RuntimeError(f"current Base64 length mismatch: {len(current)}")
 chunks = [current[i:i + CHUNK_SIZE] for i in range(0, len(current), CHUNK_SIZE)]
-print("CURRENT_CHUNK_COUNT", len(chunks))
-mismatches = []
-for i, expected in enumerate(EXPECTED_HASHES):
-    actual = hashlib.sha256(chunks[i].encode()).hexdigest() if i < len(chunks) else "MISSING"
-    if actual != expected:
-        mismatches.append(i)
-        print("MISMATCH", i, "LEN", len(chunks[i]) if i < len(chunks) else 0, "SHA", actual)
-print("MISMATCH_INDICES", ",".join(map(str, mismatches)))
-raise RuntimeError("diagnostic stop")
+if len(chunks) != len(EXPECTED_HASHES):
+    raise RuntimeError(f"unexpected chunk count: {len(chunks)}")
+
+mismatches = [
+    i for i, expected in enumerate(EXPECTED_HASHES)
+    if hashlib.sha256(chunks[i].encode()).hexdigest() != expected
+]
+if mismatches != [4, 9, 20]:
+    raise RuntimeError(f"unexpected corrupt chunks before repair: {mismatches}")
+
+for index, value in CORRECT_CHUNKS.items():
+    if len(value) != CHUNK_SIZE:
+        raise RuntimeError(f"replacement chunk {index} has length {len(value)}")
+    digest = hashlib.sha256(value.encode()).hexdigest()
+    if digest != EXPECTED_HASHES[index]:
+        raise RuntimeError(f"replacement chunk {index} hash mismatch: {digest}")
+    chunks[index] = value
+
+repaired = "".join(chunks)
+if len(repaired) != EXPECTED_BASE64_LENGTH:
+    raise RuntimeError("repaired Base64 length mismatch")
+repaired_bytes = base64.b64decode(repaired, validate=True)
+validate_png_bytes(repaired_bytes)
+
+source = source[:match.start(2)] + repaired + source[match.end(2):]
+if "// @version      1.12.2" not in source:
+    raise RuntimeError("expected 1.12.2 version marker not found")
+source = source.replace("// @version      1.12.2", "// @version      1.12.3", 1)
+source_path.write_text(source, encoding="utf-8")
+
+# Verify the actual file text after writing, not merely the in-memory value.
+written = source_path.read_text(encoding="utf-8")
+written_match = re.search(
+    r'const LogoPngBase64\s*=\s*\n\s*"([A-Za-z0-9+/=]+)";',
+    written,
+)
+if not written_match:
+    raise RuntimeError("written LogoPngBase64 constant not found")
+validate_png_bytes(base64.b64decode(written_match.group(1), validate=True))
+
+changelog_path = Path("CHANGELOG.md")
+changelog = changelog_path.read_text(encoding="utf-8")
+needle = "# Changelog\n\n## 1.12.2"
+replacement = """# Changelog
+
+## 1.12.3
+- Replaced the corrupted generated logo Base64 with a byte-for-byte encoding of the original uploaded temporary logo (4,406 bytes; SHA-256 `4198a3a363878ed16e09937ccc71a5277bd4fd431ac4cbed1508a5bb70b1402f`).
+- Added release validation for Base64 length, decoded byte length, SHA-256, PNG signature/chunk boundaries, and every PNG chunk CRC so future image-byte corruption fails CI instead of shipping.
+
+## 1.12.2"""
+if needle not in changelog:
+    raise RuntimeError("CHANGELOG insertion point not found")
+changelog = changelog.replace(needle, replacement, 1)
+changelog_path.write_text(changelog, encoding="utf-8")
+
+print("Exact original logo restored and verified:", EXPECTED_SHA256)
