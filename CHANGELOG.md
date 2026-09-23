@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.13.0-beta.1
+- Added persistent global word memory for issue #11. Existing `LetterBoxedTracker_*` puzzle histories are indexed once into a versioned global vocabulary; later discoveries update the index incrementally instead of rescanning every prior puzzle on each page load.
+- Each lifetime word stores a compact Letter Boxed signature: a 26-bit letter mask plus distinct adjacent-letter constraints. Current-board lookup enumerates at most the 4096 subsets of the board's 12-letter mask, then validates side adjacency, keeping lookup fast as lifetime history grows.
+- Previously found words that are playable on the current board now count as known in Found Words, completion/longest statistics, Words by Length, Hints, and partial Twofer discovery, with a subtly darker background and tooltip identifying historical discoveries.
+- Historical knowledge never writes current-puzzle `FoundTwofers`. If both halves of a current valid Twofer are already known independently (including entirely from prior puzzles), the existing `Individually Found` spoiler-hidden state and `Valid solution independently found?` indicator apply without auto-solving the pair.
+- Global word history is included in backup/Google Drive data and merges by word/provenance union. Imports from older clients that contain changed legacy tracker keys also update the global index incrementally.
+
 ## 1.12.3
 - Replaced the corrupted generated logo Base64 with a byte-for-byte encoding of the original uploaded temporary logo (4,406 bytes; SHA-256 `4198a3a363878ed16e09937ccc71a5277bd4fd431ac4cbed1508a5bb70b1402f`).
 - Added release validation for Base64 length, decoded byte length, SHA-256, PNG signature/chunk boundaries, and every PNG chunk CRC so future image-byte corruption fails CI instead of shipping.

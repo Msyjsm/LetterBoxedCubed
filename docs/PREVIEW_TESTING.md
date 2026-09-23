@@ -37,6 +37,20 @@ The URL fragment (`#lbc-preview`) is client-side state; browsers do not send it 
 
 Each workflow run appends the monotonically increasing `github.run_number` to the source version. For example, source `1.10.3` may become preview `1.10.3.22`. This means every pushed test build has a newer Tampermonkey version even when the production `@version` has not yet been bumped.
 
+## v1.13 global word memory checks
+
+The `feature/global-word-memory-v1.13.0` preview is the sole-feature v1.13 development branch for issue #11. The current source is `1.13.0-beta.1`.
+
+- On first load, existing `LetterBoxedTracker_*` puzzle histories should seed `LetterBoxedCubed_GlobalWordHistory`; subsequent loads should reuse that index and only ingest tracker puzzle IDs not already marked indexed.
+- A word found on a prior puzzle that is structurally playable on today's board should already appear in **Found Words** with a subtly darker background and a `Previously found on another Letter Boxed puzzle` tooltip.
+- Historical playable words should count toward **Completion**, **Longest Found**, exact **Words by Length**, and the **First Words / Second Words** Hint counters and lists.
+- One historically known half of a valid current Twofer should put that row in **Partially Found** and reveal only the known half. The historically revealed half should use the darker previous-word styling.
+- If both halves of a valid current Twofer are known independently, including when both were found entirely on older puzzles, **Valid solution independently found?** should be checked and the pair itself should remain spoiler-hidden in **Individually Found**. It must not be added to the current puzzle's `FoundTwofers` until that exact chain is actually completed today.
+- A Twofer genuinely completed today must still move to **Found** normally even when one or both words were already known historically.
+- Finding a word for the first time today should keep the existing chartreuse discovery fade; if that same word was also known from an older puzzle, historical styling should remain after the fade completes.
+- Export/Drive sync should include the global history record. Merging two devices with different lifetime vocabularies should union words and cross-puzzle provenance rather than choosing one device wholesale.
+- Preview-only version/debug controls should still be injected by `tools/build_preview.py`; production source on the feature branch should retain only the inert preview hooks.
+
 ## v1.12 QoL bundle checks
 
 The `feature/qol-4-10-12-13-14` preview bundles issues #4, #5, #10, #12, #13, #14, #16, #17, #18, and #19. The current source is `1.12.0`.

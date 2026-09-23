@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed
 // @namespace    https://nathanburgdorff.com/userscripts/
-// @version      1.12.3
+// @version      1.13.0-beta.1
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -94,6 +94,8 @@
     const ExportFormatVersion = 3;
     const PuzzleMetadataVersion = 1;
     const PuzzleMetadataPrefix = "LetterBoxedCubed_PuzzleMetadata_";
+    const GlobalWordHistoryStorageKey = "LetterBoxedCubed_GlobalWordHistory";
+    const GlobalWordHistoryVersion = 1;
 
     const CustomDictionaryStorageKey = "LetterBoxedCubed_CustomDictionary";
     const CustomWordsPrefix = "LetterBoxedCubed_CustomWords_";
@@ -151,6 +153,7 @@
         LegacyPanelWidthStorageKey,
         PanelWidthStorageKey,
         CustomDictionaryStorageKey,
+        GlobalWordHistoryStorageKey,
         HideParStorageKey,
         LineDrawingSpeedStorageKey,
         GuiStateStorageKey
@@ -172,6 +175,10 @@
     let Dictionary = [];
     let DictionarySet = new Set();
     let FoundWords = new Set();
+    let GlobalWordHistory = null;
+    let GlobalWordsByLetterMask = new Map();
+    let PreviouslyFoundWordsForPuzzle = new Set();
+    let KnownWordsForPuzzle = new Set();
     let PuzzleSideByLetter = new Map();
 
     let PuzzleStorageId = null;
@@ -280,6 +287,7 @@
         LoadPuzzleData();
         UpdateCurrentPuzzleMetadata();
         LoadFoundWords();
+        LoadGlobalWordHistory();
         LoadCustomDictionary();
         LoadGoogleDriveConfig();
         LoadGuiState();
@@ -329,6 +337,9 @@
             UniqueTwoferFirstWords: TwoferFirstWords.size,
             UniqueTwoferSecondWords: TwoferSecondWords.size,
             FoundWords: FoundWords.size,
+            PreviouslyFoundWordsForPuzzle: PreviouslyFoundWordsForPuzzle.size,
+            KnownWordsForPuzzle: KnownWordsForPuzzle.size,
+            LifetimeGlobalWords: Object.keys(GlobalWordHistory?.Words || {}).length,
             FoundTwofers: FoundTwofers.size,
             NytSolution: NytSolutionWords,
             CustomDictionaryWords: CustomDictionary.size,
@@ -2976,6 +2987,10 @@
             return MergeUniqueWords(LocalValue, IncomingValue);
         }
 
+        if (Key === GlobalWordHistoryStorageKey) {
+            return MergeGlobalWordHistoryValues(LocalValue, IncomingValue);
+        }
+
         if (Key.startsWith("LetterBoxedCubed_FoundTwofers_")) {
             return MergeUniqueStrings(LocalValue, IncomingValue);
         }
@@ -3034,6 +3049,7 @@
 
         let ChangedKeys = 0;
         let ConsideredKeys = 0;
+        const ChangedTrackerKeys = [];
 
         for (const Key of Object.keys(Snapshot)) {
             if (!IsAllowedExportStorageKey(Key)) {
@@ -3059,7 +3075,14 @@
                     MergedValue
                 );
                 ChangedKeys++;
+                if (Key.startsWith("LetterBoxedTracker_")) {
+                    ChangedTrackerKeys.push(Key);
+                }
             }
+        }
+
+        if (MergeTrackerKeysIntoStoredGlobalWordHistory(ChangedTrackerKeys)) {
+            ChangedKeys++;
         }
 
         return {
@@ -4149,6 +4172,7 @@
         LoadGuiState();
         LoadQolPreferences();
         LoadFoundWords();
+        LoadGlobalWordHistory();
         LoadCustomDictionary();
         LoadHideParPreference();
         ApplyHideParPreference();
@@ -4222,6 +4246,410 @@
         }
     }
 
+
+    // -------------------------------------------------------------------------
+    // Global word history
+    // -------------------------------------------------------------------------
+
+    function CreateEmptyGlobalWordHistory() {
+        return {
+            Version: GlobalWordHistoryVersion,
+            IndexedPuzzleIds: [],
+            Words: {}
+        };
+    }
+
+    function NormalizePuzzleIdList(RawIds) {
+        /*
+            Two distinct puzzle IDs are sufficient to answer the only
+            provenance question LBC needs at runtime: "was this word found on
+            some puzzle other than the current one?" Keeping at most two IDs
+            prevents very common words from growing an unbounded provenance
+            list over years of play while remaining merge-safe.
+        */
+        return [...new Set(
+            (Array.isArray(RawIds) ? RawIds : [])
+                .map(Value => String(Value || "").trim())
+                .filter(Boolean)
+        )]
+            .sort(Alphabetically)
+            .slice(0, 2);
+    }
+
+    function BuildWordLetterMask(Word) {
+        let Mask = 0;
+        for (const Letter of NormalizeWord(Word)) {
+            const Bit = Letter.charCodeAt(0) - 65;
+            if (Bit >= 0 && Bit < 26) {
+                Mask |= (1 << Bit);
+            }
+        }
+        return Mask >>> 0;
+    }
+
+    function BuildWordAdjacentPairs(Word) {
+        const Normalized = NormalizeWord(Word);
+        const Pairs = new Set();
+
+        for (let Index = 0; Index < Normalized.length - 1; Index++) {
+            const Left = Normalized[Index];
+            const Right = Normalized[Index + 1];
+            /* Side separation is symmetric, so AB and BA are one constraint. */
+            Pairs.add(Left <= Right ? Left + Right : Right + Left);
+        }
+
+        return [...Pairs].sort(Alphabetically);
+    }
+
+    function BuildGlobalWordRecord(Word, PuzzleIds = []) {
+        const Normalized = NormalizeWord(Word);
+        if (Normalized.length < 3) {
+            return null;
+        }
+
+        return {
+            Word: Normalized,
+            LetterMask: BuildWordLetterMask(Normalized),
+            AdjacentPairs: BuildWordAdjacentPairs(Normalized),
+            FirstLetter: Normalized[0],
+            LastLetter: Normalized[Normalized.length - 1],
+            PuzzleIds: NormalizePuzzleIdList(PuzzleIds)
+        };
+    }
+
+    function NormalizeGlobalWordHistory(RawHistory) {
+        const Result = CreateEmptyGlobalWordHistory();
+
+        if (!RawHistory || typeof RawHistory !== "object" || Array.isArray(RawHistory)) {
+            return Result;
+        }
+
+        Result.IndexedPuzzleIds = [...new Set(
+            (Array.isArray(RawHistory.IndexedPuzzleIds)
+                ? RawHistory.IndexedPuzzleIds
+                : [])
+                .map(Value => String(Value || "").trim())
+                .filter(Boolean)
+        )].sort(Alphabetically);
+
+        const RawWords =
+            RawHistory.Words &&
+            typeof RawHistory.Words === "object" &&
+            !Array.isArray(RawHistory.Words)
+                ? RawHistory.Words
+                : {};
+
+        for (const [RawWord, RawRecord] of Object.entries(RawWords)) {
+            const Word = NormalizeWord(RawRecord?.Word || RawWord);
+            const Record = BuildGlobalWordRecord(
+                Word,
+                RawRecord?.PuzzleIds
+            );
+            if (Record) {
+                Result.Words[Word] = Record;
+            }
+        }
+
+        return Result;
+    }
+
+    function CanonicalizeGlobalWordHistory(History) {
+        const Normalized = NormalizeGlobalWordHistory(History);
+        const Words = {};
+
+        for (const Word of Object.keys(Normalized.Words).sort(Alphabetically)) {
+            Words[Word] = Normalized.Words[Word];
+        }
+
+        return {
+            Version: GlobalWordHistoryVersion,
+            IndexedPuzzleIds: [...Normalized.IndexedPuzzleIds].sort(Alphabetically),
+            Words
+        };
+    }
+
+    function MergeGlobalWordHistoryValues(LocalValue, IncomingValue) {
+        const Local = NormalizeGlobalWordHistory(LocalValue);
+        const Incoming = NormalizeGlobalWordHistory(IncomingValue);
+        const Result = CreateEmptyGlobalWordHistory();
+
+        Result.IndexedPuzzleIds = [...new Set([
+            ...Local.IndexedPuzzleIds,
+            ...Incoming.IndexedPuzzleIds
+        ])].sort(Alphabetically);
+
+        const Words = new Set([
+            ...Object.keys(Local.Words),
+            ...Object.keys(Incoming.Words)
+        ]);
+
+        for (const Word of [...Words].sort(Alphabetically)) {
+            const PuzzleIds = NormalizePuzzleIdList([
+                ...(Local.Words[Word]?.PuzzleIds || []),
+                ...(Incoming.Words[Word]?.PuzzleIds || [])
+            ]);
+            const Record = BuildGlobalWordRecord(Word, PuzzleIds);
+            if (Record) {
+                Result.Words[Word] = Record;
+            }
+        }
+
+        return CanonicalizeGlobalWordHistory(Result);
+    }
+
+    function IngestWordsIntoGlobalWordHistory(History, PuzzleId, Words) {
+        const Id = String(PuzzleId || "").trim();
+        if (!Id) {
+            return false;
+        }
+
+        let Changed = false;
+        const NormalizedWords = [...new Set(
+            (Array.isArray(Words) ? Words : [...(Words || [])])
+                .map(NormalizeWord)
+                .filter(Word => Word.length >= 3)
+        )];
+
+        for (const Word of NormalizedWords) {
+            const Existing = History.Words[Word];
+            const PuzzleIds = NormalizePuzzleIdList([
+                ...(Existing?.PuzzleIds || []),
+                Id
+            ]);
+            const Record = BuildGlobalWordRecord(Word, PuzzleIds);
+
+            if (!Existing || JSON.stringify(Existing) !== JSON.stringify(Record)) {
+                History.Words[Word] = Record;
+                Changed = true;
+            }
+        }
+
+        if (!History.IndexedPuzzleIds.includes(Id)) {
+            History.IndexedPuzzleIds.push(Id);
+            History.IndexedPuzzleIds.sort(Alphabetically);
+            Changed = true;
+        }
+
+        return Changed;
+    }
+
+    function RebuildGlobalWordHistoryFromTrackerStorage() {
+        const History = CreateEmptyGlobalWordHistory();
+        const Keys = typeof GM_listValues === "function"
+            ? GM_listValues()
+            : [];
+
+        for (const Key of Keys) {
+            if (!Key.startsWith("LetterBoxedTracker_")) {
+                continue;
+            }
+
+            const PuzzleId = Key.substring("LetterBoxedTracker_".length);
+            const Words = GM_getValue(Key, []);
+            IngestWordsIntoGlobalWordHistory(History, PuzzleId, Words);
+        }
+
+        return CanonicalizeGlobalWordHistory(History);
+    }
+
+    function MergeTrackerKeysIntoStoredGlobalWordHistory(Keys) {
+        const UniqueKeys = [...new Set(Keys || [])]
+            .filter(Key => Key.startsWith("LetterBoxedTracker_"));
+
+        if (UniqueKeys.length === 0) {
+            return false;
+        }
+
+        const Raw = GM_getValue(GlobalWordHistoryStorageKey, null);
+        let History =
+            Raw?.Version === GlobalWordHistoryVersion
+                ? NormalizeGlobalWordHistory(Raw)
+                : RebuildGlobalWordHistoryFromTrackerStorage();
+        let Changed = Raw?.Version !== GlobalWordHistoryVersion;
+
+        for (const Key of UniqueKeys) {
+            const PuzzleId = Key.substring("LetterBoxedTracker_".length);
+            Changed = IngestWordsIntoGlobalWordHistory(
+                History,
+                PuzzleId,
+                GM_getValue(Key, [])
+            ) || Changed;
+        }
+
+        if (Changed) {
+            GM_setValue(
+                GlobalWordHistoryStorageKey,
+                CanonicalizeGlobalWordHistory(History)
+            );
+        }
+
+        return Changed;
+    }
+
+    function RebuildGlobalWordMaskIndex() {
+        GlobalWordsByLetterMask = new Map();
+
+        for (const Record of Object.values(GlobalWordHistory?.Words || {})) {
+            const Mask = Number(Record.LetterMask) >>> 0;
+            if (!GlobalWordsByLetterMask.has(Mask)) {
+                GlobalWordsByLetterMask.set(Mask, []);
+            }
+            GlobalWordsByLetterMask.get(Mask).push(Record.Word);
+        }
+    }
+
+    function BuildCurrentPuzzleLetterMask() {
+        let Mask = 0;
+        for (const Letter of PuzzleSideByLetter.keys()) {
+            const Bit = Letter.charCodeAt(0) - 65;
+            if (Bit >= 0 && Bit < 26) {
+                Mask |= (1 << Bit);
+            }
+        }
+        return Mask >>> 0;
+    }
+
+    function IsGlobalWordRecordValidForCurrentPuzzle(Record, PuzzleMask) {
+        if (!Record || (Record.LetterMask & PuzzleMask) !== Record.LetterMask) {
+            return false;
+        }
+
+        for (const Pair of Record.AdjacentPairs || []) {
+            const LeftSide = PuzzleSideByLetter.get(Pair[0]);
+            const RightSide = PuzzleSideByLetter.get(Pair[1]);
+            if (
+                LeftSide === undefined ||
+                RightSide === undefined ||
+                LeftSide === RightSide
+            ) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    function RefreshKnownWordsForCurrentPuzzle() {
+        PreviouslyFoundWordsForPuzzle = new Set();
+        const PuzzleMask = BuildCurrentPuzzleLetterMask();
+
+        /*
+            A Letter Boxed board has 12 letters, so there are at most 4096
+            letter-mask subsets. Looking up only those buckets keeps historical
+            lookup effectively constant-time even as lifetime vocabulary grows.
+        */
+        let Subset = PuzzleMask;
+        while (true) {
+            for (const Word of GlobalWordsByLetterMask.get(Subset) || []) {
+                const Record = GlobalWordHistory.Words[Word];
+                const WasFoundElsewhere = (Record?.PuzzleIds || [])
+                    .some(Id => Id !== PuzzleStorageId);
+
+                if (
+                    WasFoundElsewhere &&
+                    IsGlobalWordRecordValidForCurrentPuzzle(Record, PuzzleMask)
+                ) {
+                    PreviouslyFoundWordsForPuzzle.add(Word);
+                }
+            }
+
+            if (Subset === 0) {
+                break;
+            }
+            Subset = ((Subset - 1) & PuzzleMask) >>> 0;
+        }
+
+        KnownWordsForPuzzle = new Set([
+            ...PreviouslyFoundWordsForPuzzle,
+            ...FoundWords
+        ]);
+    }
+
+    function SaveGlobalWordHistory(QueueSync = true) {
+        GlobalWordHistory = CanonicalizeGlobalWordHistory(GlobalWordHistory);
+        GM_setValue(GlobalWordHistoryStorageKey, GlobalWordHistory);
+
+        if (QueueSync) {
+            ScheduleCloudSync();
+        }
+    }
+
+    function UpdateGlobalWordHistoryFromCurrentPuzzle() {
+        if (!GlobalWordHistory) {
+            GlobalWordHistory = CreateEmptyGlobalWordHistory();
+        }
+
+        const Changed = IngestWordsIntoGlobalWordHistory(
+            GlobalWordHistory,
+            PuzzleStorageId,
+            FoundWords
+        );
+
+        if (Changed) {
+            SaveGlobalWordHistory(false);
+            RebuildGlobalWordMaskIndex();
+        }
+
+        RefreshKnownWordsForCurrentPuzzle();
+    }
+
+    function LoadGlobalWordHistory() {
+        const Raw = GM_getValue(GlobalWordHistoryStorageKey, null);
+        let Changed = false;
+
+        if (Raw?.Version === GlobalWordHistoryVersion) {
+            GlobalWordHistory = NormalizeGlobalWordHistory(Raw);
+
+            const Indexed = new Set(GlobalWordHistory.IndexedPuzzleIds);
+            const Keys = typeof GM_listValues === "function"
+                ? GM_listValues()
+                : [];
+
+            for (const Key of Keys) {
+                if (!Key.startsWith("LetterBoxedTracker_")) {
+                    continue;
+                }
+
+                const PuzzleId = Key.substring("LetterBoxedTracker_".length);
+                if (Indexed.has(PuzzleId)) {
+                    continue;
+                }
+
+                Changed = IngestWordsIntoGlobalWordHistory(
+                    GlobalWordHistory,
+                    PuzzleId,
+                    GM_getValue(Key, [])
+                ) || Changed;
+                Indexed.add(PuzzleId);
+            }
+        } else {
+            GlobalWordHistory = RebuildGlobalWordHistoryFromTrackerStorage();
+            Changed = true;
+        }
+
+        Changed = IngestWordsIntoGlobalWordHistory(
+            GlobalWordHistory,
+            PuzzleStorageId,
+            FoundWords
+        ) || Changed;
+
+        if (Changed) {
+            SaveGlobalWordHistory(false);
+        } else {
+            GlobalWordHistory = CanonicalizeGlobalWordHistory(GlobalWordHistory);
+        }
+
+        RebuildGlobalWordMaskIndex();
+        RefreshKnownWordsForCurrentPuzzle();
+
+        console.log("[Letter Boxed Cubed] Global word memory loaded.", {
+            IndexedPuzzles: GlobalWordHistory.IndexedPuzzleIds.length,
+            LifetimeWords: Object.keys(GlobalWordHistory.Words).length,
+            PreviouslyFoundPlayableToday: PreviouslyFoundWordsForPuzzle.size,
+            KnownToday: KnownWordsForPuzzle.size
+        });
+    }
+
     // -------------------------------------------------------------------------
     // Found words
     // -------------------------------------------------------------------------
@@ -4242,6 +4670,7 @@
             [...FoundWords].sort(Alphabetically)
         );
 
+        UpdateGlobalWordHistoryFromCurrentPuzzle();
         ScheduleCloudSync();
     }
 
@@ -4503,13 +4932,13 @@
         let FoundSecondWords = 0;
 
         for (const Word of TwoferFirstWords) {
-            if (FoundWords.has(Word)) {
+            if (KnownWordsForPuzzle.has(Word)) {
                 FoundFirstWords++;
             }
         }
 
         for (const Word of TwoferSecondWords) {
-            if (FoundWords.has(Word)) {
+            if (KnownWordsForPuzzle.has(Word)) {
                 FoundSecondWords++;
             }
         }
@@ -4530,8 +4959,8 @@
             return "Found";
         }
 
-        const FirstFound = FoundWords.has(Twofer.First);
-        const SecondFound = FoundWords.has(Twofer.Second);
+        const FirstFound = KnownWordsForPuzzle.has(Twofer.First);
+        const SecondFound = KnownWordsForPuzzle.has(Twofer.Second);
 
         if (FirstFound && SecondFound) {
             return "IndividuallyFound";
@@ -4554,8 +4983,8 @@
 
             case "PartiallyFound":
                 return {
-                    FirstVisible: FoundWords.has(Twofer.First),
-                    SecondVisible: FoundWords.has(Twofer.Second)
+                    FirstVisible: KnownWordsForPuzzle.has(Twofer.First),
+                    SecondVisible: KnownWordsForPuzzle.has(Twofer.Second)
                 };
 
             case "IndividuallyFound":
@@ -6156,7 +6585,7 @@
             Dictionary
                 .filter(
                     Word =>
-                        FoundWords.has(
+                        KnownWordsForPuzzle.has(
                             Word
                         )
                 )
@@ -6164,11 +6593,15 @@
                     Alphabetically
                 );
 
+        const KnownWordsForDisplay =
+            [...KnownWordsForPuzzle]
+                .sort(Alphabetically);
+
         const UnfoundWords =
             Dictionary
                 .filter(
                     Word =>
-                        !FoundWords.has(
+                        !KnownWordsForPuzzle.has(
                             Word
                         )
                 )
@@ -6241,7 +6674,7 @@
         RenderFoundAndUnfoundWords(
             DashboardGrid,
             PreviousOpenStates,
-            FoundDictionaryWords,
+            KnownWordsForDisplay,
             UnfoundWords
         );
 
@@ -6596,7 +7029,7 @@
             twofers using it in that position have actually been solved.
         */
         const SortedWords = [...Words]
-            .filter(Word => FoundWords.has(Word))
+            .filter(Word => KnownWordsForPuzzle.has(Word))
             .sort(Alphabetically);
 
         if (SortedWords.length === 0) {
@@ -6622,6 +7055,11 @@
                 const Item = document.createElement("div");
                 Item.className =
                     "lb-cubed-potential-word lb-cubed-potential-word-found";
+
+                if (PreviouslyFoundWordsForPuzzle.has(Word)) {
+                    Item.classList.add("lb-cubed-potential-word-previously-found");
+                    Item.title = "Previously found on another Letter Boxed puzzle";
+                }
 
                 if (RelevantTwofers.length > 0 && SolvedCount === RelevantTwofers.length) {
                     Item.classList.add("lb-cubed-potential-word-complete");
@@ -6823,6 +7261,11 @@
             : "lb-cubed-twofer-word lb-cubed-twofer-redacted";
         Item.textContent = Word;
 
+        if (Visible && PreviouslyFoundWordsForPuzzle.has(Word)) {
+            Item.classList.add("lb-cubed-twofer-word-previously-found");
+            Item.title = "Previously found on another Letter Boxed puzzle";
+        }
+
         if (!Visible) {
             Item.setAttribute("aria-label", "Redacted twofer word");
         }
@@ -6940,6 +7383,11 @@
                     ? "lb-cubed-word lb-cubed-redacted"
                     : "lb-cubed-word lb-cubed-found-word";
                 Item.textContent = Word;
+
+                if (!Redacted && PreviouslyFoundWordsForPuzzle.has(Word)) {
+                    Item.classList.add("lb-cubed-word-previously-found");
+                    Item.title = "Previously found on another Letter Boxed puzzle";
+                }
 
                 if (Redacted) {
                     Item.setAttribute("aria-label", "Unfound word, redacted");
@@ -8782,6 +9230,12 @@
             .lb-cubed-found-word {
                 background: rgba(255, 255, 255, 0.25);
                 color: rgb(42, 20, 20);
+            }
+
+            .lb-cubed-found-word.lb-cubed-word-previously-found,
+            .lb-cubed-potential-word.lb-cubed-potential-word-previously-found,
+            .lb-cubed-twofer-word.lb-cubed-twofer-word-previously-found {
+                background: rgba(74, 31, 31, 0.16);
             }
 
             @keyframes lb-cubed-new-highlight-fade {
