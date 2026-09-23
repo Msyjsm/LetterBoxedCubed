@@ -1,5 +1,5 @@
 Generated userscript preview. Do not edit this branch directly.
-Source branch: main
+Source branch: feature/global-word-memory-v1.13.0
 Source commit: 321ed3c213f6a3d800e425987fa754ba39227516
-Workflow run: 35877458958
+Workflow run: 35886828534
 Preview selector: #lbc-preview
