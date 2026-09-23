@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed
 // @namespace    https://nathanburgdorff.com/userscripts/
-// @version      1.12.0-beta.20
+// @version      1.12.0
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -9,7 +9,6 @@
 // @grant        unsafeWindow
 // @grant        GM_getValue
 // @grant        GM_setValue
-// @grant        GM_info
 // @grant        GM_listValues
 // @grant        GM_xmlhttpRequest
 // @connect      script.google.com
@@ -48,48 +47,19 @@
 
     const PageWindow = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
 
-    const BootstrapDiagnostics = [];
-    const BootstrapDiagnosticSessionKey =
-        "LetterBoxedCubed_PreviewBootstrapTrace";
+    // Preview-only implementation is injected by tools/build_preview.py.
+    // Production releases contain only these inert hooks.
+    function RecordBootstrapDiagnostic() {}
+    function CreatePreviewDebugPane() {}
+    function CreatePreviewVersionLabel() {}
+    function PositionPreviewDebugPane() {}
+    function PositionPreviewVersionLabel() {}
+    function IsPreviewDebugTypingContext() { return false; }
 
-    function RecordBootstrapDiagnostic(Stage, Details = {}) {
-        if (UserscriptBuildChannel !== "preview") {
-            return;
-        }
+    // PREVIEW_RUNTIME_INJECTION_POINT
 
-        const NavigationEntry =
-            typeof performance?.getEntriesByType === "function"
-                ? performance.getEntriesByType("navigation")[0]
-                : null;
-
-        const Entry = {
-            Stage,
-            Timestamp: new Date().toISOString(),
-            ReadyState: document.readyState,
-            WasDiscarded: Boolean(document.wasDiscarded),
-            NavigationType: NavigationEntry?.type || null,
-            ...Details
-        };
-
-        BootstrapDiagnostics.push(Entry);
-        const Snapshot = BootstrapDiagnostics.slice(-100);
-
-        try {
-            sessionStorage.setItem(
-                BootstrapDiagnosticSessionKey,
-                JSON.stringify(Snapshot)
-            );
-        } catch {}
-
-        try {
-            PageWindow.__LetterBoxedCubedBootstrapTrace = Snapshot;
-        } catch {}
-
-        console.debug("[Letter Boxed Cubed][bootstrap]", Entry);
-    }
-
-    RecordBootstrapDiagnostic("userscript-channel-active");
-
+    const LogoPngDataUrl =
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAASwAAAEsCAYAAAB5fY51AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAAZdEVYdFNvZnR3YXJlAFBhaW50Lk5FVCA1LjEuMTITAUd0AAAAuGVYSWZJSSoACAAAAAUAGgEFAAEAAABKAAAAGwEFAAEAAABSAAAAKAEDAAEAAAACAAAAMQECABEAAABaAAAAaYcEAAEAAABsAAAAAAAAAPZ2AQDoAwAA9nYBAOgDAABQYWludC5ORVQgNS4xLjEyAAADAACQBwAEAAAAMDIzMAGgAwABAAAAAQAAAAWgBAABAAAAlgAAAAAAAAACAAEAAgAEAAAAUjk4AAIABwAEAAAAMDEwMAAAAADquHT8XxiVaAAAD+JJREFUeF7t3W9sXXUdx/HvOWVtA5fQ0qEkqCBbt2GUrM6OILKJZF4W4cmogVAJGh8awxOBwVa3tuv8+wAT4yNDIBoIBPYEVgIkMg2KYYxFIOKA7ba9U4NMBlJZJ7TXB9stt797u97z+51z7vme3/uV/Ay59z67u2/v+ey0CwSZsWPHjk8dOHDgxpMnT940MzNz5cGDB2V6etp8GeCVK664Yubss8/+4bPPPvuzwHwSrTEwMHD75OTk8GuvvXYekQLqbdy48U7zMaRsaGioc/PmzQ+HYVgRkYqIVGr/m8PhnDr9/f0nzM8PUjQ5Odm+YcOGxwkUh9P0QSuUy+X2wcHBJ5YvX26+IRwOZ/GDtE1MTLQPDg4+0d3dXRGRShAE5pvC4XAaH6SpVCotiBWHw4l0kJbqZSCx4nCsD9IQJVZtQf1jHI7m09MWVDpimD64DysFpVKpffv27XvGx8e/cfz4cfPpBdoCkdmKyG0rL5C716+Us89qk0qlYr4MUGNZWygH3npPbnjyZfOpyAhWwmxiNXjpcvn5xs/Jhed0ijSKVXD6fxo9B2RJGMib70zL9373ijz9z/fNZyMjWAkql8vtW7ZstYxVh8zNnSlIwelvyUA2hWEgh96ZlluePCgvHZ+RNhGZNV8UEcFKSLKxArItDAP52zvTMjh+UF56N55YiYiE5gNwVyqViBW8NR+rJ+ONlRCs+LltVsQKulVj9a0YLwNrcUkYIy4D4bMkNisT37BiQqzgs+o3q1vGo8Wqrea/O5r4+kSwYsBmBZ8tuAyMsFlVX7fpwnPl8c2Xy7nh0sUiWI4mJibYrOCt2lgdiPjNalZE+ro65VfXfkHWffI8OTa79GeBYDkol8vt27ZtI1bwUnWzGhy3i9Xarg55cHOfrDy/IB/Ozpkva4hgWWKzgs/mB/aI91nVfrN6aPMXZU1PQSTCZ4FgWWCzgs9s77OqjdWDm/tkTU8h8meBYEXEZgWfuW5Wax1iJQQrGjYr+CyOzeohh1gJwWoemxV8tuA+K8vLwOpm5fJZIFhNYLOCl4JT90W53mflslmZCNYS2KzgrUql5ZuViWCdAZsVfJaFzcpEsBbBZgWfZWWzMhGsBtis4LMsbVYmgmVgs4LPqpeBWdmsTASrBpsVfFb74zZ2sYp/szIRrNOmpqa4DIS3srpZmQiWiBw5cqT97rvvJlbwUpY3K5P3wZqcnGwfGhoiVvCS+31Wp35FTBqxEt+DdfTo0fZ77rmHWMFL8dxnlfxlYC1vgzU1NdV+1113ESt4Kc7fZ5XmZ8HLYLFZwWet/H1WrrwLFpsVfKZtszJ5FSw2K/hM42Zl8iZYbFbwmZb7rJbiRbDYrOAzTfdZLSX3wWKzgs+0b1amXAeLzQo+y8NmZcptsNis4LO8bFamXAaLzQo+y9NmZcpdsNis4DP332eVrc3KlKtgsVnBZ/H8PqvsXQbWyk2w2Kzgs7xuVqZcBIvNCj7L82ZlUh+sqakpNit4K2/3WS1FdbCOHj3KNyt4y/0+Kx2XgbXUBmtycpLNCt6a36wcLgOT/gcjkqAyWEeOHOFvA+GtBZuVxTcrTZuVSV2w2Kzgs2qsBmPbrALzpZmmKlhsVvBZ7WZl882q8Wal6zOhJlhsVvCZr5uVSUWw2KzgM583K1Pmg8VmBZ/Fv1nplulgsVnBZ8lsVrplNlhsVvAZm1VjmQwWmxV8xma1uMwFi80KPpu/DGSzaihTwWKzgs9qf5+V7TervG1WpswEi80KPotjs8rzN6uqTASLzQo+Y7NqXsuDxWYFn7FZRdPSYJXLZTYreIvNKrqWBWtiYqJ969atxApeYrOy05JglUql9m3bthEreInNyl7qwSqXy+3bt28nVvASm5WbVINVLpe5DIS32KzcpRYsNiv4jM0qHqkEi80KPmOzik/iwWKzgs/YrOKVaLDYrOAzNqv4JRYsNiv4jM0qGYkEi80KPmOzSk7swWKzgs/YrJIVa7DYrOCl4NQ/RspmlbzYgsVmBZ+xWaUjlmCxWcFnYSBsVilxDhabFXzGZpUup2CxWcFn85eBbFapsQ5WqVTiVvBWNVaDbFapsgpWqVTiMhDe4j6r1okcLDYr+IzNqrUiBYvNCj5js2q9poPFZgWfsVllQ1PBYrOCz9issmPJYLFZwWdsVtlyxmCxWcFnbFbZs2iw2KzgswWXgWxWmdEwWBMTE1wGwlu1sbK5DCRWyakLVrlc5geZ4a35zWrcLlZsVslaEKzJyUkuA+GtBb/PyvIykM0qWfPBGhoa6rz11lsfe+qpp4gVvMN9VjrMB+vFF1984Lnnnrv+2LFjC19hIFbIG9fNai2xSk0gIjIwMHD7nj177p2bmzOfXyAQkYqIfHfVJ+RHX7lMLjinQ4Q3CJqd/uV7g5aXgWu7OrgMdBQGgUz95wO5+Dd/NJ+qE+zYseNT4+Pjr+7fv/8888lGvvqJgvzya5+XT5/bKR/xBkGxMAjkH9Mz8p2n/yIvvHMicqy4DIxHpGBdf/31t+/bt+/e6elp87mGLulok4sKy+Tdk7Onvp4BSoWByMvvfyhSE6GlEKv4RQrWpk2b/vTMM89caT7RSPWSEMiTZv9c125WDxGr2EQJVjgzM9NUrKTJNxXQppk/1ws3K2LVKuHBgwfNxwDU4D6r7Aib3a4AH7FZZUvdj+YAOIX7rLKHYAENBKdj9aVuBvYsIVhAA9U03V9cS6wyhGABi7j83GVyUaGzub9GRCqaCtZZ3CGKnFnWxJ/puYrIXIVaZUmz98zJlk93yQ0rPsmPDkK1tkBkX/nfcv/hM/+Qv4jI5wvL5Pc3fVnO72wnXAmKcuNo08H66frPyh1X9IrwxkGzMJQHXp6Qb+87ZD5Th2ClI0qwmrokFDn91XiuInMcjuIjc3MyS3vUajpYANBqBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAuAGgQLgBoEC4AaBAtAywVBYD7UEMEC0FpBIB98NGs+WqdQKBAsAK0ThoG89d8Z+fELb5pP1enr6yNYAFrjVKxOyg/+8Fe5/823pW2Jq8LOzs7nCRaA1NXG6reHj0lbIDJbMV/1sUKhIB0dHQ8TLACpihorEZHLLrvsvXXr1j1GsACkxiZWYRjKxRdfvGN4ePgowQKQCttYFYvFRx599NFfCLc1AEiDTax6enrkqquueqK/v/+26mMEC0CibGLV3d0tmzZt2nvffffdODIyMlN9nGABSIxtrIrF4t6xsbEtvb29/6t9jmABSIRLrEZGRrasWLFiQayEYAFIgk2surq6pFgs7h0eHt6yatWqulgJwQIQN9tYXXfddXvHxsa2rF69umGshGABiJNNrLq7u+dj1egysBbBAhAL21idabMyESwAzmxi1cxmZSJYAJzYxqqZzcpEsABYs4lVlM3KRLAAWLGNVfUyMGqshGABsGETq+pmNTIyEukysBbBAhCJbayql4HNDuyNECwATbOJlctmZSJYAJpiGyuXzcpEsAAsySVWLpuViWABOCObWFUHdtfNykSwACzKJlZxblYmggWgIdtYxblZmQgWgDousYpzszIRLAAL2MQqqc3KRLAAzLOJVZKblYlgARBxiFWSm5WJYAFwilWSm5WJYAGes4lVWpuViWABHrOJVZqblYlgAZ6yjVWam5WJYAEecolVmpuViWABnrGJVXWz2r17d6qblYlgAR6xiVV1s9q1a9eWSy+9tGWxEoIF+MM2VtXNauXKlS2NlRAswA8usRodHW3ZZmUiWEDO2cSqdrPq7e3NRKyEYAH5ZhOrLG1WJoIF5JRtrIrF4t6dO3dmYrMyESwgh1xiNTo6umXNmjWZi5UQLCB/XGKVtc3KRLCAHHGJVRY3KxPBAnLCJVZZ3axMBAvIAZdYZXmzMhEsQDmXWGV9szIRLEAxl1hp2KxMBAtQyiVWWjYrE8ECFHKJlabNykSwAGVcYqVtszIRLEARl1hp3KxMBAtQwiVWWjcrE8ECFHCJ1a5du9RuViaCBWScS6x2796di29WVQQLyDCXWI2OjqrfrEwEC8gol1jt3LlT9d8GLoZgARnkEqs8bVYmggVkjEus8rZZmQgWkCEuscrjZmUiWEBGuMQqr5uViWABGeASqzxvViaCBbSYS6zyvlmZCBbQQi6x8mGzMhEsoEVsYlX9F5l92axMBAtoAZtYddf8i8y+bFYmggWkzDZWPm5WJoIFpMglVj5uViaCBaTEJlbVzWp4eNjLzcpEsIAU2MSqdrNavXq197ESggUkzzZWbFb1CBaQIJdYjYyMeL9ZmQgWkBCbWNVuVqtWrSJWBoIFJMAmVtXNamxsjM1qEQQLiJltrIrF4t6xsbEtK1asIFaLIFhAjFxiNTIyQqyWQLCAmNjEis0qGoIFxMAmVmxW0REswJFtrNisoiNYgAOXWLFZRUewgMUEgYgE5qPzbGLFZuWOYAGLqVREpHGBbGLFZuWOYAER2caKzcodwQIicIkVm5U7ggU0ySZWbFbxIlhAE2xjxWYVL4IFLMUiVrUDO5eB8SFYwCIqInJWGMjbFrFis0oGwQIW0dXeJuX3Z+Se515rOlZsVskiWMAi/v7fD+X7z74qv379X03His0qWcGid8YZfrL+ErlzfW+TrwYyKgzk/lcm5Tv7DpnPLFD7wWjmQ8J9Vulo5r0QEZGvX1iQaz+z/NTNv4BSYRDIn/95XPaU3zWfslaN1fDwMN+sUlBZ6rQ1eIzD0XzOCuofszldXV2Vm2+++YnXX3+93fxgIRl1bwKHw1n6VGN1+PBhYpWiujeCw+Gc+XR3dxOrVgjDsO7N4HA4i59qrA4dOkSs0hYEQd0bwuFwGp9qrNisWqfuTeFwOPWnp6eHy8AMqHtjOBzOwhOGYeXqq69+/I033iBWLRSuX79+xnwQwMfCMJRisfjINddc883e3l7us2qljRs33mH+vwmHw5FKoVCo9Pf3vzswMHC7+blBawQiIhs2bLjjxIkTI/v37+80XwD4pFAoSF9fn3R2dj7f0dHx8Lp16x4bHh4+ar4OrfF/IYnZolzvvf0AAAAASUVORK5CYII=";
     const PanelId = "lb-cubed-panel";
     const StyleId = "lb-cubed-styles";
     const LayoutClass = "lb-cubed-layout-active";
@@ -147,10 +117,6 @@
     const LayoutGapHandleId = "lb-cubed-layout-gap-handle";
     const NytHeaderResizeHandleId = "lb-cubed-nyt-header-resize-handle";
     const NytTitleResizeHandleId = "lb-cubed-nyt-title-resize-handle";
-    const PreviewDebugPanelId = "lb-cubed-preview-debug";
-    const PreviewDebugStyleId = "lb-cubed-preview-debug-styles";
-    const PreviewDebugToggleButtonId = "lb-cubed-preview-debug-toggle";
-    const PreviewVersionLabelId = "lb-cubed-preview-version";
     const CloudSyncDebounceMs = 2500;
     const CloudSyncProtocolVersion = 1;
 
@@ -295,15 +261,6 @@
     let LayoutTimer = null;
     let LastParTrackHeight = null;
 
-    let PreviewDebugObserver = null;
-    let PreviewDebugRenderTimer = null;
-    let PreviewDebugNextElementId = 1;
-    let PreviewDebugPaneVisible = false;
-    const PreviewDebugElementIds = new WeakMap();
-    const PreviewDebugElementsById = new Map();
-    const PreviewDebugOriginalDisplay = new WeakMap();
-    const PreviewDebugOverriddenElements = new Set();
-    const PreviewDebugMutationLog = [];
     let DeleteWordShortcutInProgress = false;
 
     // -------------------------------------------------------------------------
@@ -5233,9 +5190,10 @@
             return false;
         }
 
-        if (Target.closest(
-            `#${SettingsMenuId}, #${HistoryOverlayId}, #${PreviewDebugPanelId}`
-        )) {
+        if (
+            Target.closest(`#${SettingsMenuId}, #${HistoryOverlayId}`) ||
+            IsPreviewDebugTypingContext(Target)
+        ) {
             return true;
         }
 
@@ -5361,724 +5319,6 @@
             DeleteWordShortcutInProgress = false;
             QueuePostSubmissionScans();
         }
-    }
-
-    // -------------------------------------------------------------------------
-    // Preview-only DOM inspector
-    // -------------------------------------------------------------------------
-
-    function EnsurePreviewDebugStyles() {
-        if (
-            UserscriptBuildChannel !== "preview" ||
-            document.getElementById(PreviewDebugStyleId)
-        ) {
-            return;
-        }
-
-        const Style = document.createElement("style");
-        Style.id = PreviewDebugStyleId;
-        Style.textContent = `
-            #${PreviewVersionLabelId} {
-                position: absolute;
-                z-index: 99999;
-                color: rgba(92, 92, 92, 0.78);
-                font: 10px/1.2 Consolas, "Courier New", monospace;
-                white-space: nowrap;
-                pointer-events: none;
-                user-select: none;
-            }
-
-            #${PreviewDebugToggleButtonId} {
-                position: absolute;
-                z-index: 100001;
-                padding: 4px 7px;
-                border: 1px solid rgba(255, 255, 255, 0.45);
-                border-radius: 3px;
-                background: rgba(20, 20, 24, 0.96);
-                color: #f2f2f2;
-                box-shadow: 0 3px 12px rgba(0, 0, 0, 0.32);
-                font: 700 11px/1.25 Arial, sans-serif;
-                white-space: nowrap;
-                cursor: pointer;
-            }
-
-            #${PreviewDebugToggleButtonId}:hover {
-                background: #303038;
-            }
-
-            #${PreviewDebugPanelId} {
-                position: fixed;
-                z-index: 100000;
-                width: 340px;
-                min-width: 280px;
-                max-width: min(420px, calc(100vw - 16px));
-                padding: 10px;
-                overflow: auto;
-                background: rgba(20, 20, 24, 0.96);
-                color: #f2f2f2;
-                border: 1px solid rgba(255, 255, 255, 0.35);
-                border-radius: 4px;
-                box-shadow: 0 4px 20px rgba(0, 0, 0, 0.38);
-                font: 11px/1.35 Consolas, "Courier New", monospace;
-                text-align: left;
-            }
-
-            #${PreviewDebugPanelId} * {
-                box-sizing: border-box;
-            }
-
-            #${PreviewDebugPanelId} .lbc-debug-title {
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                gap: 8px;
-                margin-bottom: 8px;
-                font: 700 12px/1.2 Arial, sans-serif;
-            }
-
-            #${PreviewDebugPanelId} .lbc-debug-tools {
-                display: flex;
-                flex-wrap: wrap;
-                gap: 4px;
-                margin-bottom: 8px;
-            }
-
-            #${PreviewDebugPanelId} button {
-                padding: 2px 5px;
-                border: 1px solid #777;
-                border-radius: 3px;
-                background: #303038;
-                color: #fff;
-                font: 11px/1.3 Arial, sans-serif;
-                cursor: pointer;
-            }
-
-            #${PreviewDebugPanelId} .lbc-debug-section-title {
-                margin: 8px 0 3px;
-                padding-top: 5px;
-                border-top: 1px solid #555;
-                color: #bfe3ff;
-                font-weight: 700;
-            }
-
-            #${PreviewDebugPanelId} .lbc-debug-row {
-                display: flex;
-                align-items: flex-start;
-                gap: 4px;
-                min-width: 0;
-                margin: 1px 0;
-            }
-
-            #${PreviewDebugPanelId} .lbc-debug-row input {
-                flex: 0 0 auto;
-                margin: 2px 0 0;
-            }
-
-            #${PreviewDebugPanelId} .lbc-debug-node {
-                min-width: 0;
-                overflow: hidden;
-                color: inherit;
-                text-overflow: ellipsis;
-                white-space: nowrap;
-                cursor: pointer;
-            }
-
-            #${PreviewDebugPanelId} .lbc-debug-node:hover {
-                color: #fff6a8;
-                text-decoration: underline;
-            }
-
-            #${PreviewDebugPanelId} .lbc-debug-native-hidden {
-                opacity: 0.58;
-            }
-
-            #${PreviewDebugPanelId} .lbc-debug-log,
-            #${PreviewDebugPanelId} .lbc-debug-html {
-                max-height: 180px;
-                margin: 3px 0 0;
-                padding: 5px;
-                overflow: auto;
-                border: 1px solid #50505a;
-                background: #111116;
-                color: #e8e8e8;
-                white-space: pre-wrap;
-                word-break: break-word;
-            }
-        `;
-
-        document.head.appendChild(Style);
-    }
-
-    function GetPreviewDebugElementId(ElementNode) {
-        let Id = PreviewDebugElementIds.get(ElementNode);
-
-        if (!Id) {
-            Id = PreviewDebugNextElementId++;
-            PreviewDebugElementIds.set(ElementNode, Id);
-            PreviewDebugElementsById.set(Id, ElementNode);
-        }
-
-        return Id;
-    }
-
-    function DescribePreviewDebugNode(Node) {
-        if (!(Node instanceof Element)) {
-            const Text = String(Node?.textContent || "")
-                .replace(/\s+/g, " ")
-                .trim()
-                .slice(0, 70);
-            return `${Node?.nodeName || "node"}${Text ? ` "${Text}"` : ""}`;
-        }
-
-        const IdPart = Node.id
-            ? `#${Node.id}`
-            : "";
-        const Classes = [...Node.classList]
-            .slice(0, 6)
-            .map(Name => `.${Name}`)
-            .join("");
-        const Text = String(Node.textContent || "")
-            .replace(/\s+/g, " ")
-            .trim()
-            .slice(0, 55);
-        const Style = getComputedStyle(Node);
-        const Rect = Node.getBoundingClientRect();
-        const Hidden =
-            Style.display === "none" ||
-            Style.visibility === "hidden";
-
-        return `${Node.tagName.toLowerCase()}${IdPart}${Classes}` +
-            `${Text ? ` "${Text}"` : ""}` +
-            ` [${Math.round(Rect.width)}x${Math.round(Rect.height)}` +
-            `${Hidden ? ", hidden" : ""}]`;
-    }
-
-    function LogPreviewDebugMutation(Prefix, Node) {
-        PreviewDebugMutationLog.push(
-            `${new Date().toLocaleTimeString()} ${Prefix} ${DescribePreviewDebugNode(Node)}`
-        );
-
-        if (PreviewDebugMutationLog.length > 160) {
-            PreviewDebugMutationLog.splice(
-                0,
-                PreviewDebugMutationLog.length - 160
-            );
-        }
-    }
-
-    function QueuePreviewDebugRender() {
-        if (UserscriptBuildChannel !== "preview") {
-            return;
-        }
-
-        clearTimeout(PreviewDebugRenderTimer);
-        PreviewDebugRenderTimer = setTimeout(
-            RenderPreviewDebugPane,
-            40
-        );
-    }
-
-    function SetPreviewDebugVisibility(ElementNode, Visible) {
-        if (!(ElementNode instanceof Element)) {
-            return;
-        }
-
-        if (!PreviewDebugOriginalDisplay.has(ElementNode)) {
-            PreviewDebugOriginalDisplay.set(ElementNode, {
-                Value: ElementNode.style.getPropertyValue("display"),
-                Priority: ElementNode.style.getPropertyPriority("display")
-            });
-        }
-
-        PreviewDebugOverriddenElements.add(ElementNode);
-        ElementNode.style.setProperty(
-            "display",
-            Visible ? "revert" : "none",
-            "important"
-        );
-
-        QueuePreviewDebugRender();
-        QueuePanelLayoutUpdate();
-    }
-
-    function ResetPreviewDebugVisibility() {
-        for (const ElementNode of PreviewDebugOverriddenElements) {
-            if (!ElementNode?.style) {
-                continue;
-            }
-
-            const Original = PreviewDebugOriginalDisplay.get(ElementNode);
-
-            if (Original?.Value) {
-                ElementNode.style.setProperty(
-                    "display",
-                    Original.Value,
-                    Original.Priority || ""
-                );
-            } else {
-                ElementNode.style.removeProperty("display");
-            }
-        }
-
-        PreviewDebugOverriddenElements.clear();
-        QueuePreviewDebugRender();
-        QueuePanelLayoutUpdate();
-    }
-
-    function CreatePreviewDebugTree(Root, Container) {
-        if (!Root) {
-            Container.textContent = "(not found)";
-            return;
-        }
-
-        let RowCount = 0;
-        const MaximumRows = 300;
-
-        const AddNode = (ElementNode, Depth) => {
-            if (!(ElementNode instanceof Element) || RowCount >= MaximumRows) {
-                return;
-            }
-
-            RowCount++;
-            const ElementId = GetPreviewDebugElementId(ElementNode);
-            const Computed = getComputedStyle(ElementNode);
-            const NativeVisible =
-                Computed.display !== "none" &&
-                Computed.visibility !== "hidden";
-            const ForcedDisplay = ElementNode.style.getPropertyPriority("display") === "important"
-                ? ElementNode.style.getPropertyValue("display")
-                : "";
-
-            const Row = document.createElement("div");
-            Row.className = "lbc-debug-row" +
-                (!NativeVisible ? " lbc-debug-native-hidden" : "");
-            Row.style.paddingLeft = `${Depth * 11}px`;
-
-            const Checkbox = document.createElement("input");
-            Checkbox.type = "checkbox";
-            Checkbox.checked = ForcedDisplay === "revert"
-                ? true
-                : ForcedDisplay === "none"
-                    ? false
-                    : NativeVisible;
-            Checkbox.title =
-                "Debug visibility override. Reset overrides restores NYT/LBC styling.";
-            Checkbox.addEventListener("change", () => {
-                SetPreviewDebugVisibility(
-                    PreviewDebugElementsById.get(ElementId),
-                    Checkbox.checked
-                );
-            });
-
-            const NodeButton = document.createElement("span");
-            NodeButton.className = "lbc-debug-node";
-            NodeButton.textContent = DescribePreviewDebugNode(ElementNode);
-            NodeButton.title = "Click to show current outerHTML and log the live element to DevTools.";
-            NodeButton.addEventListener("click", () => {
-                const Inspector = document.querySelector(
-                    `#${PreviewDebugPanelId} .lbc-debug-html`
-                );
-
-                if (Inspector) {
-                    Inspector.textContent = ElementNode.outerHTML;
-                }
-
-                console.log(
-                    "[Letter Boxed Cubed][DOM debug]",
-                    ElementNode,
-                    ElementNode.outerHTML
-                );
-            });
-
-            Row.append(
-                Checkbox,
-                NodeButton
-            );
-            Container.appendChild(Row);
-
-            for (const Child of ElementNode.children) {
-                AddNode(Child, Depth + 1);
-            }
-        };
-
-        AddNode(Root, 0);
-
-        if (RowCount >= MaximumRows) {
-            const Truncated = document.createElement("div");
-            Truncated.textContent = "... tree truncated at 300 elements ...";
-            Container.appendChild(Truncated);
-        }
-    }
-
-    function RenderPreviewDebugPane() {
-        if (UserscriptBuildChannel !== "preview") {
-            return;
-        }
-
-        const DebugPanel = document.getElementById(PreviewDebugPanelId);
-        if (!DebugPanel) {
-            return;
-        }
-
-        const TiTree = DebugPanel.querySelector("[data-lbc-debug-tree='ti']");
-        const GbTree = DebugPanel.querySelector("[data-lbc-debug-tree='gb']");
-        const MutationLog = DebugPanel.querySelector(".lbc-debug-log");
-
-        if (TiTree) {
-            TiTree.replaceChildren();
-            CreatePreviewDebugTree(
-                document.querySelector(".lb-game-container .lb-word-container"),
-                TiTree
-            );
-        }
-
-        if (GbTree) {
-            GbTree.replaceChildren();
-            CreatePreviewDebugTree(
-                document.querySelector(".lb-game-container .lb-square-container"),
-                GbTree
-            );
-        }
-
-        if (MutationLog) {
-            MutationLog.textContent = PreviewDebugMutationLog.length
-                ? [...PreviewDebugMutationLog].reverse().join("\n")
-                : "(no mutations captured yet)";
-        }
-
-        PositionPreviewDebugPane();
-    }
-
-    function PositionPreviewDebugPane() {
-        if (UserscriptBuildChannel !== "preview") {
-            return;
-        }
-
-        const DebugPanel = document.getElementById(PreviewDebugPanelId);
-        const ToggleButton = document.getElementById(PreviewDebugToggleButtonId);
-        const Panel = document.getElementById(PanelId);
-
-        if (!DebugPanel || !ToggleButton || !Panel) {
-            return;
-        }
-
-        const PanelRect = Panel.getBoundingClientRect();
-        const SettingsSummary = document.querySelector(
-            `#${SettingsMenuId} > summary`
-        );
-        const SettingsRect = SettingsSummary?.getBoundingClientRect();
-        const ToggleWidth = Math.max(1, ToggleButton.offsetWidth);
-        const ToggleHeight = Math.max(1, ToggleButton.offsetHeight);
-
-        /*
-            Keep the control outside LBC itself, immediately above the header
-            and horizontally just left of the Settings button when possible.
-        */
-        const ScrollX = window.scrollX || window.pageXOffset || 0;
-        const ScrollY = window.scrollY || window.pageYOffset || 0;
-        const ToggleLeft = Clamp(
-            (SettingsRect?.right ?? PanelRect.right) - ToggleWidth + ScrollX,
-            ScrollX + 8,
-            Math.max(
-                ScrollX + 8,
-                ScrollX + window.innerWidth - ToggleWidth - 8
-            )
-        );
-        const ToggleTop = Math.max(
-            ScrollY + 8,
-            PanelRect.top + ScrollY - ToggleHeight - 4
-        );
-
-        ToggleButton.style.left = `${ToggleLeft}px`;
-        ToggleButton.style.top = `${ToggleTop}px`;
-
-        const ToggleRect = ToggleButton.getBoundingClientRect();
-        const DebugWidth = Math.min(
-            340,
-            Math.max(280, window.innerWidth - 16)
-        );
-
-        /*
-            The right LBC grip line sits ResizeGripLineOffset px outside LBC.
-            Put the debugger another equal offset beyond that line, so the
-            grip is visually centered in the gutter between the two panels.
-        */
-        const Left = Math.max(
-            8,
-            PanelRect.right + (ResizeGripLineOffset * 2)
-        );
-        const Top = Math.max(
-            8,
-            ToggleRect.bottom + 4
-        );
-        const MaximumHeight = Math.max(
-            180,
-            window.innerHeight - Top - 8
-        );
-
-        DebugPanel.style.width = `${DebugWidth}px`;
-        DebugPanel.style.left = `${Left}px`;
-        DebugPanel.style.top = `${Top}px`;
-        DebugPanel.style.maxHeight = `${MaximumHeight}px`;
-    }
-
-    function StartPreviewDebugObserver() {
-        if (UserscriptBuildChannel !== "preview") {
-            return;
-        }
-
-        PreviewDebugObserver?.disconnect();
-
-        const Roots = [
-            document.querySelector(".lb-game-container .lb-word-container"),
-            document.querySelector(".lb-game-container .lb-square-container")
-        ].filter(Boolean);
-
-        if (!Roots.length) {
-            return;
-        }
-
-        PreviewDebugObserver = new MutationObserver(Mutations => {
-            for (const Mutation of Mutations) {
-                if (Mutation.type === "childList") {
-                    for (const Node of Mutation.addedNodes) {
-                        LogPreviewDebugMutation("+", Node);
-                    }
-                    for (const Node of Mutation.removedNodes) {
-                        LogPreviewDebugMutation("-", Node);
-                    }
-                } else if (Mutation.type === "attributes") {
-                    LogPreviewDebugMutation(
-                        `~ @${Mutation.attributeName}`,
-                        Mutation.target
-                    );
-                } else if (Mutation.type === "characterData") {
-                    LogPreviewDebugMutation("~ text", Mutation.target.parentNode);
-                }
-            }
-
-            QueuePreviewDebugRender();
-        });
-
-        for (const Root of Roots) {
-            PreviewDebugObserver.observe(Root, {
-                childList: true,
-                subtree: true,
-                characterData: true,
-                attributes: true,
-                attributeOldValue: true,
-                attributeFilter: [
-                    "class",
-                    "style",
-                    "hidden",
-                    "disabled",
-                    "aria-hidden"
-                ]
-            });
-        }
-    }
-
-    function GetRunningUserscriptVersion() {
-        try {
-            if (typeof GM_info !== "undefined") {
-                const Version = String(GM_info?.script?.version || "").trim();
-                if (Version) {
-                    return Version;
-                }
-            }
-        } catch {}
-
-        return "preview";
-    }
-
-    function CreatePreviewVersionLabel() {
-        if (
-            UserscriptBuildChannel !== "preview" ||
-            document.getElementById(PreviewVersionLabelId)
-        ) {
-            return;
-        }
-
-        EnsurePreviewDebugStyles();
-
-        const Label = document.createElement("div");
-        Label.id = PreviewVersionLabelId;
-        Label.textContent = GetRunningUserscriptVersion();
-        document.body.appendChild(Label);
-        PositionPreviewVersionLabel();
-    }
-
-    function PositionPreviewVersionLabel() {
-        if (UserscriptBuildChannel !== "preview") {
-            return;
-        }
-
-        const Label = document.getElementById(PreviewVersionLabelId);
-        const Panel = document.getElementById(PanelId);
-        const Logo = document.querySelector(".lb-cubed-logo-placeholder");
-
-        if (!Label || !Panel) {
-            return;
-        }
-
-        const PanelRect = Panel.getBoundingClientRect();
-        const LogoRect = Logo?.getBoundingClientRect();
-        const LabelHeight = Math.max(1, Label.offsetHeight);
-        const ScrollX = window.scrollX || window.pageXOffset || 0;
-        const ScrollY = window.scrollY || window.pageYOffset || 0;
-        const Left = Clamp(
-            (LogoRect?.left ?? (PanelRect.left + 12)) + ScrollX,
-            ScrollX + 4,
-            Math.max(
-                ScrollX + 4,
-                ScrollX + window.innerWidth - Label.offsetWidth - 4
-            )
-        );
-        const Top = Math.max(
-            ScrollY + 2,
-            PanelRect.top + ScrollY - LabelHeight - 4
-        );
-
-        Label.style.left = `${Math.round(Left)}px`;
-        Label.style.top = `${Math.round(Top)}px`;
-    }
-
-    function CreatePreviewDebugPane() {
-        if (
-            UserscriptBuildChannel !== "preview" ||
-            document.getElementById(PreviewDebugPanelId)
-        ) {
-            return;
-        }
-
-        EnsurePreviewDebugStyles();
-
-        const ToggleButton = document.createElement("button");
-        ToggleButton.id = PreviewDebugToggleButtonId;
-        ToggleButton.type = "button";
-        ToggleButton.textContent = "Show Debug Pane";
-        ToggleButton.setAttribute(
-            "aria-controls",
-            PreviewDebugPanelId
-        );
-        ToggleButton.setAttribute("aria-expanded", "false");
-
-        const DebugPanel = document.createElement("aside");
-        DebugPanel.id = PreviewDebugPanelId;
-        DebugPanel.setAttribute(
-            "aria-label",
-            "Letter Boxed Cubed Preview DOM debugger"
-        );
-        DebugPanel.hidden = !PreviewDebugPaneVisible;
-        DebugPanel.style.setProperty(
-            "display",
-            PreviewDebugPaneVisible ? "block" : "none",
-            "important"
-        );
-
-        ToggleButton.addEventListener("click", () => {
-            PreviewDebugPaneVisible = !PreviewDebugPaneVisible;
-            DebugPanel.hidden = !PreviewDebugPaneVisible;
-            DebugPanel.style.setProperty(
-                "display",
-                PreviewDebugPaneVisible ? "block" : "none",
-                "important"
-            );
-            ToggleButton.textContent = PreviewDebugPaneVisible
-                ? "Hide Debug Pane"
-                : "Show Debug Pane";
-            ToggleButton.setAttribute(
-                "aria-expanded",
-                String(PreviewDebugPaneVisible)
-            );
-
-            if (PreviewDebugPaneVisible) {
-                RenderPreviewDebugPane();
-            }
-
-            PositionPreviewDebugPane();
-        });
-
-        const Header = document.createElement("div");
-        Header.className = "lbc-debug-title";
-        Header.innerHTML = "<span>PREVIEW DOM DEBUG</span><span>TI + GB</span>";
-
-        const Tools = document.createElement("div");
-        Tools.className = "lbc-debug-tools";
-
-        const Refresh = document.createElement("button");
-        Refresh.type = "button";
-        Refresh.textContent = "Refresh";
-        Refresh.addEventListener("click", RenderPreviewDebugPane);
-
-        const Reset = document.createElement("button");
-        Reset.type = "button";
-        Reset.textContent = "Reset visibility";
-        Reset.addEventListener("click", ResetPreviewDebugVisibility);
-
-        const Clear = document.createElement("button");
-        Clear.type = "button";
-        Clear.textContent = "Clear mutations";
-        Clear.addEventListener("click", () => {
-            PreviewDebugMutationLog.length = 0;
-            RenderPreviewDebugPane();
-        });
-
-        Tools.append(
-            Refresh,
-            Reset,
-            Clear
-        );
-
-        const TiTitle = document.createElement("div");
-        TiTitle.className = "lbc-debug-section-title";
-        TiTitle.textContent = "TI DOM";
-        const TiTree = document.createElement("div");
-        TiTree.dataset.lbcDebugTree = "ti";
-
-        const GbTitle = document.createElement("div");
-        GbTitle.className = "lbc-debug-section-title";
-        GbTitle.textContent = "GB DOM";
-        const GbTree = document.createElement("div");
-        GbTree.dataset.lbcDebugTree = "gb";
-
-        const MutationTitle = document.createElement("div");
-        MutationTitle.className = "lbc-debug-section-title";
-        MutationTitle.textContent = "Mutation log (newest first)";
-        const MutationLog = document.createElement("pre");
-        MutationLog.className = "lbc-debug-log";
-
-        const HtmlTitle = document.createElement("div");
-        HtmlTitle.className = "lbc-debug-section-title";
-        HtmlTitle.textContent = "Selected outerHTML";
-        const Html = document.createElement("pre");
-        Html.className = "lbc-debug-html";
-        Html.textContent = "Click a DOM row to inspect it.";
-
-        DebugPanel.append(
-            Header,
-            Tools,
-            TiTitle,
-            TiTree,
-            GbTitle,
-            GbTree,
-            MutationTitle,
-            MutationLog,
-            HtmlTitle,
-            Html
-        );
-
-        document.body.append(
-            ToggleButton,
-            DebugPanel
-        );
-        StartPreviewDebugObserver();
-        RenderPreviewDebugPane();
-
-        window.addEventListener(
-            "resize",
-            PositionPreviewDebugPane
-        );
     }
 
     // -------------------------------------------------------------------------
@@ -6276,7 +5516,7 @@
 
         UpdateLayoutGapHandleVisibility();
         PositionLayoutGapResizeHandle();
-        UpdateLogoPlaceholderSize();
+        UpdateLogoSize();
         PositionPreviewDebugPane();
         PositionPreviewVersionLabel();
         QueueValidWordFeedbackPlacement();
@@ -7018,13 +6258,11 @@
         const Header = document.createElement("div");
         Header.className = "lb-cubed-header";
 
-        const LogoPlaceholder = document.createElement("div");
-        LogoPlaceholder.className = "lb-cubed-logo-placeholder";
-        LogoPlaceholder.setAttribute("aria-label", "Letter Boxed Cubed logo placeholder");
-
-        const LogoSize = document.createElement("span");
-        LogoSize.className = "lb-cubed-logo-placeholder-size";
-        LogoPlaceholder.appendChild(LogoSize);
+        const Logo = document.createElement("img");
+        Logo.className = "lb-cubed-logo";
+        Logo.src = LogoPngDataUrl;
+        Logo.alt = "Letter Boxed Cubed";
+        Logo.draggable = false;
 
         const DriveStatus = document.createElement("span");
         DriveStatus.id = GoogleDriveStatusId;
@@ -7043,7 +6281,7 @@
 
         const TitleRow = document.createElement("div");
         TitleRow.className = "lb-cubed-title-row";
-        TitleRow.append(LogoPlaceholder, TitleMeta);
+        TitleRow.append(Logo, TitleMeta);
 
         const HeaderText = document.createElement("div");
         HeaderText.className = "lb-cubed-header-text";
@@ -7121,31 +6359,35 @@
 
         Panel.appendChild(Header);
         UpdateGoogleDriveButton();
-        UpdateLogoPlaceholderSize(Header, LogoPlaceholder, HeaderActions, LogoSize);
+        UpdateLogoSize(Header, Logo, HeaderActions);
     }
 
-    function UpdateLogoPlaceholderSize(
+    function UpdateLogoSize(
         Header = document.querySelector(".lb-cubed-header"),
-        Placeholder = document.querySelector(".lb-cubed-logo-placeholder"),
-        HeaderActions = document.querySelector(".lb-cubed-header-actions"),
-        SizeText = document.querySelector(".lb-cubed-logo-placeholder-size")
+        Logo = document.querySelector(".lb-cubed-logo"),
+        HeaderActions = document.querySelector(".lb-cubed-header-actions")
     ) {
-        if (!Header || !Placeholder || !HeaderActions || !SizeText) {
+        if (!Header || !Logo || !HeaderActions) {
             return;
         }
-        if (!Header.isConnected || !Placeholder.isConnected) {
+        if (!Header.isConnected || !Logo.isConnected) {
             return;
         }
 
-        Placeholder.classList.add("lb-cubed-logo-placeholder-measuring");
+        /*
+            Temporarily remove the logo from header sizing so its previous size
+            cannot feed back into the next measurement. The image then takes
+            the natural height required by the surrounding header content,
+            clamped to the same practical 20-96px range used by the prototype.
+        */
+        Logo.classList.add("lb-cubed-logo-measuring");
         const HeaderHeight = Math.ceil(Header.getBoundingClientRect().height);
         const ActionHeight = Math.ceil(HeaderActions.getBoundingClientRect().height);
         const Side = Math.max(20, Math.min(96, Math.max(HeaderHeight, ActionHeight)));
-        Placeholder.classList.remove("lb-cubed-logo-placeholder-measuring");
+        Logo.classList.remove("lb-cubed-logo-measuring");
 
-        Placeholder.style.width = `${Side}px`;
-        Placeholder.style.height = `${Side}px`;
-        SizeText.textContent = `${Side}px`;
+        Logo.style.width = `${Side}px`;
+        Logo.style.height = `${Side}px`;
     }
 
     function RenderMainStats(Panel, Stats) {
@@ -8410,7 +7652,7 @@
                 ================================================================
             */
 
-            .lb-cubed-logo-placeholder-measuring {
+            .lb-cubed-logo-measuring {
                 position: absolute !important;
                 visibility: hidden !important;
                 width: 0 !important;
@@ -8703,24 +7945,17 @@
                 transform: translateY(1px);
             }
 
-            .lb-cubed-logo-placeholder {
+            .lb-cubed-logo {
                 flex: 0 0 auto;
-                display: grid;
-                place-items: center;
+                display: block;
                 width: 28px;
                 height: 28px;
-                border: 1px solid rgba(76, 34, 34, 0.78);
-                background: rgba(255, 255, 255, 0.08);
-                color: rgba(48, 24, 24, 0.78);
-                font-family: Consolas, "Courier New", monospace;
-                font-size: 9px;
-                font-weight: 700;
-                line-height: 1;
-                white-space: nowrap;
-            }
-
-            .lb-cubed-logo-placeholder-size {
-                pointer-events: none;
+                max-width: 96px;
+                max-height: 96px;
+                border: 0;
+                background: transparent;
+                object-fit: contain;
+                user-select: none;
             }
 
             .lb-cubed-subtitle {

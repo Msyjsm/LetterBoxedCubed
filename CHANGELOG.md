@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.12.0
+- Released the completed v1.12 QoL/layout bundle after the beta.1-beta.20 preview cycle.
+- Replaced the bordered pixel-size logo prototype with Nathan's temporary cube PNG. The exact image is embedded in the userscript and scales with the natural LBC header height while preserving its square aspect ratio.
+- Moved the preview version label, TI/GB DOM debugger, and bootstrap diagnostics out of the production userscript into `tools/preview_runtime.js`. `tools/build_preview.py` now injects that module (and its `GM_info` grant) only into preview builds, so official releases do not ship the debugger implementation or UI.
+
 ## 1.12.0-beta.20
 - Decoupled success-toast relocation from NYT's native toast rectangle: praise now remains in the lower slot for exactly one rendered history line and relocates above TI as soon as history wraps to line two.
 - Anchored normal lower praise in the calibrated spare second-history-line slot, ending just inside the par's normal top margin. A visible par still pushes GB down, but showing/hiding the par no longer changes the toast's lower position or relocation threshold.
