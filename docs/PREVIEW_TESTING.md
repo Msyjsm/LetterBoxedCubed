@@ -37,9 +37,31 @@ The URL fragment (`#lbc-preview`) is client-side state; browsers do not send it 
 
 Each workflow run appends the monotonically increasing `github.run_number` to the source version. For example, source `1.10.3` may become preview `1.10.3.22`. This means every pushed test build has a newer Tampermonkey version even when the production `@version` has not yet been bumped.
 
+## v1.13 global word memory checks
+
+The `feature/global-word-memory-v1.13.0` preview is the sole-feature v1.13 development branch for issue #11. The current source is `1.13.0-beta.1`.
+
+- On first load, existing `LetterBoxedTracker_*` puzzle histories should seed `LetterBoxedCubed_GlobalWordHistory`; subsequent loads should reuse that index and only ingest tracker puzzle IDs not already marked indexed.
+- A word found on a prior puzzle that is structurally playable on today's board should already appear in **Found Words** with a subtly darker background and a `Previously found on another Letter Boxed puzzle` tooltip.
+- Historical playable words should count toward **Completion**, **Longest Found**, exact **Words by Length**, and the **First Words / Second Words** Hint counters and lists.
+- One historically known half of a valid current Twofer should put that row in **Partially Found** and reveal only the known half. The historically revealed half should use the darker previous-word styling.
+- If both halves of a valid current Twofer are known independently, including when both were found entirely on older puzzles, **Valid solution independently found?** should be checked and the pair itself should remain spoiler-hidden in **Individually Found**. It must not be added to the current puzzle's `FoundTwofers` until that exact chain is actually completed today.
+- A Twofer genuinely completed today must still move to **Found** normally even when one or both words were already known historically.
+- Finding a word for the first time today should keep the existing chartreuse discovery fade; if that same word was also known from an older puzzle, historical styling should remain after the fade completes.
+- Export/Drive sync should include the global history record. Merging two devices with different lifetime vocabularies should union words and cross-puzzle provenance rather than choosing one device wholesale.
+- Preview-only version/debug controls should still be injected by `tools/build_preview.py`; production source on the feature branch should retain only the inert preview hooks.
+
+## v1.13 global word memory checks
+
+- Browse History retroactively derives each puzzle's known words in chronological order. A word found on Sep 3 may appear as previously found on Sep 4 if it fits Sep 4's sides, but must never appear on Sep 1 or Sep 2 because that would leak future knowledge backward.
+- Previously found words in Browse History use the same darker styling as the live panel. When first-found provenance is available, hovering the word identifies the earlier date/puzzle. Solved Twofer constituents use the same previous-word styling independently.
+- The current day's Browse History record is overlaid from the live local puzzle and sanity-checked against the exact live KnownWordsForPuzzle / PreviouslyFoundWordsForPuzzle sets. A mismatch should emit a console warning and Browse History should use the live values.
+- Entering a historically known word for the first time today must not trigger any new-word fade/highlight. Entering a genuinely never-before-found word still highlights normally. Solving a new exact Twofer may still highlight the Twofer itself even when one or both constituent words were historical.
+- The versioned HistoricalWordProjection is included in backup/cloud sync and is rebuilt from chronological FoundWords + side metadata, never from already projected KnownWords.
+
 ## v1.12 QoL bundle checks
 
-The `feature/qol-4-10-12-13-14` preview bundles issues #4, #5, #10, #12, #13, #14, #16, #17, #18, and #19. The current source is `1.12.0`.
+The `feature/qol-4-10-12-13-14` preview bundles issues #4, #5, #10, #12, #13, #14, #16, #17, #18, and #19. The current source is `1.13.0-beta.2`.
 
 - **Adjust layout gap between text input and letter box** now uses a calibrated baseline: the closest safe TI/GB arrangement is shown as **0px**, backed internally by a 90px minimum history lane. The control then represents only additional space above that minimum, and Reset returns to 0px. The draggable horizontal grip line sits a fixed visual offset above the GB top letters rather than touching them.
 - `.lb-list-container` is an exact-height non-scrolling flex shell matching the reserved history lane. The word-count label is pinned at the top, while only the nested `.lb-word-list-container` scrolls. The TI grid track includes NYT's native TI top/bottom margins so the following GB row starts after the *rendered* TI rather than underneath it. A fixed 22px structural gutter sits between history and GB; the draggable grip line is centered in that gutter.
