@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed [PREVIEW]
 // @namespace    https://nathanburgdorff.com/userscripts/preview/
-// @version      1.13.0-beta.2.148
+// @version      1.13.0-beta.2.149
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -774,7 +774,10 @@
         ]) {
             const ElementNode = document.getElementById(Id);
             if (ElementNode) {
-                ElementNode.style.visibility = Hide ? "hidden" : "";
+                const DesiredVisibility = Hide ? "hidden" : "";
+                if (ElementNode.style.visibility !== DesiredVisibility) {
+                    ElementNode.style.visibility = DesiredVisibility;
+                }
             }
         }
     }
