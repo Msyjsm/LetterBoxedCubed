@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.13.0
+- Added persistent global word memory: words found on earlier puzzles are recognized when valid on the current board and participate in Found Words, statistics, Words by Length, Hints, and partial/independent Twofer states without auto-solving exact pairs.
+- Added compact per-word Letter Boxed signatures and a versioned lifetime-history index so current-board historical lookup remains fast without rescanning every past puzzle on normal startup.
+- Added chronological Browse History backfill so each archived day inherits only words found on earlier days, with historical styling/provenance and live-current-day parity checks.
+- Added Google Drive/export merge support for global word history and historical projections, preserving unioned vocabulary and earliest provenance.
+- Suppressed new-word discovery highlighting when a word was already known from an earlier puzzle.
+- Preview-only tooling now includes the safe History Test sandbox for deterministic historical/twofer testing; preview/debug/test code remains excluded from the production userscript.
+
 ## 1.13.0-beta.2
 - Backfilled Browse History chronologically so each retained puzzle inherits only words actually found on earlier puzzles that are structurally valid on that day's sides; future discoveries are never allowed to leak backward.
 - Browse History now renders inherited words with the same darker previously-found styling used by the live panel, including solved-twofer constituents and first-found provenance tooltips when available. Completion/Longest/Found Words use the day's known-word projection.
