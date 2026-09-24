@@ -983,6 +983,10 @@
             PreviewHistoricalBaseline = null;
         }
 
+        if (KeepActive) {
+            RecomputePreviewHistoricalSandboxState();
+        }
+
         RenderPanel();
         QueuePanelLayoutUpdate();
         UpdatePreviewHistoricalTestButton();
