@@ -14,6 +14,7 @@
     const PreviewVersionLabelId = "lb-cubed-preview-version";
 
     let PreviewDebugObserver = null;
+    let PreviewChromeObserver = null;
     let PreviewDebugRenderTimer = null;
     let PreviewDebugNextElementId = 1;
     let PreviewDebugPaneVisible = false;
@@ -95,7 +96,7 @@
         Style.textContent = `
             #${PreviewVersionLabelId} {
                 position: absolute;
-                z-index: 99999;
+                z-index: 20;
                 color: rgba(92, 92, 92, 0.78);
                 font: 10px/1.2 Consolas, "Courier New", monospace;
                 white-space: nowrap;
@@ -106,7 +107,7 @@
             #${PreviewDebugToggleButtonId},
             #${PreviewHistoryTestButtonId} {
                 position: absolute;
-                z-index: 100001;
+                z-index: 22;
                 padding: 4px 7px;
                 border: 1px solid rgba(255, 255, 255, 0.45);
                 border-radius: 3px;
@@ -132,7 +133,7 @@
             #${PreviewHistoryTestOverlayId} {
                 position: fixed;
                 inset: 0;
-                z-index: 100010;
+                z-index: 40;
                 display: flex;
                 align-items: center;
                 justify-content: center;
@@ -207,6 +208,12 @@
                 cursor: pointer;
             }
 
+            #${PreviewHistoryTestPanelId} button:disabled,
+            #${PreviewHistoryTestPanelId} select:disabled {
+                opacity: 0.45;
+                cursor: not-allowed;
+            }
+
             #${PreviewHistoryTestPanelId} select {
                 width: 100%;
                 padding: 3px 5px;
@@ -230,7 +237,7 @@
 
             #${PreviewDebugPanelId} {
                 position: fixed;
-                z-index: 100000;
+                z-index: 21;
                 width: 340px;
                 min-width: 280px;
                 max-width: min(420px, calc(100vw - 16px));
@@ -659,6 +666,78 @@
         DebugPanel.style.maxHeight = `${MaximumHeight}px`;
     }
 
+    function IsVisiblePreviewNativeDialog() {
+        const Candidates = document.querySelectorAll(
+            'dialog[open], [role="dialog"], [aria-modal="true"]'
+        );
+
+        for (const Candidate of Candidates) {
+            if (!(Candidate instanceof Element)) {
+                continue;
+            }
+
+            if (Candidate.closest(
+                `#${PreviewDebugPanelId}, #${PreviewHistoryTestOverlayId}`
+            )) {
+                continue;
+            }
+
+            const Style = getComputedStyle(Candidate);
+            const Rect = Candidate.getBoundingClientRect();
+
+            if (
+                Style.display !== "none" &&
+                Style.visibility !== "hidden" &&
+                Number(Style.opacity || 1) !== 0 &&
+                Rect.width > 0 &&
+                Rect.height > 0
+            ) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    function UpdatePreviewChromeForNativeDialog() {
+        const Hide = IsVisiblePreviewNativeDialog();
+
+        for (const Id of [
+            PreviewVersionLabelId,
+            PreviewDebugToggleButtonId,
+            PreviewHistoryTestButtonId,
+            PreviewDebugPanelId
+        ]) {
+            const ElementNode = document.getElementById(Id);
+            if (ElementNode) {
+                ElementNode.style.visibility = Hide ? "hidden" : "";
+            }
+        }
+    }
+
+    function StartPreviewChromeObserver() {
+        PreviewChromeObserver?.disconnect();
+
+        PreviewChromeObserver = new MutationObserver(() => {
+            UpdatePreviewChromeForNativeDialog();
+        });
+
+        PreviewChromeObserver.observe(document.body, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: [
+                "class",
+                "style",
+                "open",
+                "aria-hidden",
+                "aria-modal"
+            ]
+        });
+
+        UpdatePreviewChromeForNativeDialog();
+    }
+
     function StartPreviewDebugObserver() {
         if (UserscriptBuildChannel !== "preview") {
             return;
@@ -786,32 +865,32 @@
     // Preview-only historical-word sandbox
     // -------------------------------------------------------------------------
 
+    function GetPreviewHistoricalAvailableTwofers() {
+        const SolvedKeys =
+            PreviewHistoricalBaseline?.FoundTwofers ||
+            FoundTwofers;
+
+        return Twofers.filter(
+            Twofer => SolvedKeys.has(Twofer.Key)
+        );
+    }
+
     function GetPreviewHistoricalSelectedTwofer() {
         if (!PreviewHistoricalSelectedTwoferKey) {
             return null;
         }
 
-        return Twofers.find(
+        return GetPreviewHistoricalAvailableTwofers().find(
             Twofer => Twofer.Key === PreviewHistoricalSelectedTwoferKey
         ) || null;
     }
 
     function ChoosePreviewHistoricalDefaultTwofer() {
-        if (!Twofers.length) {
-            PreviewHistoricalSelectedTwoferKey = null;
-            return;
-        }
+        const AvailableTwofers =
+            GetPreviewHistoricalAvailableTwofers();
 
-        const Candidate =
-            Twofers.find(Twofer =>
-                !FoundTwofers.has(Twofer.Key) &&
-                (!KnownWordsForPuzzle.has(Twofer.First) ||
-                    !KnownWordsForPuzzle.has(Twofer.Second))
-            ) ||
-            Twofers.find(Twofer => !FoundTwofers.has(Twofer.Key)) ||
-            Twofers[0];
-
-        PreviewHistoricalSelectedTwoferKey = Candidate?.Key || null;
+        PreviewHistoricalSelectedTwoferKey =
+            AvailableTwofers[0]?.Key || null;
     }
 
     function RecomputePreviewHistoricalSandboxState() {
@@ -819,8 +898,24 @@
             return;
         }
 
+        const HistoricalBaseline = new Set(
+            PreviewHistoricalBaseline.PreviouslyFoundWordsForPuzzle
+        );
+        const SelectedTwofer =
+            GetPreviewHistoricalSelectedTwofer();
+
+        /*
+            A testable pair necessarily exists in today's real FoundTwofers.
+            Remove its two words from the real historical baseline while the
+            scenario is active so First/Second/Both/Neither are deterministic.
+        */
+        if (SelectedTwofer) {
+            HistoricalBaseline.delete(SelectedTwofer.First);
+            HistoricalBaseline.delete(SelectedTwofer.Second);
+        }
+
         PreviouslyFoundWordsForPuzzle = new Set([
-            ...PreviewHistoricalBaseline.PreviouslyFoundWordsForPuzzle,
+            ...HistoricalBaseline,
             ...PreviewHistoricalInjectedWords
         ]);
 
@@ -868,7 +963,19 @@
 
         PreviewHistoricalInjectedWords = new Set();
 
-        if (!KeepActive) {
+        if (KeepActive) {
+            const SelectedTwofer =
+                GetPreviewHistoricalSelectedTwofer();
+
+            if (SelectedTwofer) {
+                FoundTwofers.delete(SelectedTwofer.Key);
+                FoundWords.delete(SelectedTwofer.First);
+                FoundWords.delete(SelectedTwofer.Second);
+                RecentWordHighlights.delete(SelectedTwofer.First);
+                RecentWordHighlights.delete(SelectedTwofer.Second);
+                RecentTwoferHighlights.delete(SelectedTwofer.Key);
+            }
+        } else {
             PreviewHistoricalTestModeActive = false;
             PreviewHistoricalBaseline = null;
         }
@@ -901,6 +1008,7 @@
         PreviewHistoricalTestModeActive = true;
         PreviewHistoricalInjectedWords = new Set();
         ChoosePreviewHistoricalDefaultTwofer();
+        RestorePreviewHistoricalBaseline({ KeepActive: true });
         RecomputePreviewHistoricalSandboxState();
         UpdatePreviewHistoricalTestButton();
 
@@ -1010,6 +1118,9 @@
         Button.title = PreviewHistoricalTestModeActive
             ? "Historical-word sandbox is active. Google Drive sync and LBC progress writes are paused."
             : "Open preview-only historical-word/twofer sandbox";
+
+        /* Keep the Debug button anchored; the longer ACTIVE label grows left. */
+        PositionPreviewDebugPane();
     }
 
     function RenderPreviewHistoricalTestPanel() {
@@ -1018,12 +1129,15 @@
             return;
         }
 
+        const AvailableTwofers =
+            GetPreviewHistoricalAvailableTwofers();
+        const HasTestableTwofer = AvailableTwofers.length > 0;
         const Select = Panel.querySelector("select[data-lbc-history-test-twofer]");
         if (Select) {
             const ExistingValue = PreviewHistoricalSelectedTwoferKey || "";
             Select.replaceChildren();
 
-            for (const Twofer of Twofers) {
+            for (const Twofer of AvailableTwofers) {
                 const Option = document.createElement("option");
                 Option.value = Twofer.Key;
                 const Category = GetTwoferCategory(Twofer);
@@ -1039,7 +1153,20 @@
             } else if (Select.options.length) {
                 Select.selectedIndex = 0;
                 PreviewHistoricalSelectedTwoferKey = Select.value;
+            } else {
+                PreviewHistoricalSelectedTwoferKey = null;
             }
+
+            Select.disabled = !HasTestableTwofer;
+        }
+
+        for (const Button of Panel.querySelectorAll("button")) {
+            if (Button.dataset.lbcHistoryTestExit === "true") {
+                Button.disabled = false;
+                continue;
+            }
+
+            Button.disabled = !HasTestableTwofer;
         }
 
         const Status = Panel.querySelector(".lbc-history-test-status");
@@ -1050,7 +1177,9 @@
         }
 
         if (!Twofer) {
-            Status.textContent = "No valid twofers are available for this puzzle.";
+            Status.textContent =
+                "No twofers found today are available for safe testing. " +
+                "Solve a twofer normally, then reopen History Test.";
             return;
         }
 
@@ -1209,6 +1338,7 @@
 
         const Exit = document.createElement("button");
         Exit.type = "button";
+        Exit.dataset.lbcHistoryTestExit = "true";
         Exit.textContent = "EXIT TEST MODE + restore real state";
         Exit.addEventListener("click", () => {
             Overlay.remove();
@@ -1437,6 +1567,7 @@
         RenderPreviewDebugPane();
 
         CreatePreviewHistoricalTestControls();
+        StartPreviewChromeObserver();
 
         window.addEventListener(
             "resize",
