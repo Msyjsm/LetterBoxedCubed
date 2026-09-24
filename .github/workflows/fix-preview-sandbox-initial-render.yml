@@ -1,0 +1,51 @@
+name: Fix preview sandbox initial render
+
+on:
+  push:
+    branches:
+      - feature/global-word-memory-v1.13.0
+    paths:
+      - .github/workflows/fix-preview-sandbox-initial-render.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/global-word-memory-v1.13.0
+          fetch-depth: 0
+
+      - name: Fix initial sandbox render
+        run: python tools/fix_preview_sandbox_initial_render.py
+
+      - name: Validate generated preview
+        run: |
+          node --check tools/preview_runtime.js
+          python tools/build_preview.py \
+            --source LetterBoxedCubed.user.js \
+            --output "$RUNNER_TEMP/LetterBoxedCubed.preview.user.js" \
+            --preview-url "https://raw.githubusercontent.com/Msyjsm/LetterBoxedCubed/preview/LetterBoxedCubed.preview.user.js" \
+            --build-number "1315" \
+            --preview-hash "#lbc-preview"
+          node --check "$RUNNER_TEMP/LetterBoxedCubed.preview.user.js"
+
+      - name: Commit initial-render fix
+        run: |
+          git config user.name "Nathan Burgdorff + Ari (ChatGPT)"
+          git config user.email "6709230+Msyjsm@users.noreply.github.com"
+          git rm .github/workflows/fix-preview-sandbox-initial-render.yml
+          git rm tools/fix_preview_sandbox_initial_render.py
+          git add tools/preview_runtime.js
+          git commit -m "Fix preview sandbox initial scenario render"
+          git push origin HEAD:feature/global-word-memory-v1.13.0
+
+      - name: Rebuild Preview from finalized source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run preview-channel.yml --ref feature/global-word-memory-v1.13.0
