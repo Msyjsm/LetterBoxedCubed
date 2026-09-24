@@ -710,7 +710,10 @@
         ]) {
             const ElementNode = document.getElementById(Id);
             if (ElementNode) {
-                ElementNode.style.visibility = Hide ? "hidden" : "";
+                const DesiredVisibility = Hide ? "hidden" : "";
+                if (ElementNode.style.visibility !== DesiredVisibility) {
+                    ElementNode.style.visibility = DesiredVisibility;
+                }
             }
         }
     }
