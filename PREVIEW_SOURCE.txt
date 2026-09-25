@@ -1,5 +1,5 @@
 Generated userscript preview. Do not edit this branch directly.
 Source branch: bugfix/issue-1-nonterminal-bootstrap
-Source commit: 29f01e1e7b399dc1ea0ac557d29ebb52e0834165
-Workflow run: 36178278812
+Source commit: 6de2039cbf78fb5bdf808728527389620350bf15
+Workflow run: 36178399145
 Preview selector: #lbc-preview

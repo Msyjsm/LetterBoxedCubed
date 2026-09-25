@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed [PREVIEW]
 // @namespace    https://nathanburgdorff.com/userscripts/preview/
-// @version      1.13.0.162
+// @version      1.13.0.163
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -1965,15 +1965,37 @@
 
         return new Promise((Resolve) => {
             const StartTime = Date.now();
-            const TimeoutMs = 20000;
+            const LongWaitDiagnosticMs = 20000;
+            const PollIntervalMs = 1000;
             let SawGameData = false;
             let SawWordContainer = false;
             let SawSquareContainer = false;
+            let LoggedLongWait = false;
+            let Observer = null;
+            let Timer = null;
 
-            const Timer = setInterval(() => {
-                const HasGameData =
+            const Cleanup = () => {
+                if (Timer) {
+                    clearInterval(Timer);
+                    Timer = null;
+                }
+
+                Observer?.disconnect();
+                Observer = null;
+
+                window.removeEventListener("focus", CheckReadiness);
+                window.removeEventListener("pageshow", CheckReadiness);
+                document.removeEventListener(
+                    "visibilitychange",
+                    CheckReadiness
+                );
+            };
+
+            const CheckReadiness = () => {
+                const HasGameData = Boolean(
                     PageWindow.gameData &&
-                    Array.isArray(PageWindow.gameData.dictionary);
+                    Array.isArray(PageWindow.gameData.dictionary)
+                );
                 const HasWordContainer = Boolean(document.querySelector(
                     ".lb-game-container .lb-word-container"
                 ));
@@ -1995,7 +2017,7 @@
                 }
 
                 if (HasGameData && HasWordContainer && HasSquareContainer) {
-                    clearInterval(Timer);
+                    Cleanup();
                     RecordBootstrapDiagnostic("wait-for-game-ready", {
                         ElapsedMs: Date.now() - StartTime
                     });
@@ -2003,16 +2025,55 @@
                     return;
                 }
 
-                if (Date.now() - StartTime >= TimeoutMs) {
-                    clearInterval(Timer);
-                    RecordBootstrapDiagnostic("wait-for-game-timeout", {
-                        HasGameData: Boolean(HasGameData),
+                if (
+                    !LoggedLongWait &&
+                    Date.now() - StartTime >= LongWaitDiagnosticMs
+                ) {
+                    LoggedLongWait = true;
+                    RecordBootstrapDiagnostic("wait-for-game-still-waiting", {
+                        HasGameData,
                         HasWordContainer,
                         HasSquareContainer
                     });
-                    Resolve(false);
+
+                    console.info(
+                        "[Letter Boxed Cubed] Waiting for NYT to start Letter Boxed."
+                    );
                 }
-            }, 250);
+            };
+
+            /*
+                NYT can legitimately leave Letter Boxed on its pre-game splash
+                screen indefinitely. gameData may already exist while the word
+                and square containers do not appear until Start Game is clicked.
+                A fixed timeout therefore turns a valid NYT state into a fatal
+                Cubed bootstrap failure. Watch DOM creation instead, while a
+                low-frequency poll covers gameData changes that need not mutate
+                the DOM. Focus/visibility/pageshow checks make restored tabs
+                react immediately when Chrome wakes them.
+            */
+            Observer = new MutationObserver(CheckReadiness);
+            Observer.observe(
+                document.documentElement,
+                {
+                    childList: true,
+                    subtree: true
+                }
+            );
+
+            Timer = setInterval(
+                CheckReadiness,
+                PollIntervalMs
+            );
+
+            window.addEventListener("focus", CheckReadiness);
+            window.addEventListener("pageshow", CheckReadiness);
+            document.addEventListener(
+                "visibilitychange",
+                CheckReadiness
+            );
+
+            CheckReadiness();
         });
     }
 
