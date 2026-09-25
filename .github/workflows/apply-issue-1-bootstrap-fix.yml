@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   patch:
-    if: github.event.head_commit.message == 'Add issue #1 bootstrap fix workflow'
+    if: "${{ github.event.head_commit.message == 'Fix issue 1 bootstrap workflow' }}"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
