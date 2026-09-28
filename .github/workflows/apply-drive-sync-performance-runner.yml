@@ -28,7 +28,16 @@ jobs:
           start = text.index(start_marker) + len(start_marker)
           end = text.index(end_marker, start)
           lines = text[start:end].splitlines()
-          script_lines = [line[10:] if line.startswith('          ') else line for line in lines]
+          script_lines = []
+          in_triple = False
+          for line in lines:
+              if not in_triple and line.startswith('          '):
+                  output = line[10:]
+              else:
+                  output = line
+              script_lines.append(output)
+              if line.count("'''") % 2 == 1:
+                  in_triple = not in_triple
           script = '\n'.join(script_lines) + '\n'
           Path('/tmp/apply_drive_sync_perf.py').write_text(script, encoding='utf-8')
           PY
