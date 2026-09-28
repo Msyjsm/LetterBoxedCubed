@@ -1033,6 +1033,15 @@
 
         RestorePreviewHistoricalBaseline();
 
+        if (
+            CloudSyncDirty &&
+            CloudSyncSessionReady &&
+            !CloudSyncInFlight &&
+            CloudSyncConflictRevision === null
+        ) {
+            QueueCloudPush(250);
+        }
+
         console.info(
             "[Letter Boxed Cubed][preview] Historical test mode disabled; " +
             "real LBC state restored."
