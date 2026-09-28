@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed
 // @namespace    https://nathanburgdorff.com/userscripts/
-// @version      1.13.0
+// @version      1.13.1-beta.1
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -241,6 +241,14 @@
     let CloudSyncTimer = null;
     let CloudSyncInFlight = false;
     let CloudSyncPending = false;
+    let CloudSyncDirty = false;
+    let CloudSyncGeneration = 0;
+    let CloudSyncSessionReady = false;
+    let CloudExpectedRevision = null;
+    let CloudSyncConflictRevision = null;
+    let CloudSyncSuppressDirty = false;
+    let CloudCachedPayload = null;
+    let CloudCachedPayloadGeneration = -1;
     let CloudSyncStatus = "Off";
     let LastCloudSyncAt = null;
     let LastCloudSyncError = null;
@@ -327,7 +335,7 @@
         window.addEventListener("resize", QueuePanelLayoutUpdate);
 
         if (GoogleDriveConfig?.Enabled) {
-            ScheduleCloudSync(750);
+            QueueInitialGoogleDriveSync();
         }
 
         RecordBootstrapDiagnostic("initialize-complete", {
@@ -2371,7 +2379,8 @@
 
     function BuildNormalizedPuzzleExport(
         PuzzleId,
-        StorageSnapshot
+        StorageSnapshot,
+        HistoricalProjection = null
     ) {
         const WordKey =
             "LetterBoxedTracker_" + PuzzleId;
@@ -2406,11 +2415,19 @@
                 .sort(Alphabetically)
             : [];
 
-        const HistoricalProjection = NormalizeHistoricalWordProjection(
-            StorageSnapshot[HistoricalWordProjectionStorageKey]
-        );
+        /*
+            Historical projection normalization used to happen once PER puzzle
+            during every export. Pass one already-loaded projection through the
+            complete export instead; this was the dominant CPU cost in the
+            performance trace that led to issue #28.
+        */
+        const Projection = HistoricalProjection ||
+            NormalizeHistoricalWordProjection(
+                StorageSnapshot[HistoricalWordProjectionStorageKey],
+                true
+            );
         const HistoricalProjectionEntry =
-            HistoricalProjection.Puzzles[PuzzleId] || null;
+            Projection.Puzzles?.[PuzzleId] || null;
         const ProjectedPreviousWords =
             HistoricalProjectionEntry?.PreviouslyFoundWords || [];
         const ProjectedKnownWords = [...new Set([
@@ -2496,14 +2513,41 @@
         };
     }
 
-    function BuildExportData() {
-        const Keys = GetExportStorageKeys();
+    function BuildStorageSnapshot({ IncludeDeviceState = true } = {}) {
         const StorageSnapshot = {};
 
-        for (const Key of Keys) {
+        for (const Key of GetExportStorageKeys()) {
+            if (!IncludeDeviceState && DeviceLocalStorageKeys.includes(Key)) {
+                continue;
+            }
+
             StorageSnapshot[Key] = GM_getValue(Key, null);
         }
 
+        return StorageSnapshot;
+    }
+
+    function GetHistoricalProjectionForExport(StorageSnapshot) {
+        if (
+            HistoricalWordProjection?.Version ===
+                HistoricalWordProjectionVersion
+        ) {
+            return HistoricalWordProjection;
+        }
+
+        const Stored =
+            StorageSnapshot[HistoricalWordProjectionStorageKey];
+
+        return Stored?.Version === HistoricalWordProjectionVersion
+            ? Stored
+            : NormalizeHistoricalWordProjection(Stored);
+    }
+
+    function BuildExportData() {
+        const StorageSnapshot = BuildStorageSnapshot();
+        const Keys = Object.keys(StorageSnapshot).sort(Alphabetically);
+        const HistoricalProjection =
+            GetHistoricalProjectionForExport(StorageSnapshot);
         const PuzzleIds = new Set();
 
         for (const Key of Keys) {
@@ -2518,26 +2562,11 @@
             .map(PuzzleId =>
                 BuildNormalizedPuzzleExport(
                     PuzzleId,
-                    StorageSnapshot
+                    StorageSnapshot,
+                    HistoricalProjection
                 )
             )
-            .sort((A, B) => {
-                if (A.PrintDate && B.PrintDate) {
-                    return A.PrintDate.localeCompare(B.PrintDate);
-                }
-
-                const NumericA = Number(A.PuzzleId);
-                const NumericB = Number(B.PuzzleId);
-
-                if (
-                    Number.isFinite(NumericA) &&
-                    Number.isFinite(NumericB)
-                ) {
-                    return NumericA - NumericB;
-                }
-
-                return Alphabetically(A.PuzzleId, B.PuzzleId);
-            });
+            .sort(CompareHistoryPuzzles);
 
         return {
             Format: ExportFormatName,
@@ -2574,6 +2603,7 @@
                 before taking the snapshot.
             */
             UpdateCurrentPuzzleMetadata();
+            RebuildHistoricalWordProjectionFromStorage();
 
             const ExportData = BuildExportData();
             const Json = JSON.stringify(ExportData, null, 2);
@@ -2632,6 +2662,17 @@
             throw new Error(
                 "This is not a Letter Boxed Cubed backup file."
             );
+        }
+
+        const RawVersion = Number(RawBackup.FormatVersion);
+
+        /*
+            Current-schema backups are immutable inputs to every merge path.
+            Returning them directly avoids a full structuredClone of the entire
+            retained history on every Drive reconciliation.
+        */
+        if (RawVersion === ExportFormatVersion) {
+            return RawBackup;
         }
 
         let Backup = structuredClone(RawBackup);
@@ -3130,7 +3171,10 @@
 
     function MergeBackupIntoStorage(
         RawBackup,
-        { IncludeDeviceState = true } = {}
+        {
+            IncludeDeviceState = true,
+            TrackRemoteDifferences = false
+        } = {}
     ) {
         const Backup = MigrateBackupToCurrent(RawBackup);
         const Snapshot = Backup.StorageSnapshot;
@@ -3143,7 +3187,9 @@
 
         let ChangedKeys = 0;
         let ConsideredKeys = 0;
+        let RemoteNeedsUpdate = false;
         const ChangedTrackerKeys = [];
+        const ConsideredSnapshotKeys = new Set();
 
         for (const Key of Object.keys(Snapshot)) {
             if (!IsAllowedExportStorageKey(Key)) {
@@ -3155,6 +3201,7 @@
             }
 
             ConsideredKeys++;
+            ConsideredSnapshotKeys.add(Key);
 
             const LocalValue = GM_getValue(Key, null);
             const MergedValue = MergeStorageValue(
@@ -3162,6 +3209,13 @@
                 LocalValue,
                 Snapshot[Key]
             );
+
+            if (
+                TrackRemoteDifferences &&
+                !ValuesEqual(Snapshot[Key], MergedValue)
+            ) {
+                RemoteNeedsUpdate = true;
+            }
 
             if (!ValuesEqual(LocalValue, MergedValue)) {
                 GM_setValue(
@@ -3177,11 +3231,34 @@
 
         if (MergeTrackerKeysIntoStoredGlobalWordHistory(ChangedTrackerKeys)) {
             ChangedKeys++;
+            RemoteNeedsUpdate = TrackRemoteDifferences || RemoteNeedsUpdate;
+        }
+
+        if (TrackRemoteDifferences) {
+            /*
+                A remote snapshot can be internally valid yet simply predate a
+                local storage key. Missing local keys also mean the remote copy
+                needs one write after reconciliation.
+            */
+            for (const Key of GetExportStorageKeys()) {
+                if (!IncludeDeviceState && DeviceLocalStorageKeys.includes(Key)) {
+                    continue;
+                }
+
+                if (
+                    !ConsideredSnapshotKeys.has(Key) &&
+                    GM_getValue(Key, null) !== null
+                ) {
+                    RemoteNeedsUpdate = true;
+                    break;
+                }
+            }
         }
 
         return {
             ConsideredKeys,
-            ChangedKeys
+            ChangedKeys,
+            RemoteNeedsUpdate
         };
     }
 
@@ -3377,14 +3454,6 @@
     }
 
     async function OpenCloudHistoryBrowser() {
-        if (!GoogleDriveConfig?.Enabled) {
-            alert(
-                "Google Drive sync is not configured.\n\n" +
-                "Use Drive: Setup first, then Browse History can read the synced cloud backup."
-            );
-            return;
-        }
-
         if (document.getElementById(HistoryOverlayId)) {
             return;
         }
@@ -3392,19 +3461,12 @@
         SetBrowseHistoryButtonLoading(true);
 
         try {
-            const Remote = await GoogleDriveBridgeRequest("Read");
-
-            if (!Remote.Data) {
-                alert(
-                    "The Google Drive backup is currently empty.\n\n" +
-                    "Run a Drive sync first, then try Browse History again."
-                );
-                return;
-            }
-
-            const Backup = MigrateBackupToCurrent(
-                Remote.Data
-            );
+            /*
+                The initial Drive reconciliation already merged cloud history
+                into local storage. Do not poll Drive again just to browse it:
+                build the browser from this session's canonical local state.
+            */
+            const Backup = BuildExportData();
 
             let Puzzles = (
                 Array.isArray(Backup.Puzzles)
@@ -3424,7 +3486,7 @@
 
             if (!Puzzles.length) {
                 alert(
-                    "The synced Google Drive backup does not contain any puzzle history yet."
+                    "Letter Boxed Cubed does not contain any retained puzzle history yet."
                 );
                 return;
             }
@@ -3435,16 +3497,16 @@
             CreateHistoryBrowser(
                 Puzzles,
                 InitialIndex,
-                Number(Remote.Revision) || 0
+                CloudExpectedRevision
             );
         } catch (Error) {
             console.error(
-                "[Letter Boxed Cubed] Could not browse Google Drive history.",
+                "[Letter Boxed Cubed] Could not browse local history.",
                 Error
             );
 
             alert(
-                "Letter Boxed Cubed could not load the Google Drive history.\n\n" +
+                "Letter Boxed Cubed could not load the retained history.\n\n" +
                 (Error?.message || String(Error))
             );
         } finally {
@@ -3484,7 +3546,9 @@
         const CloudLabel = document.createElement("div");
         CloudLabel.className = "lb-cubed-history-cloud-label";
         CloudLabel.textContent =
-            `Google Drive revision ${CloudRevision.toLocaleString()}`;
+            GoogleDriveConfig?.Enabled && Number.isFinite(CloudRevision)
+                ? `Local history · Drive revision ${CloudRevision.toLocaleString()}`
+                : "Local history";
 
         HeadingBlock.append(
             Heading,
@@ -4049,6 +4113,26 @@
     // Google Drive cloud sync (via user-owned Apps Script bridge)
     // -------------------------------------------------------------------------
 
+    function ResetCloudSyncSessionState() {
+        if (CloudSyncTimer) {
+            clearTimeout(CloudSyncTimer);
+            CloudSyncTimer = null;
+        }
+
+        CloudSyncInFlight = false;
+        CloudSyncPending = false;
+        CloudSyncDirty = false;
+        CloudSyncGeneration = 0;
+        CloudSyncSessionReady = false;
+        CloudExpectedRevision = null;
+        CloudSyncConflictRevision = null;
+        CloudSyncSuppressDirty = false;
+        CloudCachedPayload = null;
+        CloudCachedPayloadGeneration = -1;
+        LastCloudSyncAt = null;
+        LastCloudSyncError = null;
+    }
+
     function LoadGoogleDriveConfig() {
         const Saved = GM_getValue(
             GoogleDriveConfigStorageKey,
@@ -4056,6 +4140,7 @@
         );
 
         GoogleDriveConfig = NormalizeGoogleDriveConfig(Saved);
+        ResetCloudSyncSessionState();
         CloudSyncStatus = GoogleDriveConfig?.Enabled
             ? "Ready"
             : "Off";
@@ -4109,8 +4194,8 @@
             ) {
                 GoogleDriveConfig = null;
                 SaveGoogleDriveConfig();
+                ResetCloudSyncSessionState();
                 CloudSyncStatus = "Off";
-                LastCloudSyncError = null;
                 UpdateGoogleDriveButton();
             }
             return;
@@ -4148,15 +4233,49 @@
         };
 
         SaveGoogleDriveConfig();
+        ResetCloudSyncSessionState();
         CloudSyncStatus = "Ready";
-        LastCloudSyncError = null;
         UpdateGoogleDriveButton();
 
         SyncWithGoogleDrive({ Manual: true });
     }
 
-    function ScheduleCloudSync(DelayMs = CloudSyncDebounceMs) {
-        if (!GoogleDriveConfig?.Enabled) {
+    function InvalidateCloudPayloadCache() {
+        CloudCachedPayload = null;
+        CloudCachedPayloadGeneration = -1;
+    }
+
+    function MarkCloudSyncDirty() {
+        if (CloudSyncSuppressDirty) {
+            return false;
+        }
+
+        CloudSyncDirty = true;
+        CloudSyncGeneration++;
+        InvalidateCloudPayloadCache();
+
+        if (CloudSyncConflictRevision !== null) {
+            CloudSyncStatus = "Conflict";
+        } else {
+            CloudSyncStatus = "Pending";
+        }
+
+        UpdateGoogleDriveButton();
+        return true;
+    }
+
+    function QueueCloudPush(DelayMs = CloudSyncDebounceMs) {
+        if (
+            !GoogleDriveConfig?.Enabled ||
+            !CloudSyncDirty ||
+            !CloudSyncSessionReady ||
+            CloudSyncConflictRevision !== null
+        ) {
+            return;
+        }
+
+        if (CloudSyncInFlight) {
+            CloudSyncPending = true;
             return;
         }
 
@@ -4173,23 +4292,76 @@
         );
     }
 
+    function ScheduleCloudSync(DelayMs = CloudSyncDebounceMs) {
+        if (!GoogleDriveConfig?.Enabled) {
+            return;
+        }
+
+        if (!MarkCloudSyncDirty()) {
+            return;
+        }
+
+        QueueCloudPush(DelayMs);
+    }
+
+    function QueueInitialGoogleDriveSync() {
+        const Run = () => SyncWithGoogleDrive({ Initial: true });
+
+        if (typeof requestIdleCallback === "function") {
+            requestIdleCallback(Run, { timeout: 1500 });
+        } else {
+            setTimeout(Run, 750);
+        }
+    }
+
     function BuildCloudSyncData() {
         if (GameData && PuzzleMetadataStorageKey) {
             UpdateCurrentPuzzleMetadata();
         }
 
-        const Data = BuildExportData();
-
         /*
-            Manual backups retain device-local layout preferences. Cloud sync
-            deliberately omits them so a laptop cannot rewrite a desktop's
-            preferred physical panel width (and vice versa).
+            Cloud synchronization only needs the lossless storage snapshot.
+            The normalized Puzzles collection is an analysis/export view and
+            was responsible for most of the multi-second gameplay stalls. A
+            receiving LBC instance can rebuild that view locally from exactly
+            the same StorageSnapshot when Browse History or Export is requested.
         */
-        for (const Key of DeviceLocalStorageKeys) {
-            delete Data.StorageSnapshot[Key];
+        const StorageSnapshot = BuildStorageSnapshot({
+            IncludeDeviceState: false
+        });
+        const PuzzleCount = Object.keys(StorageSnapshot)
+            .filter(Key => Key.startsWith("LetterBoxedTracker_"))
+            .length;
+
+        return {
+            Format: ExportFormatName,
+            FormatVersion: ExportFormatVersion,
+            ExportedAt: new Date().toISOString(),
+            CurrentPuzzleId: PuzzleStorageId,
+            PuzzleCount,
+            Puzzles: [],
+            GuiState: StorageSnapshot[GuiStateStorageKey] ||
+                CreateEmptyGuiState(),
+            CustomDictionary: Array.isArray(
+                StorageSnapshot[CustomDictionaryStorageKey]
+            )
+                ? StorageSnapshot[CustomDictionaryStorageKey]
+                : [],
+            StorageSnapshot
+        };
+    }
+
+    function GetCachedCloudSyncData() {
+        if (
+            CloudCachedPayload &&
+            CloudCachedPayloadGeneration === CloudSyncGeneration
+        ) {
+            return CloudCachedPayload;
         }
 
-        return Data;
+        CloudCachedPayload = BuildCloudSyncData();
+        CloudCachedPayloadGeneration = CloudSyncGeneration;
+        return CloudCachedPayload;
     }
 
     function GoogleDriveBridgeRequest(Action, Payload = {}) {
@@ -4253,11 +4425,189 @@
         });
     }
 
-    async function SyncWithGoogleDrive({ Manual = false } = {}) {
+    function HasCloudExportableData() {
+        return GetExportStorageKeys().some(
+            Key =>
+                !DeviceLocalStorageKeys.includes(Key) &&
+                GM_getValue(Key, null) !== null
+        );
+    }
+
+    async function ReconcileGoogleDrive() {
+        for (let Attempt = 0; Attempt < 3; Attempt++) {
+            const Remote = await GoogleDriveBridgeRequest("Read");
+            const RemoteRevision = Number(Remote.Revision) || 0;
+            let MergeStats = {
+                ChangedKeys: 0,
+                RemoteNeedsUpdate: !Remote.Data
+            };
+
+            CloudExpectedRevision = RemoteRevision;
+            CloudSyncConflictRevision = null;
+
+            if (Remote.Data) {
+                MergeStats = MergeBackupIntoStorage(
+                    Remote.Data,
+                    {
+                        IncludeDeviceState: false,
+                        TrackRemoteDifferences: true
+                    }
+                );
+            } else {
+                MergeStats.RemoteNeedsUpdate = HasCloudExportableData();
+            }
+
+            if (MergeStats.ChangedKeys > 0) {
+                CloudSyncSuppressDirty = true;
+                try {
+                    ReloadRuntimeStateFromStorage();
+                } finally {
+                    CloudSyncSuppressDirty = false;
+                }
+                InvalidateCloudPayloadCache();
+            }
+
+            CloudSyncSessionReady = true;
+
+            /*
+                Dirty is only a hint that local state changed since our last
+                successful cloud operation. The reconciliation itself can prove
+                that Drive already contains the same merged state, in which case
+                there is genuinely nothing to write.
+            */
+            if (!MergeStats.RemoteNeedsUpdate) {
+                CloudSyncDirty = false;
+                CloudSyncPending = false;
+                InvalidateCloudPayloadCache();
+                LastCloudSyncAt = new Date().toISOString();
+                CloudSyncStatus = "Synced";
+                return true;
+            }
+
+            const PushGeneration = CloudSyncGeneration;
+            const LocalData = GetCachedCloudSyncData();
+            const Write = await GoogleDriveBridgeRequest(
+                "Write",
+                {
+                    ExpectedRevision: RemoteRevision,
+                    Data: LocalData
+                }
+            );
+
+            if (Write.Status === "conflict") {
+                CloudSyncConflictRevision = Number(Write.Revision) || 0;
+                CloudExpectedRevision = RemoteRevision;
+                InvalidateCloudPayloadCache();
+                continue;
+            }
+
+            if (Write.Status !== "ok") {
+                throw new Error(
+                    Write.Message || "Google Drive sync write failed."
+                );
+            }
+
+            CloudExpectedRevision = Number(Write.Revision) ||
+                (RemoteRevision + 1);
+            CloudSyncConflictRevision = null;
+            LastCloudSyncAt = new Date().toISOString();
+
+            if (CloudSyncGeneration === PushGeneration) {
+                CloudSyncDirty = false;
+            }
+
+            CloudSyncStatus = CloudSyncDirty
+                ? "Pending"
+                : "Synced";
+            return true;
+        }
+
+        const Error = new Error(
+            "Google Drive changed repeatedly during reconciliation. Click Drive: Sync again after the other LBC session is finished."
+        );
+        Error.IsCloudConflict = true;
+        throw Error;
+    }
+
+    async function PushGoogleDriveChanges() {
+        if (!CloudSyncDirty) {
+            return true;
+        }
+
+        if (
+            !CloudSyncSessionReady ||
+            CloudExpectedRevision === null ||
+            CloudSyncConflictRevision !== null
+        ) {
+            return false;
+        }
+
+        const PushGeneration = CloudSyncGeneration;
+        const LocalData = GetCachedCloudSyncData();
+        const Write = await GoogleDriveBridgeRequest(
+            "Write",
+            {
+                ExpectedRevision: CloudExpectedRevision,
+                Data: LocalData
+            }
+        );
+
+        if (Write.Status === "conflict") {
+            CloudSyncConflictRevision = Number(Write.Revision) || 0;
+            CloudSyncStatus = "Conflict";
+            LastCloudSyncError = new Error(
+                `Google Drive changed in another LBC session (remote revision ${CloudSyncConflictRevision}). Click Drive: Sync to reconcile.`
+            );
+
+            console.warn(
+                "[Letter Boxed Cubed] Automatic Drive upload stopped because the remote revision changed.",
+                {
+                    ExpectedRevision: CloudExpectedRevision,
+                    RemoteRevision: CloudSyncConflictRevision
+                }
+            );
+            return false;
+        }
+
+        if (Write.Status !== "ok") {
+            throw new Error(
+                Write.Message || "Google Drive sync write failed."
+            );
+        }
+
+        CloudExpectedRevision = Number(Write.Revision) ||
+            (CloudExpectedRevision + 1);
+        CloudSyncConflictRevision = null;
+        LastCloudSyncAt = new Date().toISOString();
+
+        if (CloudSyncGeneration === PushGeneration) {
+            CloudSyncDirty = false;
+        }
+
+        CloudSyncStatus = CloudSyncDirty
+            ? "Pending"
+            : "Synced";
+        return true;
+    }
+
+    async function SyncWithGoogleDrive({ Manual = false, Initial = false } = {}) {
         if (!GoogleDriveConfig?.Enabled) {
             if (Manual) {
                 ConfigureGoogleDriveSync();
             }
+            return;
+        }
+
+        const IsReconciliation = Manual || Initial;
+
+        if (
+            !IsReconciliation &&
+            (
+                !CloudSyncDirty ||
+                !CloudSyncSessionReady ||
+                CloudSyncConflictRevision !== null
+            )
+        ) {
             return;
         }
 
@@ -4272,60 +4622,16 @@
         LastCloudSyncError = null;
         UpdateGoogleDriveButton();
 
+        let AllowAutomaticFollowup = false;
+
         try {
-            let Completed = false;
-
-            for (let Attempt = 0; Attempt < 3 && !Completed; Attempt++) {
-                const Remote = await GoogleDriveBridgeRequest("Read");
-                const RemoteRevision = Number(Remote.Revision) || 0;
-                let RemoteChangedLocal = false;
-
-                if (Remote.Data) {
-                    const RemoteBackup = MigrateBackupToCurrent(Remote.Data);
-                    const MergeStats = MergeBackupIntoStorage(
-                        RemoteBackup,
-                        { IncludeDeviceState: false }
-                    );
-
-                    RemoteChangedLocal = MergeStats.ChangedKeys > 0;
-                }
-
-                if (RemoteChangedLocal) {
-                    ReloadRuntimeStateFromStorage();
-                }
-
-                const LocalData = BuildCloudSyncData();
-                const Write = await GoogleDriveBridgeRequest(
-                    "Write",
-                    {
-                        ExpectedRevision: RemoteRevision,
-                        Data: LocalData
-                    }
-                );
-
-                if (Write.Status === "conflict") {
-                    continue;
-                }
-
-                if (Write.Status !== "ok") {
-                    throw new Error(
-                        Write.Message || "Google Drive sync write failed."
-                    );
-                }
-
-                Completed = true;
-                LastCloudSyncAt = new Date().toISOString();
-            }
-
-            if (!Completed) {
-                throw new Error(
-                    "Google Drive changed repeatedly during sync. Please try again."
-                );
-            }
-
-            CloudSyncStatus = "Synced";
+            AllowAutomaticFollowup = IsReconciliation
+                ? await ReconcileGoogleDrive()
+                : await PushGoogleDriveChanges();
         } catch (Error) {
-            CloudSyncStatus = "Error";
+            CloudSyncStatus = Error?.IsCloudConflict
+                ? "Conflict"
+                : "Error";
             LastCloudSyncError = Error;
 
             console.error(
@@ -4343,9 +4649,15 @@
             CloudSyncInFlight = false;
             UpdateGoogleDriveButton();
 
-            if (CloudSyncPending) {
-                CloudSyncPending = false;
-                ScheduleCloudSync(250);
+            const HadPendingChanges = CloudSyncPending;
+            CloudSyncPending = false;
+
+            if (
+                AllowAutomaticFollowup &&
+                (HadPendingChanges || CloudSyncDirty) &&
+                CloudSyncConflictRevision === null
+            ) {
+                QueueCloudPush(250);
             }
         }
     }
@@ -4388,21 +4700,35 @@
 
         const ButtonTextByStatus = {
             Ready: "Drive: Sync",
+            Pending: "Drive: Pending",
             Syncing: "Drive: Syncing…",
             Synced: "Drive: ✓",
+            Conflict: "Drive: Reconcile",
             Error: "Drive: Error"
         };
 
         const StatusTextByStatus = {
             Ready: "Drive: Ready",
+            Pending: "Drive: Pending",
             Syncing: "Drive: Syncing…",
             Synced: "Drive: Synced",
+            Conflict: "Drive: Conflict",
             Error: "Drive: Error"
         };
 
         StatusParts.push(
-            "Use Settings to sync now; Shift-click the Drive button there to reconfigure or disconnect."
+            "Drive is read once when LBC loads; later local changes are pushed without polling. Use Settings to reconcile manually; Shift-click there to reconfigure or disconnect."
         );
+
+        if (CloudSyncDirty) {
+            StatusParts.push("Local changes are waiting to upload.");
+        }
+
+        if (CloudSyncConflictRevision !== null) {
+            StatusParts.push(
+                `Remote revision ${CloudSyncConflictRevision} changed in another LBC session; automatic uploads are paused until manual Sync reconciles it.`
+            );
+        }
 
         if (LastCloudSyncAt) {
             StatusParts.push(
@@ -4500,11 +4826,30 @@
         };
     }
 
-    function NormalizeGlobalWordHistory(RawHistory) {
+    function NormalizeGlobalWordHistory(
+        RawHistory,
+        TrustCurrentVersion = false
+    ) {
         const Result = CreateEmptyGlobalWordHistory();
 
         if (!RawHistory || typeof RawHistory !== "object" || Array.isArray(RawHistory)) {
             return Result;
+        }
+
+        if (
+            TrustCurrentVersion &&
+            RawHistory.Version === GlobalWordHistoryVersion &&
+            Array.isArray(RawHistory.IndexedPuzzleIds) &&
+            RawHistory.Words &&
+            typeof RawHistory.Words === "object" &&
+            !Array.isArray(RawHistory.Words)
+        ) {
+            /*
+                Current-version persisted/cloud values were canonicalized when
+                written. Clone them rather than rebuilding every word's letter
+                mask and adjacency constraints on every merge.
+            */
+            return structuredClone(RawHistory);
         }
 
         Result.IndexedPuzzleIds = [...new Set(
@@ -4552,8 +4897,8 @@
     }
 
     function MergeGlobalWordHistoryValues(LocalValue, IncomingValue) {
-        const Local = NormalizeGlobalWordHistory(LocalValue);
-        const Incoming = NormalizeGlobalWordHistory(IncomingValue);
+        const Local = NormalizeGlobalWordHistory(LocalValue, true);
+        const Incoming = NormalizeGlobalWordHistory(IncomingValue, true);
         const Result = CreateEmptyGlobalWordHistory();
 
         Result.IndexedPuzzleIds = [...new Set([
@@ -4561,23 +4906,38 @@
             ...Incoming.IndexedPuzzleIds
         ])].sort(Alphabetically);
 
-        const Words = new Set([
+        const Words = [...new Set([
             ...Object.keys(Local.Words),
             ...Object.keys(Incoming.Words)
-        ]);
+        ])].sort(Alphabetically);
 
-        for (const Word of [...Words].sort(Alphabetically)) {
-            const PuzzleIds = NormalizePuzzleIdList([
-                ...(Local.Words[Word]?.PuzzleIds || []),
-                ...(Incoming.Words[Word]?.PuzzleIds || [])
-            ]);
-            const Record = BuildGlobalWordRecord(Word, PuzzleIds);
-            if (Record) {
-                Result.Words[Word] = Record;
+        for (const Word of Words) {
+            const LocalRecord = Local.Words[Word] || null;
+            const IncomingRecord = Incoming.Words[Word] || null;
+            const BaseRecord = LocalRecord || IncomingRecord;
+
+            if (!BaseRecord) {
+                continue;
             }
+
+            const PuzzleIds = NormalizePuzzleIdList([
+                ...(LocalRecord?.PuzzleIds || []),
+                ...(IncomingRecord?.PuzzleIds || [])
+            ]);
+
+            /*
+                LetterMask/AdjacentPairs/first/last are deterministic functions
+                of Word. Once a current-version record exists, a merge only has
+                to union provenance; rebuilding every signature was pure waste.
+            */
+            Result.Words[Word] = {
+                ...structuredClone(BaseRecord),
+                Word,
+                PuzzleIds
+            };
         }
 
-        return CanonicalizeGlobalWordHistory(Result);
+        return Result;
     }
 
     function IngestWordsIntoGlobalWordHistory(History, PuzzleId, Words) {
@@ -4599,9 +4959,20 @@
                 ...(Existing?.PuzzleIds || []),
                 Id
             ]);
-            const Record = BuildGlobalWordRecord(Word, PuzzleIds);
 
-            if (!Existing || JSON.stringify(Existing) !== JSON.stringify(Record)) {
+            if (Existing) {
+                if (!ValuesEqual(Existing.PuzzleIds || [], PuzzleIds)) {
+                    History.Words[Word] = {
+                        ...Existing,
+                        PuzzleIds
+                    };
+                    Changed = true;
+                }
+                continue;
+            }
+
+            const Record = BuildGlobalWordRecord(Word, PuzzleIds);
+            if (Record) {
                 History.Words[Word] = Record;
                 Changed = true;
             }
@@ -4646,7 +5017,7 @@
         const Raw = GM_getValue(GlobalWordHistoryStorageKey, null);
         let History =
             Raw?.Version === GlobalWordHistoryVersion
-                ? NormalizeGlobalWordHistory(Raw)
+                ? NormalizeGlobalWordHistory(Raw, true)
                 : RebuildGlobalWordHistoryFromTrackerStorage();
         let Changed = Raw?.Version !== GlobalWordHistoryVersion;
 
@@ -4749,7 +5120,6 @@
     }
 
     function SaveGlobalWordHistory(QueueSync = true) {
-        GlobalWordHistory = CanonicalizeGlobalWordHistory(GlobalWordHistory);
         GM_setValue(GlobalWordHistoryStorageKey, GlobalWordHistory);
 
         if (QueueSync) {
@@ -4781,7 +5151,7 @@
         let Changed = false;
 
         if (Raw?.Version === GlobalWordHistoryVersion) {
-            GlobalWordHistory = NormalizeGlobalWordHistory(Raw);
+            GlobalWordHistory = NormalizeGlobalWordHistory(Raw, true);
 
             const Indexed = new Set(GlobalWordHistory.IndexedPuzzleIds);
             const Keys = typeof GM_listValues === "function"
@@ -4818,8 +5188,6 @@
 
         if (Changed) {
             SaveGlobalWordHistory(false);
-        } else {
-            GlobalWordHistory = CanonicalizeGlobalWordHistory(GlobalWordHistory);
         }
 
         RebuildGlobalWordMaskIndex();
@@ -4845,7 +5213,10 @@
         };
     }
 
-    function NormalizeHistoricalWordProjection(RawProjection) {
+    function NormalizeHistoricalWordProjection(
+        RawProjection,
+        TrustCurrentVersion = false
+    ) {
         const Result = CreateEmptyHistoricalWordProjection();
 
         if (
@@ -4854,6 +5225,16 @@
             Array.isArray(RawProjection)
         ) {
             return Result;
+        }
+
+        if (
+            TrustCurrentVersion &&
+            RawProjection.Version === HistoricalWordProjectionVersion &&
+            RawProjection.Puzzles &&
+            typeof RawProjection.Puzzles === "object" &&
+            !Array.isArray(RawProjection.Puzzles)
+        ) {
+            return structuredClone(RawProjection);
         }
 
         const RawPuzzles =
@@ -4945,13 +5326,13 @@
     }
 
     function MergeHistoricalWordProjectionValues(LocalValue, IncomingValue) {
-        const Local = NormalizeHistoricalWordProjection(LocalValue);
-        const Incoming = NormalizeHistoricalWordProjection(IncomingValue);
+        const Local = NormalizeHistoricalWordProjection(LocalValue, true);
+        const Incoming = NormalizeHistoricalWordProjection(IncomingValue, true);
         const Result = CreateEmptyHistoricalWordProjection();
-        const PuzzleIds = new Set([
+        const PuzzleIds = [...new Set([
             ...Object.keys(Local.Puzzles),
             ...Object.keys(Incoming.Puzzles)
-        ]);
+        ])].sort(Alphabetically);
 
         for (const PuzzleId of PuzzleIds) {
             const LocalEntry = Local.Puzzles[PuzzleId];
@@ -4988,7 +5369,7 @@
             };
         }
 
-        return CanonicalizeHistoricalWordProjection(Result);
+        return Result;
     }
 
     function BuildSideMapFromSides(Sides) {
@@ -5135,13 +5516,17 @@
 
     function SaveHistoricalWordProjection(Projection, QueueSync = false) {
         const Canonical = CanonicalizeHistoricalWordProjection(Projection);
-        const Existing = NormalizeHistoricalWordProjection(
-            GM_getValue(HistoricalWordProjectionStorageKey, null)
+        const Existing = GM_getValue(
+            HistoricalWordProjectionStorageKey,
+            null
         );
 
         HistoricalWordProjection = Canonical;
 
-        if (ValuesEqual(Canonical, CanonicalizeHistoricalWordProjection(Existing))) {
+        if (
+            Existing?.Version === HistoricalWordProjectionVersion &&
+            ValuesEqual(Canonical, Existing)
+        ) {
             return false;
         }
 
@@ -5155,8 +5540,20 @@
     }
 
     function RefreshHistoricalWordProjectionFromStorage() {
+        const Raw = GM_getValue(
+            HistoricalWordProjectionStorageKey,
+            null
+        );
+
+        HistoricalWordProjection =
+            Raw?.Version === HistoricalWordProjectionVersion
+                ? NormalizeHistoricalWordProjection(Raw, true)
+                : NormalizeHistoricalWordProjection(Raw);
+    }
+
+    function RebuildHistoricalWordProjectionFromStorage() {
         const Snapshot = BuildExportData();
-        SaveHistoricalWordProjection(
+        return SaveHistoricalWordProjection(
             BuildHistoricalWordProjection(Snapshot.Puzzles),
             false
         );
