@@ -33,6 +33,12 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
+      - name: Run source regression tests
+        run: |
+          node --check "$SCRIPT_FILE"
+          node tests/merge-tests.js
+          node tests/cloud-sync-tests.js
+
       - name: Build preview userscript
         run: |
           python tools/build_preview.py \
@@ -42,7 +48,6 @@ jobs:
             --build-number "${{ github.run_number }}" \
             --preview-hash "#lbc-preview"
 
-          node --check "$SCRIPT_FILE"
           node --check "$RUNNER_TEMP/$PREVIEW_FILE"
 
       - name: Commit hash-channel router if first needed
