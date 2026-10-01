@@ -1,0 +1,46 @@
+name: Fix and apply Drive idempotency patch
+
+on:
+  push:
+    branches:
+      - perf/drive-sync-event-driven
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fix patcher typo and apply
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('tools/apply_drive_idempotency_patch.py')
+          s = p.read_text(encoding='utf-8')
+          old = "return {Status: 'ok', Revision: 40, Data: backup({[key]: [])};"
+          new = "return {Status: 'ok', Revision: 40, Data: backup({[key]: [])};".replace('[]) };', '[])})};')
+          # Explicit replacement kept simple and checked.
+          new = "return {Status: 'ok', Revision: 40, Data: backup({[key]: [])})};"
+          if s.count(old) != 1:
+              raise SystemExit(f'expected one typo, found {s.count(old)}')
+          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+          PY
+          python tools/apply_drive_idempotency_patch.py
+      - name: Validate
+        run: |
+          node --check LetterBoxedCubed.user.js
+          node tests/merge-tests.js
+          node tests/cloud-sync-tests.js
+      - name: Commit final patch and remove patch machinery
+        run: |
+          git config user.name "Nathan Burgdorff + Ari (ChatGPT)"
+          git config user.email "6709230+Msyjsm@users.noreply.github.com"
+          git rm .github/workflows/fix-and-apply-drive-patch.yml .github/workflows/apply-drive-idempotency-fix-v2.yml tools/apply_drive_idempotency_patch.py
+          git add LetterBoxedCubed.user.js integrations/google-drive/Code.gs tests/cloud-sync-tests.js docs/DRIVE_SYNC_PERFORMANCE_TESTING.md
+          git commit -m "Make Drive writes idempotent across timeouts"
+          git push origin HEAD:perf/drive-sync-event-driven
