@@ -7,7 +7,9 @@ let source = fs.readFileSync(sourcePath, 'utf8');
 
 source = source.replace(
   /\n    Initialize\(\);\n\}\)\(\);\s*$/,
-  `\n    globalThis.__LbcTest = {\n      MergeBackupIntoStorage, MergeStorageValue, MergeGuiStates,\n      MergeCustomDictionaryValues, MergePuzzleMetadataValues,\n      MigrateBackupToCurrent, MigrateBackupV2ToV3,\n      CreateEmptyGuiState, NormalizeGuiState, BuildCloudSyncData,\n      GuiStateStorageKey, PanelWidthStorageKey, LegacyPanelWidthStorageKey,\n      HideParStorageKey, LineDrawingSpeedStorageKey,\n      CustomDictionaryStorageKey, CustomWordsPrefix, PuzzleMetadataPrefix,\n      GlobalWordHistoryStorageKey, GlobalWordHistoryVersion,\n      BuildGlobalWordRecord, MergeGlobalWordHistoryValues,\n      RebuildGlobalWordHistoryFromTrackerStorage,\n      HistoricalWordProjectionStorageKey, HistoricalWordProjectionVersion,\n      BuildHistoricalWordProjection, MergeHistoricalWordProjectionValues,\n      ShouldHighlightWordDiscovery\n    };\n})();\n`
+  `\n    globalThis.__LbcTest = {\n      MergeBackupIntoStorage, MergeStorageValue, MergeGuiStates,\n      MergeCustomDictionaryValues, MergePuzzleMetadataValues,\n      MigrateBackupToCurrent, MigrateBackupV2ToV3, MigrateBackupV3ToV4,\n      CreateEmptyGuiState, NormalizeGuiState, BuildCloudSyncData,
+      CreateDefaultThemeState, NormalizeThemeState, MergeThemeStates,\n      GuiStateStorageKey, PanelWidthStorageKey, LegacyPanelWidthStorageKey,\n      HideParStorageKey, LineDrawingSpeedStorageKey,
+      ThemeStateStorageKey, ThemeStateVersion,\n      CustomDictionaryStorageKey, CustomWordsPrefix, PuzzleMetadataPrefix,\n      GlobalWordHistoryStorageKey, GlobalWordHistoryVersion,\n      BuildGlobalWordRecord, MergeGlobalWordHistoryValues,\n      RebuildGlobalWordHistoryFromTrackerStorage,\n      HistoricalWordProjectionStorageKey, HistoricalWordProjectionVersion,\n      BuildHistoricalWordProjection, MergeHistoricalWordProjectionValues,\n      ShouldHighlightWordDiscovery\n    };\n})();\n`
 );
 
 const Store = new Map();
@@ -36,7 +38,7 @@ function eq(actual, expected, msg) {
 }
 function backup(snapshot, extra={}) {
   return {
-    Format: 'LetterBoxedCubedBackup', FormatVersion: 3, ExportedAt: '2026-09-02T12:00:00Z',
+    Format: 'LetterBoxedCubedBackup', FormatVersion: 4, ExportedAt: '2026-09-02T12:00:00Z',
     CurrentPuzzleId: '3000', PuzzleCount: 0, Puzzles: [], CustomDictionary: [],
     GuiState: T.CreateEmptyGuiState(), StorageSnapshot: snapshot, ...extra
   };
@@ -141,7 +143,7 @@ test('v2 -> v3 migration preserves legacy GUI values without fabricating timesta
     }
   };
   const migrated = T.MigrateBackupToCurrent(old);
-  assert(migrated.FormatVersion === 3, 'migration did not reach v3');
+  assert(migrated.FormatVersion === 4, 'migration did not reach current schema');
   assert(migrated.GuiState.Settings.HidePar.Value === true, 'legacy HidePar not preserved');
   assert(migrated.GuiState.Settings.HidePar.UpdatedAt === null, 'migration fabricated HidePar timestamp');
   assert(migrated.GuiState.Settings.AnimationSpeed.Value === 0.25, 'legacy speed not preserved');
@@ -238,6 +240,34 @@ test('Cloud payload omits device-local panel width', () => {
   const data = T.BuildCloudSyncData();
   assert(!(T.PanelWidthStorageKey in data.StorageSnapshot), 'current panel width leaked to cloud');
   assert(!(T.LegacyPanelWidthStorageKey in data.StorageSnapshot), 'legacy panel width leaked to cloud');
+});
+
+
+
+test('Theme state merges active selection and custom theme tombstones by timestamp', () => {
+  const local = T.CreateDefaultThemeState();
+  local.ActiveTheme = {Id:'custom-a',UpdatedAt:'2026-09-02T10:00:00Z'};
+  local.CustomThemes['custom-a'] = {
+    Id:'custom-a',Name:'Sunset',Palette:{},InvertBoard:false,Deleted:false,
+    UpdatedAt:'2026-09-02T10:00:00Z'
+  };
+  const incoming = T.CreateDefaultThemeState();
+  incoming.ActiveTheme = {Id:'nyt-dark-app',UpdatedAt:'2026-09-02T12:00:00Z'};
+  incoming.CustomThemes['custom-a'] = {
+    Id:'custom-a',Name:'Sunset',Palette:{},InvertBoard:false,Deleted:true,
+    UpdatedAt:'2026-09-02T11:00:00Z'
+  };
+  const merged = T.MergeThemeStates(local,incoming);
+  assert(merged.ActiveTheme.Id === 'nyt-dark-app', 'newer active theme did not win');
+  assert(merged.CustomThemes['custom-a'].Deleted === true, 'newer deletion tombstone did not win');
+});
+
+test('Cloud payload includes separate portable theme state', () => {
+  const theme = T.CreateDefaultThemeState();
+  put(T.ThemeStateStorageKey, theme);
+  const data = T.BuildCloudSyncData();
+  assert(T.ThemeStateStorageKey in data.StorageSnapshot, 'theme state omitted from cloud payload');
+  assert(data.ThemeState.Version === T.ThemeStateVersion, 'top-level theme state missing from cloud payload');
 });
 
 for (const [name,status,detail] of results) {

@@ -78,7 +78,7 @@ function eq(actual, expected, msg) {
 function backup(snapshot, extra = {}) {
   return {
     Format: 'LetterBoxedCubedBackup',
-    FormatVersion: 3,
+    FormatVersion: 4,
     ExportedAt: '2026-09-28T00:00:00Z',
     CurrentPuzzleId: '3000',
     PuzzleCount: 0,

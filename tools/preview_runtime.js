@@ -27,6 +27,11 @@
     const PreviewDebugOriginalDisplay = new WeakMap();
     const PreviewDebugOverriddenElements = new Set();
     const PreviewDebugMutationLog = [];
+    const PreviewTransientTrace = [];
+    const PreviewTransientTraceSignatures = new Map();
+    let PreviewTransientObserver = null;
+    let PreviewTransientAnimationHandler = null;
+    let PreviewTransientTraceActive = false;
 
     const BootstrapDiagnostics = [];
     const BootstrapDiagnosticSessionKey =
@@ -321,6 +326,12 @@
                 opacity: 0.58;
             }
 
+            #${PreviewDebugPanelId} .lbc-debug-diagnostics-status {
+                margin: 3px 0 7px;
+                color: #b9d9b9;
+                font-size: 10px;
+            }
+
             #${PreviewDebugPanelId} .lbc-debug-log,
             #${PreviewDebugPanelId} .lbc-debug-html {
                 max-height: 180px;
@@ -396,7 +407,10 @@
     }
 
     function QueuePreviewDebugRender() {
-        if (UserscriptBuildChannel !== "preview") {
+        if (
+            UserscriptBuildChannel !== "preview" ||
+            !PreviewDebugPaneVisible
+        ) {
             return;
         }
 
@@ -1450,6 +1464,469 @@
         };
     }
 
+
+    // -------------------------------------------------------------------------
+    // Preview-only reusable diagnostics toolkit (issue #20)
+    // -------------------------------------------------------------------------
+
+    function RoundPreviewNumber(Value) {
+        return Number.isFinite(Number(Value))
+            ? Math.round(Number(Value) * 10) / 10
+            : null;
+    }
+
+    function GetPreviewElementGeometry(ElementNode) {
+        if (!ElementNode || typeof ElementNode.getBoundingClientRect !== "function") {
+            return null;
+        }
+
+        const Rect = ElementNode.getBoundingClientRect();
+        const Style = getComputedStyle(ElementNode);
+        return {
+            Tag: ElementNode.tagName?.toLowerCase() || null,
+            Id: ElementNode.id || null,
+            ClassName: String(ElementNode.className || "").slice(0, 300),
+            Rect: {
+                Left: RoundPreviewNumber(Rect.left),
+                Top: RoundPreviewNumber(Rect.top),
+                Right: RoundPreviewNumber(Rect.right),
+                Bottom: RoundPreviewNumber(Rect.bottom),
+                Width: RoundPreviewNumber(Rect.width),
+                Height: RoundPreviewNumber(Rect.height)
+            },
+            Style: {
+                Display: Style.display,
+                Position: Style.position,
+                Visibility: Style.visibility,
+                OverflowX: Style.overflowX,
+                OverflowY: Style.overflowY,
+                MarginTop: Style.marginTop,
+                MarginBottom: Style.marginBottom
+            }
+        };
+    }
+
+    function GetPreviewGeometrySnapshot() {
+        const Selectors = {
+            GameContainer: ".lb-game-container",
+            WordContainer: ".lb-game-container .lb-word-container",
+            TextFieldWrapper: ".lb-game-container .lb-text-field-wrapper",
+            TextField: ".lb-game-container .lb-text-field",
+            ListContainer: ".lb-game-container .lb-list-container",
+            WordListContainer: ".lb-game-container .lb-word-list-container",
+            WordList: ".lb-game-container .lb-word-list",
+            SquareContainer: ".lb-game-container .lb-square-container",
+            LayoutGapHandle: `#${LayoutGapHandleId}`,
+            LbcPanel: `#${PanelId}`
+        };
+        const Elements = {};
+
+        for (const [Name, Selector] of Object.entries(Selectors)) {
+            Elements[Name] = GetPreviewElementGeometry(
+                document.querySelector(Selector)
+            );
+        }
+
+        const Feedback = [...document.querySelectorAll(
+            ".lb-message-box, .lb-cubed-valid-feedback-proxy, [role='status'], [role='alert'], [aria-live]"
+        )]
+            .filter(ElementNode => {
+                const Style = getComputedStyle(ElementNode);
+                const Rect = ElementNode.getBoundingClientRect();
+                return Style.display !== "none" &&
+                    Style.visibility !== "hidden" &&
+                    Rect.width > 0 && Rect.height > 0;
+            })
+            .slice(0, 20)
+            .map(GetPreviewElementGeometry);
+
+        const TiBottom = Elements.WordContainer?.Rect?.Bottom ?? null;
+        const HistoryBottom = Elements.ListContainer?.Rect?.Bottom ?? null;
+        const GbTop = Elements.SquareContainer?.Rect?.Top ?? null;
+        const GripTop = Elements.LayoutGapHandle?.Rect?.Top ?? null;
+        const GripY = GripTop === null ? null : GripTop + 5;
+
+        return {
+            CapturedAt: new Date().toISOString(),
+            Elements,
+            Feedback,
+            Relationships: {
+                TiBottom,
+                HistoryBottom,
+                GripY: RoundPreviewNumber(GripY),
+                GbVisibleTop: GbTop,
+                HistoryToGrip: HistoryBottom === null || GripY === null
+                    ? null
+                    : RoundPreviewNumber(GripY - HistoryBottom),
+                GripToGb: GripY === null || GbTop === null
+                    ? null
+                    : RoundPreviewNumber(GbTop - GripY),
+                HistoryToGb: HistoryBottom === null || GbTop === null
+                    ? null
+                    : RoundPreviewNumber(GbTop - HistoryBottom)
+            }
+        };
+    }
+
+    function IsPreviewElementLike(Node) {
+        return Boolean(
+            Node &&
+            Node.nodeType === 1 &&
+            typeof Node.matches === "function"
+        );
+    }
+
+    const PreviewTransientSelector =
+        ".lb-message-box, .lb-cubed-valid-feedback-proxy, [role='status'], [role='alert'], [aria-live]";
+
+    function GetPreviewTransientLabel(ElementNode) {
+        if (!IsPreviewElementLike(ElementNode)) {
+            return "element";
+        }
+        if (ElementNode.matches(".lb-cubed-valid-feedback-proxy")) {
+            return "Cubed proxy";
+        }
+        if (ElementNode.matches(".lb-message-box")) {
+            return "native toast";
+        }
+        return "live region";
+    }
+
+    function GetPreviewTransientDescription(ElementNode) {
+        if (!IsPreviewElementLike(ElementNode)) {
+            return null;
+        }
+
+        const Text = String(ElementNode.textContent || "")
+            .replace(/\s+/g, " ")
+            .trim()
+            .slice(0, 160);
+        return {
+            Kind: GetPreviewTransientLabel(ElementNode),
+            Tag: ElementNode.tagName.toLowerCase(),
+            Id: ElementNode.id || null,
+            Classes: [...ElementNode.classList].slice(0, 8),
+            Text
+        };
+    }
+
+    function RecordPreviewTransientEvent(Action, ElementNode, Detail = null) {
+        const Description = GetPreviewTransientDescription(ElementNode);
+        if (!Description) {
+            return;
+        }
+
+        const Signature = JSON.stringify([
+            Action,
+            Description.Kind,
+            Description.Id,
+            Description.Classes,
+            Description.Text,
+            Detail
+        ]);
+        const Now = Date.now();
+        const LastAt = PreviewTransientTraceSignatures.get(Signature) || 0;
+
+        if (Now - LastAt < 120) {
+            return;
+        }
+        PreviewTransientTraceSignatures.set(Signature, Now);
+
+        PreviewTransientTrace.push({
+            Timestamp: new Date().toISOString(),
+            Action,
+            Detail,
+            Element: Description
+        });
+
+        if (PreviewTransientTrace.length > 250) {
+            PreviewTransientTrace.splice(0, PreviewTransientTrace.length - 250);
+        }
+        UpdatePreviewDiagnosticsStatus();
+    }
+
+    function VisitPreviewTransientElements(Node, Callback) {
+        if (!IsPreviewElementLike(Node)) {
+            return;
+        }
+
+        if (Node.matches(PreviewTransientSelector)) {
+            Callback(Node);
+        }
+
+        for (const Child of Node.querySelectorAll(PreviewTransientSelector)) {
+            Callback(Child);
+        }
+    }
+
+    function StartPreviewTransientElementTrace() {
+        PreviewTransientObserver?.disconnect();
+        if (PreviewTransientAnimationHandler) {
+            document.removeEventListener(
+                "animationstart",
+                PreviewTransientAnimationHandler,
+                true
+            );
+        }
+
+        PreviewTransientTrace.length = 0;
+        PreviewTransientTraceSignatures.clear();
+        PreviewTransientTraceActive = true;
+
+        const Root = document.querySelector(".lb-game-container") || document.body;
+        PreviewTransientObserver = new MutationObserver(Mutations => {
+            for (const Mutation of Mutations) {
+                if (Mutation.type === "childList") {
+                    for (const Node of Mutation.addedNodes) {
+                        VisitPreviewTransientElements(Node, ElementNode =>
+                            RecordPreviewTransientEvent("created", ElementNode)
+                        );
+                    }
+                    for (const Node of Mutation.removedNodes) {
+                        VisitPreviewTransientElements(Node, ElementNode =>
+                            RecordPreviewTransientEvent("removed", ElementNode)
+                        );
+                    }
+                } else if (Mutation.type === "attributes") {
+                    const Target = Mutation.target;
+                    if (IsPreviewElementLike(Target) && Target.matches(PreviewTransientSelector)) {
+                        const IsProxyMove =
+                            Target.matches(".lb-cubed-valid-feedback-proxy") &&
+                            Mutation.attributeName === "style";
+                        RecordPreviewTransientEvent(
+                            IsProxyMove ? "repositioned" : "changed",
+                            Target,
+                            `@${Mutation.attributeName}`
+                        );
+                    }
+                } else if (Mutation.type === "characterData") {
+                    const Parent = Mutation.target?.parentElement;
+                    if (IsPreviewElementLike(Parent) && Parent.matches(PreviewTransientSelector)) {
+                        RecordPreviewTransientEvent("text changed", Parent);
+                    }
+                }
+            }
+        });
+
+        PreviewTransientObserver.observe(Root, {
+            childList: true,
+            subtree: true,
+            characterData: true,
+            attributes: true,
+            attributeFilter: [
+                "class",
+                "style",
+                "hidden",
+                "aria-hidden",
+                "role",
+                "aria-live"
+            ]
+        });
+
+        PreviewTransientAnimationHandler = Event => {
+            const Target = Event.target;
+            if (IsPreviewElementLike(Target) && Target.matches(PreviewTransientSelector)) {
+                RecordPreviewTransientEvent(
+                    "animationstart",
+                    Target,
+                    Event.animationName || null
+                );
+            }
+        };
+        document.addEventListener(
+            "animationstart",
+            PreviewTransientAnimationHandler,
+            true
+        );
+
+        UpdatePreviewDiagnosticsStatus();
+        console.info("[Letter Boxed Cubed][preview] Transient element trace started.");
+    }
+
+    function StopPreviewTransientElementTrace() {
+        PreviewTransientObserver?.disconnect();
+        PreviewTransientObserver = null;
+
+        if (PreviewTransientAnimationHandler) {
+            document.removeEventListener(
+                "animationstart",
+                PreviewTransientAnimationHandler,
+                true
+            );
+            PreviewTransientAnimationHandler = null;
+        }
+
+        PreviewTransientTraceActive = false;
+        UpdatePreviewDiagnosticsStatus();
+        return structuredClone(PreviewTransientTrace);
+    }
+
+    function GetBoundedPreviewOuterHtml(Selector, MaximumLength = 6000) {
+        const ElementNode = document.querySelector(Selector);
+        if (!ElementNode) {
+            return null;
+        }
+
+        const Html = ElementNode.outerHTML;
+        return Html.length <= MaximumLength
+            ? Html
+            : Html.slice(0, MaximumLength) + "\n... [truncated] ...";
+    }
+
+    function GetPreviewDebugBundle() {
+        return {
+            GeneratedAt: new Date().toISOString(),
+            PreviewVersion: GetRunningUserscriptVersion(),
+            Puzzle: {
+                Id: GameData?.id || null,
+                PrintDate: GameData?.printDate || null
+            },
+            Viewport: {
+                Width: window.innerWidth,
+                Height: window.innerHeight,
+                DevicePixelRatio: window.devicePixelRatio || 1,
+                VisibilityState: document.visibilityState
+            },
+            LayoutAndSettings: {
+                OuterMode: document.querySelector(".lb-game-container")?.classList.contains(SideModeClass)
+                    ? "side"
+                    : "stacked",
+                InternalPanelLayoutMode,
+                PanelWidthPreference,
+                AdjustLayoutGap,
+                DisplayedLayoutGapPx: GetDisplayedLayoutGapPx(),
+                HidePar,
+                LineDrawingSpeed,
+                NytHeaderScale,
+                NytTitleScale,
+                NytFooterScale,
+                CompactTitleLayout,
+                HideYesterdayHelpRow,
+                ActiveThemeId: ThemeState?.ActiveTheme?.Id || DefaultThemeId
+            },
+            Geometry: GetPreviewGeometrySnapshot(),
+            DomSnippets: {
+                TextInput: GetBoundedPreviewOuterHtml(
+                    ".lb-game-container .lb-word-container"
+                ),
+                GameBoard: GetBoundedPreviewOuterHtml(
+                    ".lb-game-container .lb-square-container"
+                )
+            },
+            RecentMutationLog: PreviewDebugMutationLog.slice(-100),
+            BootstrapTrace: BootstrapDiagnostics.slice(-100),
+            TransientTrace: structuredClone(PreviewTransientTrace)
+        };
+    }
+
+    async function CopyPreviewDiagnostic(Value, Label) {
+        const Text = typeof Value === "string"
+            ? Value
+            : JSON.stringify(Value, null, 2);
+        let Copied = false;
+
+        try {
+            await navigator.clipboard.writeText(Text);
+            Copied = true;
+        } catch {}
+
+        if (!Copied) {
+            try {
+                const Textarea = document.createElement("textarea");
+                Textarea.value = Text;
+                Textarea.style.position = "fixed";
+                Textarea.style.opacity = "0";
+                document.body.appendChild(Textarea);
+                Textarea.select();
+                Copied = document.execCommand("copy");
+                Textarea.remove();
+            } catch {}
+        }
+
+        console.info(
+            `[Letter Boxed Cubed][preview] ${Label}`,
+            Value
+        );
+
+        if (!Copied) {
+            alert(
+                `${Label} was logged to DevTools, but the browser blocked automatic clipboard access.`
+            );
+        }
+        return Copied;
+    }
+
+    function UpdatePreviewDiagnosticsStatus() {
+        const Status = document.querySelector(
+            `#${PreviewDebugPanelId} .lbc-debug-diagnostics-status`
+        );
+        if (!Status) {
+            return;
+        }
+
+        Status.textContent = PreviewTransientTraceActive
+            ? `Transient trace: RECORDING (${PreviewTransientTrace.length} events)`
+            : `Transient trace: stopped (${PreviewTransientTrace.length} events retained)`;
+    }
+
+    function CreatePreviewDiagnosticsSection() {
+        const Wrapper = document.createElement("section");
+        Wrapper.className = "lbc-debug-diagnostics";
+
+        const Title = document.createElement("div");
+        Title.className = "lbc-debug-section-title";
+        Title.textContent = "DIAGNOSTICS";
+
+        const Tools = document.createElement("div");
+        Tools.className = "lbc-debug-tools";
+
+        const AddButton = (Text, Handler) => {
+            const Button = document.createElement("button");
+            Button.type = "button";
+            Button.textContent = Text;
+            Button.addEventListener("click", Handler);
+            Tools.appendChild(Button);
+        };
+
+        AddButton(
+            "Copy Geometry Snapshot",
+            () => CopyPreviewDiagnostic(
+                GetPreviewGeometrySnapshot(),
+                "Geometry snapshot"
+            )
+        );
+        AddButton(
+            "Start Transient Element Trace",
+            StartPreviewTransientElementTrace
+        );
+        AddButton(
+            "Stop + Copy Trace",
+            () => CopyPreviewDiagnostic(
+                StopPreviewTransientElementTrace(),
+                "Transient element trace"
+            )
+        );
+        AddButton(
+            "Copy Bootstrap Trace",
+            () => CopyPreviewDiagnostic(
+                BootstrapDiagnostics.slice(-100),
+                "Bootstrap trace"
+            )
+        );
+        AddButton(
+            "Copy Full Debug Bundle",
+            () => CopyPreviewDiagnostic(
+                GetPreviewDebugBundle(),
+                "Full debug bundle"
+            )
+        );
+
+        const Status = document.createElement("div");
+        Status.className = "lbc-debug-diagnostics-status";
+        Wrapper.append(Title, Tools, Status);
+        return Wrapper;
+    }
+
     function CreatePreviewDebugPane() {
         if (
             UserscriptBuildChannel !== "preview" ||
@@ -1537,6 +2014,8 @@
             Clear
         );
 
+        const Diagnostics = CreatePreviewDiagnosticsSection();
+
         const TiTitle = document.createElement("div");
         TiTitle.className = "lbc-debug-section-title";
         TiTitle.textContent = "TI DOM";
@@ -1565,6 +2044,7 @@
         DebugPanel.append(
             Header,
             Tools,
+            Diagnostics,
             TiTitle,
             TiTree,
             GbTitle,
@@ -1581,6 +2061,7 @@
         );
         StartPreviewDebugObserver();
         RenderPreviewDebugPane();
+        UpdatePreviewDiagnosticsStatus();
 
         CreatePreviewHistoricalTestControls();
         StartPreviewChromeObserver();
