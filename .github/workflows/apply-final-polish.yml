@@ -49,7 +49,7 @@ jobs:
               "merge test theme constant exports"
           )
           merge_tests = merge_tests.replace("FormatVersion: 3,", "FormatVersion: 4,")'''
-          s2, count = pattern.subn(replacement, s, count=1)
+          s2, count = pattern.subn(lambda _match: replacement, s, count=1)
           if count != 1:
               raise SystemExit(f'expected one merge-test patch block, found {count}')
           p.write_text(s2, encoding='utf-8')
