@@ -23,9 +23,7 @@ jobs:
           p = Path('tools/apply_drive_idempotency_patch.py')
           s = p.read_text(encoding='utf-8')
           old = "return {Status: 'ok', Revision: 40, Data: backup({[key]: [])};"
-          new = "return {Status: 'ok', Revision: 40, Data: backup({[key]: [])};".replace('[]) };', '[])})};')
-          # Explicit replacement kept simple and checked.
-          new = "return {Status: 'ok', Revision: 40, Data: backup({[key]: [])})};"
+          new = "return {Status: 'ok', Revision: 40, Data: backup({[key]: []})};"
           if s.count(old) != 1:
               raise SystemExit(f'expected one typo, found {s.count(old)}')
           p.write_text(s.replace(old, new, 1), encoding='utf-8')
