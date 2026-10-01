@@ -38,6 +38,7 @@ jobs:
           node --check "$SCRIPT_FILE"
           node tests/merge-tests.js
           node tests/cloud-sync-tests.js
+          node tests/final-polish-tests.js
 
       - name: Build preview userscript
         run: |
