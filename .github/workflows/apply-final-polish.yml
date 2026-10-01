@@ -32,20 +32,20 @@ jobs:
           replacement = '''merge_tests = MERGE_TESTS.read_text(encoding="utf-8")
           merge_tests = replace_once(
               merge_tests,
-              "MigrateBackupToCurrent, MigrateBackupV2ToV3,\\\\n",
-              "MigrateBackupToCurrent, MigrateBackupV2ToV3, MigrateBackupV3ToV4,\\\\n",
+              "MigrateBackupToCurrent, MigrateBackupV2ToV3,",
+              "MigrateBackupToCurrent, MigrateBackupV2ToV3, MigrateBackupV3ToV4,",
               "merge test migration export"
           )
           merge_tests = replace_once(
               merge_tests,
-              "CreateEmptyGuiState, NormalizeGuiState, BuildCloudSyncData,\\\\n",
-              "CreateEmptyGuiState, NormalizeGuiState, BuildCloudSyncData,\\\\n      CreateDefaultThemeState, NormalizeThemeState, MergeThemeStates,\\\\n",
+              "CreateEmptyGuiState, NormalizeGuiState, BuildCloudSyncData,",
+              "CreateEmptyGuiState, NormalizeGuiState, BuildCloudSyncData,\\n      CreateDefaultThemeState, NormalizeThemeState, MergeThemeStates,",
               "merge test theme function exports"
           )
           merge_tests = replace_once(
               merge_tests,
-              "HideParStorageKey, LineDrawingSpeedStorageKey,\\\\n",
-              "HideParStorageKey, LineDrawingSpeedStorageKey,\\\\n      ThemeStateStorageKey, ThemeStateVersion,\\\\n",
+              "HideParStorageKey, LineDrawingSpeedStorageKey,",
+              "HideParStorageKey, LineDrawingSpeedStorageKey,\\n      ThemeStateStorageKey, ThemeStateVersion,",
               "merge test theme constant exports"
           )
           merge_tests = merge_tests.replace("FormatVersion: 3,", "FormatVersion: 4,")'''
