@@ -116,6 +116,8 @@ function ReadEnvelope_() {
         Status: "ok",
         Revision: Number(Parsed.Revision) || 0,
         UpdatedAt: Parsed.UpdatedAt || null,
+        LastWriteId: Parsed.LastWriteId || null,
+        LastWriterSessionId: Parsed.LastWriterSessionId || null,
         Data: Parsed.Data || null
       };
     }
@@ -131,6 +133,8 @@ function ReadEnvelope_() {
         Status: "ok",
         Revision: 0,
         UpdatedAt: null,
+        LastWriteId: null,
+        LastWriterSessionId: null,
         Data: Parsed
       };
     }
@@ -152,13 +156,36 @@ function WriteEnvelope_(Request) {
   try {
     const Current = ReadEnvelope_();
     const ExpectedRevision = Number(Request.ExpectedRevision) || 0;
+    const WriteId = String(Request.WriteId || "").trim() || null;
+    const WriterSessionId =
+      String(Request.WriterSessionId || "").trim() || null;
+
+    if (WriteId && Current.LastWriteId === WriteId) {
+      console.log(
+        `LBC Drive write replay accepted: ${WriteId} @ revision ${Current.Revision}`
+      );
+      return {
+        ProtocolVersion,
+        Status: "ok",
+        Revision: Current.Revision,
+        UpdatedAt: Current.UpdatedAt || null,
+        LastWriteId: Current.LastWriteId || null,
+        LastWriterSessionId: Current.LastWriterSessionId || null,
+        Replayed: true
+      };
+    }
 
     if (ExpectedRevision !== Current.Revision) {
+      console.log(
+        `LBC Drive revision conflict: expected ${ExpectedRevision}, current ${Current.Revision}, write ${WriteId || "(legacy)"}`
+      );
       return {
         ProtocolVersion,
         Status: "conflict",
         Revision: Current.Revision,
-        UpdatedAt: Current.UpdatedAt || null
+        UpdatedAt: Current.UpdatedAt || null,
+        LastWriteId: Current.LastWriteId || null,
+        LastWriterSessionId: Current.LastWriterSessionId || null
       };
     }
 
@@ -166,17 +193,25 @@ function WriteEnvelope_(Request) {
       ProtocolVersion,
       Revision: Current.Revision + 1,
       UpdatedAt: new Date().toISOString(),
+      LastWriteId: WriteId,
+      LastWriterSessionId: WriterSessionId,
       Data: Request.Data
     };
 
     const File = GetOrCreateBackupFile_();
-    File.setContent(JSON.stringify(Next, null, 2));
+    File.setContent(JSON.stringify(Next));
+
+    console.log(
+      `LBC Drive write committed: revision ${Next.Revision}, write ${WriteId || "(legacy)"}`
+    );
 
     return {
       ProtocolVersion,
       Status: "ok",
       Revision: Next.Revision,
-      UpdatedAt: Next.UpdatedAt
+      UpdatedAt: Next.UpdatedAt,
+      LastWriteId: Next.LastWriteId,
+      LastWriterSessionId: Next.LastWriterSessionId
     };
   } finally {
     Lock.releaseLock();
@@ -189,6 +224,8 @@ function EmptyEnvelope_() {
     Status: "ok",
     Revision: 0,
     UpdatedAt: null,
+    LastWriteId: null,
+    LastWriterSessionId: null,
     Data: null
   };
 }

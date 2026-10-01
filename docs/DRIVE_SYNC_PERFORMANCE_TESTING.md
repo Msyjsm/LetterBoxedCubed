@@ -65,3 +65,18 @@ Use the Preview URL (`#lbc-preview`) with Google Drive enabled.
 7. Optionally capture another 30-60 second Chrome Performance trace with Drive enabled. The previous repeated ~2.9-second `SyncWithGoogleDrive()` tasks should be absent.
 
 For an especially direct network check, filter DevTools Network for the Apps Script bridge. After the initial reconciliation, ordinary idle time should show no requests; a local change should produce a Write without a preceding Read.
+
+
+## beta.2 timeout / idempotency regression tests
+
+A bridge execution can outlive the browser request and still commit successfully. beta.2 therefore:
+
+- raises the client request timeout from 30 to 60 seconds;
+- assigns every Write a unique `WriteId`;
+- retries the same payload with the same ID after an ambiguous timeout;
+- performs one exceptional Read to verify a timeout or revision mismatch;
+- treats matching `LastWriteId` (new bridge) or an identical remote `StorageSnapshot` (legacy bridge) as success;
+- keeps genuinely different remote state in Conflict until manual reconciliation; and
+- logs successful sync mode, revision, and duration for easier diagnosis.
+
+The Apps Script bridge should be redeployed from the updated `integrations/google-drive/Code.gs`. The new bridge makes `WriteId` retries natively idempotent, exposes last-writer diagnostics, and minifies the Drive JSON to reduce write volume. The browser remains backward-compatible with the old bridge through snapshot verification.

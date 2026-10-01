@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed
 // @namespace    https://nathanburgdorff.com/userscripts/
-// @version      1.13.1-beta.1
+// @version      1.13.1-beta.2
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -124,6 +124,7 @@
     const NytTitleResizeHandleId = "lb-cubed-nyt-title-resize-handle";
     const CloudSyncDebounceMs = 2500;
     const CloudSyncProtocolVersion = 1;
+    const CloudSyncRequestTimeoutMs = 60000;
 
     const DefaultNewItemHighlightSeconds = 1.0;
     const MinimumNewItemHighlightSeconds = 0.1;
@@ -247,6 +248,8 @@
     let CloudExpectedRevision = null;
     let CloudSyncConflictRevision = null;
     let CloudSyncSuppressDirty = false;
+    let CloudSyncSessionId = null;
+    let CloudWriteSequence = 0;
     let CloudCachedPayload = null;
     let CloudCachedPayloadGeneration = -1;
     let CloudSyncStatus = "Off";
@@ -4127,6 +4130,8 @@
         CloudExpectedRevision = null;
         CloudSyncConflictRevision = null;
         CloudSyncSuppressDirty = false;
+        CloudSyncSessionId = CreateCloudOpaqueId("session");
+        CloudWriteSequence = 0;
         CloudCachedPayload = null;
         CloudCachedPayloadGeneration = -1;
         LastCloudSyncAt = null;
@@ -4387,7 +4392,7 @@
                     Action,
                     ...Payload
                 }),
-                timeout: 30000,
+                timeout: CloudSyncRequestTimeoutMs,
                 onload: Response => {
                     try {
                         if (Response.status < 200 || Response.status >= 300) {
@@ -4415,12 +4420,23 @@
                         Reject(Error);
                     }
                 },
-                onerror: () => Reject(
-                    new Error("Could not reach the Google Drive sync bridge.")
-                ),
-                ontimeout: () => Reject(
-                    new Error("Google Drive sync timed out.")
-                )
+                onerror: () => {
+                    const SyncError = new Error(
+                        "Could not reach the Google Drive sync bridge."
+                    );
+                    SyncError.IsCloudTransportError = true;
+                    SyncError.CloudAction = Action;
+                    Reject(SyncError);
+                },
+                ontimeout: () => {
+                    const SyncError = new Error(
+                        "Google Drive sync timed out."
+                    );
+                    SyncError.IsCloudTimeout = true;
+                    SyncError.IsCloudTransportError = true;
+                    SyncError.CloudAction = Action;
+                    Reject(SyncError);
+                }
             });
         });
     }
@@ -4431,6 +4447,188 @@
                 !DeviceLocalStorageKeys.includes(Key) &&
                 GM_getValue(Key, null) !== null
         );
+    }
+
+    function CreateCloudOpaqueId(Prefix = "id") {
+        let RandomPart = "";
+
+        try {
+            if (
+                typeof crypto !== "undefined" &&
+                typeof crypto.randomUUID === "function"
+            ) {
+                RandomPart = crypto.randomUUID();
+            }
+        } catch {}
+
+        if (!RandomPart) {
+            RandomPart =
+                `${Date.now().toString(36)}-` +
+                `${Math.random().toString(36).slice(2)}-` +
+                `${Math.random().toString(36).slice(2)}`;
+        }
+
+        return `${Prefix}-${RandomPart}`;
+    }
+
+    function CreateCloudWriteId() {
+        CloudWriteSequence++;
+        return [
+            CloudSyncSessionId || CreateCloudOpaqueId("session"),
+            "write",
+            CloudWriteSequence
+        ].join("-");
+    }
+
+    function CloudPayloadStorageMatches(First, Second) {
+        const FirstSnapshot = First?.StorageSnapshot;
+        const SecondSnapshot = Second?.StorageSnapshot;
+
+        if (
+            !FirstSnapshot ||
+            typeof FirstSnapshot !== "object" ||
+            !SecondSnapshot ||
+            typeof SecondSnapshot !== "object"
+        ) {
+            return false;
+        }
+
+        try {
+            return JSON.stringify(FirstSnapshot) ===
+                JSON.stringify(SecondSnapshot);
+        } catch {
+            return false;
+        }
+    }
+
+    function CloudWriteAlreadyApplied(Write, WriteId, LocalData) {
+        if (!Write || typeof Write !== "object") {
+            return false;
+        }
+
+        if (
+            WriteId &&
+            Write.LastWriteId &&
+            Write.LastWriteId === WriteId
+        ) {
+            return true;
+        }
+
+        return CloudPayloadStorageMatches(Write.Data, LocalData);
+    }
+
+    async function WriteGoogleDriveSnapshot(ExpectedRevision, LocalData) {
+        const WriteId = CreateCloudWriteId();
+        const Payload = {
+            ExpectedRevision,
+            WriteId,
+            WriterSessionId: CloudSyncSessionId,
+            Data: LocalData
+        };
+
+        let Write;
+
+        try {
+            Write = await GoogleDriveBridgeRequest("Write", Payload);
+        } catch (Error) {
+            if (!Error?.IsCloudTimeout) {
+                throw Error;
+            }
+
+            console.warn(
+                "[Letter Boxed Cubed] Drive write response timed out; verifying whether the server committed it.",
+                { ExpectedRevision, WriteId }
+            );
+
+            let Remote;
+            try {
+                Remote = await GoogleDriveBridgeRequest("Read");
+            } catch {
+                throw Error;
+            }
+
+            const RemoteRevision = Number(Remote.Revision) || 0;
+
+            if (CloudWriteAlreadyApplied(Remote, WriteId, LocalData)) {
+                console.info(
+                    "[Letter Boxed Cubed] Confirmed the timed-out Drive write had already succeeded.",
+                    { Revision: RemoteRevision, WriteId }
+                );
+                return {
+                    Status: "ok",
+                    Revision: RemoteRevision,
+                    UpdatedAt: Remote.UpdatedAt || null,
+                    LastWriteId: Remote.LastWriteId || WriteId,
+                    RecoveredFromTimeout: true
+                };
+            }
+
+            if (RemoteRevision !== ExpectedRevision) {
+                return {
+                    Status: "conflict",
+                    Revision: RemoteRevision,
+                    UpdatedAt: Remote.UpdatedAt || null,
+                    LastWriteId: Remote.LastWriteId || null,
+                    LastWriterSessionId:
+                        Remote.LastWriterSessionId || null
+                };
+            }
+
+            /*
+                The timed-out request did not commit. Retrying the SAME WriteId
+                is safe with the current bridge; an older bridge is still
+                protected by ExpectedRevision.
+            */
+            Write = await GoogleDriveBridgeRequest("Write", Payload);
+        }
+
+        if (Write.Status !== "conflict") {
+            return Write;
+        }
+
+        /*
+            A response can be lost after Drive commits a write. Verify the
+            resulting state before deciding that a revision mismatch represents
+            a genuinely different writer.
+        */
+        if (
+            WriteId &&
+            Write.LastWriteId &&
+            Write.LastWriteId === WriteId
+        ) {
+            return {
+                ...Write,
+                Status: "ok",
+                RecoveredFromReplay: true
+            };
+        }
+
+        const Remote = await GoogleDriveBridgeRequest("Read");
+        const RemoteRevision = Number(Remote.Revision) || 0;
+
+        if (CloudWriteAlreadyApplied(Remote, WriteId, LocalData)) {
+            console.info(
+                "[Letter Boxed Cubed] Resolved a Drive revision mismatch as this session's already-applied write.",
+                { ExpectedRevision, RemoteRevision, WriteId }
+            );
+            return {
+                Status: "ok",
+                Revision: RemoteRevision,
+                UpdatedAt: Remote.UpdatedAt || null,
+                LastWriteId: Remote.LastWriteId || WriteId,
+                RecoveredFromReplay: true
+            };
+        }
+
+        return {
+            ...Write,
+            Revision: RemoteRevision || (Number(Write.Revision) || 0),
+            LastWriteId: Remote.LastWriteId || Write.LastWriteId || null,
+            LastWriterSessionId:
+                Remote.LastWriterSessionId ||
+                Write.LastWriterSessionId ||
+                null
+        };
     }
 
     async function ReconcileGoogleDrive() {
@@ -4486,12 +4684,9 @@
 
             const PushGeneration = CloudSyncGeneration;
             const LocalData = GetCachedCloudSyncData();
-            const Write = await GoogleDriveBridgeRequest(
-                "Write",
-                {
-                    ExpectedRevision: RemoteRevision,
-                    Data: LocalData
-                }
+            const Write = await WriteGoogleDriveSnapshot(
+                RemoteRevision,
+                LocalData
             );
 
             if (Write.Status === "conflict") {
@@ -4523,7 +4718,7 @@
         }
 
         const Error = new Error(
-            "Google Drive changed repeatedly during reconciliation. Click Drive: Sync again after the other LBC session is finished."
+            "Drive revision changed repeatedly during reconciliation. Click Drive: Sync again to reconcile the latest state."
         );
         Error.IsCloudConflict = true;
         throw Error;
@@ -4544,26 +4739,28 @@
 
         const PushGeneration = CloudSyncGeneration;
         const LocalData = GetCachedCloudSyncData();
-        const Write = await GoogleDriveBridgeRequest(
-            "Write",
-            {
-                ExpectedRevision: CloudExpectedRevision,
-                Data: LocalData
-            }
+        const Write = await WriteGoogleDriveSnapshot(
+            CloudExpectedRevision,
+            LocalData
         );
 
         if (Write.Status === "conflict") {
             CloudSyncConflictRevision = Number(Write.Revision) || 0;
             CloudSyncStatus = "Conflict";
             LastCloudSyncError = new Error(
-                `Google Drive changed in another LBC session (remote revision ${CloudSyncConflictRevision}). Click Drive: Sync to reconcile.`
+                `Drive revision changed since this LBC session last synchronized ` +
+                `(expected ${CloudExpectedRevision}, remote ${CloudSyncConflictRevision}). ` +
+                `Click Drive: Sync to reconcile.`
             );
 
             console.warn(
                 "[Letter Boxed Cubed] Automatic Drive upload stopped because the remote revision changed.",
                 {
                     ExpectedRevision: CloudExpectedRevision,
-                    RemoteRevision: CloudSyncConflictRevision
+                    RemoteRevision: CloudSyncConflictRevision,
+                    LastWriteId: Write.LastWriteId || null,
+                    LastWriterSessionId:
+                        Write.LastWriterSessionId || null
                 }
             );
             return false;
@@ -4623,11 +4820,17 @@
         UpdateGoogleDriveButton();
 
         let AllowAutomaticFollowup = false;
+        let SyncSucceeded = false;
+        const SyncMode = Initial
+            ? "initial"
+            : (Manual ? "manual" : "automatic");
+        const SyncStartedAt = Date.now();
 
         try {
-            AllowAutomaticFollowup = IsReconciliation
+            SyncSucceeded = IsReconciliation
                 ? await ReconcileGoogleDrive()
                 : await PushGoogleDriveChanges();
+            AllowAutomaticFollowup = SyncSucceeded;
         } catch (Error) {
             CloudSyncStatus = Error?.IsCloudConflict
                 ? "Conflict"
@@ -4648,6 +4851,18 @@
         } finally {
             CloudSyncInFlight = false;
             UpdateGoogleDriveButton();
+
+            if (SyncSucceeded) {
+                console.info(
+                    "[Letter Boxed Cubed] Google Drive sync complete.",
+                    {
+                        Mode: SyncMode,
+                        Revision: CloudExpectedRevision,
+                        DurationMs: Date.now() - SyncStartedAt,
+                        Dirty: CloudSyncDirty
+                    }
+                );
+            }
 
             const HadPendingChanges = CloudSyncPending;
             CloudSyncPending = false;

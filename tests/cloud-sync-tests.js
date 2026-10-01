@@ -42,6 +42,12 @@ global.GM_xmlhttpRequest = Options => {
 
   try {
     const Response = BridgeHandler(Request);
+
+    if (Response?.__timeout) {
+      Options.ontimeout?.();
+      return;
+    }
+
     Options.onload({
       status: 200,
       responseText: JSON.stringify(Response)
@@ -127,19 +133,27 @@ test('dirty automatic sync is push-only and increments expected revision', async
   assert(State.Status === 'Synced', 'successful push did not return to Synced');
 });
 
-test('automatic revision conflict pauses uploads without polling or overwriting', async () => {
-  put('LetterBoxedTracker_3000', ['ALPHA']);
+test('automatic revision conflict verifies once, then pauses without overwriting', async () => {
+  const key = 'LetterBoxedTracker_3000';
+  put(key, ['ALPHA']);
   T.SetSession({Ready: true, ExpectedRevision: 7, Dirty: false, Status: 'Synced'});
   T.MarkCloudSyncDirty();
 
   BridgeHandler = Request => {
-    assert(Request.Action === 'Write', 'conflicting automatic sync should still be write-only');
-    return {Status: 'conflict', Revision: 8, Data: null};
+    if (Request.Action === 'Write') {
+      return {Status: 'conflict', Revision: 8, LastWriteId: 'different-write'};
+    }
+    return {
+      Status: 'ok',
+      Revision: 8,
+      LastWriteId: 'different-write',
+      Data: backup({[key]: ['BETA']})
+    };
   };
 
   await T.SyncWithGoogleDrive();
 
-  eq(actions(), ['Write'], 'conflict path unexpectedly issued additional cloud requests');
+  eq(actions(), ['Write', 'Read'], 'conflict path should verify remote state once');
   const State = T.GetState();
   assert(State.ExpectedRevision === 7, 'conflict changed the session expected revision');
   assert(State.ConflictRevision === 8, 'remote conflict revision was not retained');
@@ -246,6 +260,91 @@ test('current-version global history merge reuses signatures and only unions pro
   assert(Merged.Words.ALPHA.LetterMask === 123456, 'merge rebuilt current-version letter mask');
   eq(Merged.Words.ALPHA.AdjacentPairs, ['ZZ'], 'merge rebuilt current-version adjacency signature');
   eq(Merged.Words.ALPHA.PuzzleIds, ['100', '200'], 'merge failed to union provenance');
+});
+
+test('timed-out write is recovered when Read reports the same WriteId', async () => {
+  const key = 'LetterBoxedTracker_3000';
+  put(key, ['ALPHA']);
+  T.SetSession({Ready: true, ExpectedRevision: 20, Dirty: false, Status: 'Synced'});
+  T.MarkCloudSyncDirty();
+
+  let remote = {Revision: 20, Data: backup({[key]: []}), LastWriteId: null};
+  let timedOutWriteId = null;
+
+  BridgeHandler = Request => {
+    if (Request.Action === 'Write') {
+      timedOutWriteId = Request.WriteId;
+      remote = {
+        Revision: 21,
+        Data: structuredClone(Request.Data),
+        LastWriteId: Request.WriteId,
+        LastWriterSessionId: Request.WriterSessionId
+      };
+      return {__timeout: true};
+    }
+    return {Status: 'ok', ...structuredClone(remote)};
+  };
+
+  await T.SyncWithGoogleDrive();
+
+  eq(actions(), ['Write', 'Read'], 'timeout recovery should verify with one Read');
+  assert(Boolean(timedOutWriteId), 'automatic write did not carry an idempotency WriteId');
+  const State = T.GetState();
+  assert(State.ExpectedRevision === 21, 'timeout recovery did not adopt committed revision');
+  assert(State.Dirty === false, 'timeout recovery left already-committed data dirty');
+  assert(State.Status === 'Synced', 'timeout recovery did not finish Synced');
+});
+
+test('legacy bridge timeout recovery accepts identical remote data without LastWriteId', async () => {
+  const key = 'LetterBoxedTracker_3000';
+  put(key, ['ALPHA']);
+  T.SetSession({Ready: true, ExpectedRevision: 30, Dirty: false, Status: 'Synced'});
+  T.MarkCloudSyncDirty();
+
+  let remote = {Revision: 30, Data: backup({[key]: []})};
+
+  BridgeHandler = Request => {
+    if (Request.Action === 'Write') {
+      remote = {Revision: 31, Data: structuredClone(Request.Data)};
+      return {__timeout: true};
+    }
+    return {Status: 'ok', ...structuredClone(remote)};
+  };
+
+  await T.SyncWithGoogleDrive();
+
+  eq(actions(), ['Write', 'Read'], 'legacy timeout recovery should verify with one Read');
+  const State = T.GetState();
+  assert(State.ExpectedRevision === 31, 'legacy timeout recovery did not adopt committed revision');
+  assert(State.Dirty === false, 'legacy timeout recovery left identical data dirty');
+});
+
+test('timed-out uncommitted write retries once with the same WriteId', async () => {
+  const key = 'LetterBoxedTracker_3000';
+  put(key, ['ALPHA']);
+  T.SetSession({Ready: true, ExpectedRevision: 40, Dirty: false, Status: 'Synced'});
+  T.MarkCloudSyncDirty();
+
+  const writeIds = [];
+  let writeCount = 0;
+
+  BridgeHandler = Request => {
+    if (Request.Action === 'Read') {
+      return {Status: 'ok', Revision: 40, Data: backup({[key]: []})};
+    }
+    writeCount++;
+    writeIds.push(Request.WriteId);
+    if (writeCount === 1) return {__timeout: true};
+    return {Status: 'ok', Revision: 41, LastWriteId: Request.WriteId};
+  };
+
+  await T.SyncWithGoogleDrive();
+
+  eq(actions(), ['Write', 'Read', 'Write'], 'uncommitted timeout should verify then retry once');
+  assert(writeIds.length === 2 && writeIds[0] === writeIds[1], 'retry did not reuse the same WriteId');
+  const State = T.GetState();
+  assert(State.ExpectedRevision === 41, 'retry success did not adopt revision');
+  assert(State.Dirty === false, 'retry success left data dirty');
 });
 
 (async () => {
