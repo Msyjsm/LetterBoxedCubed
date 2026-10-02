@@ -9,7 +9,7 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
-assert(source.includes('// @version      1.13.1-beta.4'), 'beta.3 version missing');
+assert(source.includes('// @version      1.13.1-beta.5'), 'beta.5 version missing');
 assert(source.includes('const ExportFormatVersion = 4;'), 'backup schema v4 missing');
 assert(source.includes('LetterBoxedCubed_ThemeState'), 'theme state storage missing');
 assert(source.includes('NYT Dark (app)'), 'NYT Dark prebuilt theme missing');
@@ -26,6 +26,7 @@ assert(source.includes('Custom 12-column'), 'custom 12-column layout option miss
 assert(source.includes('PinFirstRow'), 'first-row pinning missing');
 assert(source.includes('Span: 12'), 'custom column span model missing');
 assert(source.includes('Start from current automatic layout'), 'automatic-to-custom snapshot action missing');
+assert(source.includes('Custom 12-column placement is stored as inline grid-column/grid-row'), 'custom layout is not reapplied after RenderPanel rebuilds dashboard children');
 assert(!source.includes('lb-cubed-layout-narrow'), 'rejected narrow/medium/wide layout implementation remains');
 assert(!source.includes('@container lbc'), 'state-less container-query cascade should not return');
 

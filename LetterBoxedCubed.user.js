@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed
 // @namespace    https://nathanburgdorff.com/userscripts/
-// @version      1.13.1-beta.4
+// @version      1.13.1-beta.5
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -9083,6 +9083,18 @@
             KnownWordsForDisplay,
             UnfoundWords
         );
+
+        /*
+            Custom 12-column placement is stored as inline grid-column/grid-row
+            styles on the dashboard children. RenderPanel() replaces those
+            children whenever game state changes (including a new-word
+            highlight), so reapply the custom placement before the browser gets
+            a chance to paint the freshly rendered grid. Automatic layouts are
+            class/CSS-driven and need no equivalent refresh.
+        */
+        if (PanelLayoutStyle === "custom") {
+            ApplyCustomPanelLayout(Panel);
+        }
 
         PanelContent.scrollTop =
             PreviousScrollTop;
