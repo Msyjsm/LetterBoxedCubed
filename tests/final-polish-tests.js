@@ -9,7 +9,7 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
-assert(source.includes('// @version      1.13.1-beta.8'), 'beta.8 version missing');
+assert(source.includes('// @version      1.13.1-beta.9'), 'beta.9 version missing');
 assert(source.includes('const ExportFormatVersion = 4;'), 'backup schema v4 missing');
 assert(source.includes('LetterBoxedCubed_ThemeState'), 'theme state storage missing');
 assert(source.includes('Name: "NYT Dark"'), 'NYT Dark prebuilt theme missing');
@@ -20,6 +20,7 @@ assert(source.includes('LbAccent: "#DA5D57"'), 'NYT Dark mobile accent calibrati
 assert(source.includes('--text: #000000 !important;'), 'canvas source-letter dark-mode correction missing');
 assert(source.includes('InstallDarkBoardCanvasHook'), 'dark board canvas text hook missing');
 assert(source.includes('RepairDarkBoardCanvas'), 'dark board bitmap repair missing');
+assert(source.includes('ScheduleDarkBoardCanvasRepairs'), 'runtime theme-switch dark board repair scheduler missing');
 assert(source.includes('CandidateOffsets.length > PixelCount * 0.12'), 'dark board bitmap repair safety guard missing');
 assert(source.includes('lb-cubed-board-inverted'), 'board inversion theme class missing');
 assert(source.includes('Game-module_toolbarContainer__'), 'NYT post-start toolbar dark surface override missing');
