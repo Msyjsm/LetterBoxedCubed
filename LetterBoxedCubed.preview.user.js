@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed [PREVIEW]
 // @namespace    https://nathanburgdorff.com/userscripts/preview/
-// @version      1.13.1-beta.6.193
+// @version      1.13.1-beta.7.195
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -2492,7 +2492,6 @@
             return;
         }
 
-        RefreshNativeBoardThemeTargets();
         LoadPuzzleData();
         UpdateCurrentPuzzleMetadata();
         LoadFoundWords();
@@ -3287,40 +3286,6 @@
             Boolean(Theme.InvertBoard)
         );
         Root.dataset.lbcTheme = Theme.Id || DefaultThemeId;
-
-        /*
-            The web Letter Boxed board does not render every visible letter
-            through the canvas. Mark leaf nodes whose visible content is a
-            single board letter so the same inversion used for the canvas also
-            reaches those DOM-rendered glyphs. Applying the filter to the leaf
-            preserves NYT's own active/inactive colors: dark neutral glyphs
-            become light, while the red path/used-letter color remains red
-            after the hue rotation.
-        */
-        RefreshNativeBoardThemeTargets();
-    }
-
-    function RefreshNativeBoardThemeTargets() {
-        const SquareContainer = document.querySelector(
-            ".lb-game-container .lb-square-container"
-        );
-
-        if (!SquareContainer) {
-            return;
-        }
-
-        for (const Element of SquareContainer.querySelectorAll("*")) {
-            const Text = NormalizeWord(Element.textContent);
-            const IsSingleLetter = /^[A-Z]$/.test(Text);
-            const HasSingleLetterChild = [...Element.children].some(
-                Child => /^[A-Z]$/.test(NormalizeWord(Child.textContent))
-            );
-
-            Element.classList.toggle(
-                "lb-cubed-native-board-letter",
-                IsSingleLetter && !HasSingleLetterChild
-            );
-        }
     }
 
     function SetActiveTheme(ThemeId) {
@@ -9824,10 +9789,9 @@
         }
 
         SquareFeedbackObserver?.disconnect();
-        SquareFeedbackObserver = new MutationObserver(() => {
-            RefreshNativeBoardThemeTargets();
-            QueueValidWordFeedbackPlacement();
-        });
+        SquareFeedbackObserver = new MutationObserver(
+            QueueValidWordFeedbackPlacement
+        );
         SquareFeedbackObserver.observe(SquareContainer, {
             childList: true,
             subtree: true,
@@ -14046,21 +14010,50 @@
                 color: var(--lb-cubed-lb-text) !important;
             }
 
-            html.lb-cubed-native-theme .lb-square-container {
-                color: var(--lb-cubed-lb-text) !important;
+            /*
+                The web board is one canvas. NYT's renderer resolves its neutral
+                letter color from the square container before drawing, while
+                Cubed then inverts the completed canvas for a dark board. If the
+                renderer is allowed to inherit the already-light dark-theme
+                text color, those glyphs are drawn light and the canvas filter
+                turns them BLACK again. Keep the board's SOURCE neutral color
+                black; the inversion then produces the intended light letters,
+                outline and dots while preserving NYT's red accent through the
+                hue rotation.
+            */
+            html.lb-cubed-board-inverted .lb-square-container {
+                color: #000000 !important;
+                --text: #000000 !important;
+            }
+
+            html.lb-cubed-board-inverted .lb-square-container canvas {
+                filter: var(--lb-cubed-board-filter, none);
             }
 
             /*
-                NYT's web board is a hybrid: path/linework is canvas-rendered,
-                while at least some board-letter glyphs are DOM-rendered. The
-                original dark-theme pass filtered only the canvas, leaving
-                those glyphs too dark against #121212. Apply the identical
-                color transform to the marked leaf glyphs as well.
+                Some NYT shells render the global navigation and Letter Boxed
+                toolbar on their own white surfaces. Cover both the pre-game
+                navigation shell and the post-start toolbar using stable class
+                prefixes rather than their generated CSS-module suffixes.
             */
-            html.lb-cubed-board-inverted .lb-square-container canvas,
-            html.lb-cubed-board-inverted
-                .lb-square-container .lb-cubed-native-board-letter {
-                filter: var(--lb-cubed-board-filter, none);
+            html.lb-cubed-native-theme .pz-nav,
+            html.lb-cubed-native-theme #js-global-nav,
+            html.lb-cubed-native-theme [class*="Game-module_toolbarContainer__"],
+            html.lb-cubed-native-theme [class*="ToolbarAdapter-module_toolbarContainer__"],
+            html.lb-cubed-native-theme [class*="Toolbar-module_header__"],
+            html.lb-cubed-native-theme [class*="Toolbar-module_toolbar__"] {
+                background: var(--lb-cubed-lb-page-bg) !important;
+                background-color: var(--lb-cubed-lb-page-bg) !important;
+                color: var(--lb-cubed-lb-text) !important;
+                --text: var(--lb-cubed-lb-text);
+            }
+
+            html.lb-cubed-native-theme #js-logo-nav .pz-nav__logo rect {
+                fill: var(--lb-cubed-lb-page-bg) !important;
+            }
+
+            html.lb-cubed-native-theme #js-logo-nav .pz-nav__logo path {
+                fill: var(--lb-cubed-lb-text) !important;
             }
 
             #${PanelId},
