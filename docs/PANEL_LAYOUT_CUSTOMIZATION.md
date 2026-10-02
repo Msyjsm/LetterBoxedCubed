@@ -1,6 +1,6 @@
 # LBC panel layout customization
 
-v1.13.1-beta.4 restores the original responsive LBC dashboard arrangements and adds stateful hysteresis plus an optional advanced 12-column layout.
+v1.13.1-beta.5 restores the original responsive LBC dashboard arrangements and adds stateful hysteresis plus an optional advanced 12-column layout.
 
 ## Automatic layout
 
@@ -24,3 +24,8 @@ Completion + Longest Found remain a nested summary group. Custom mode separately
 Use "Start from current automatic layout" to seed the custom spans and first-row pins from whichever original responsive stage matches the panel's current width.
 
 Panel layout mode, hysteresis, custom spans, first-row pins, and the stat-card arrangement are stored in portable GUI state and therefore participate in the existing Google Drive GUI-state merge/sync behavior.
+
+
+## Rerender stability
+
+Custom layout placement is reapplied synchronously whenever RenderPanel() rebuilds the dashboard children. This is required because the 12-column placement lives on those child elements as inline grid-row/grid-column styles. Without this refresh, any ordinary panel rerender - notably the rerender caused by a newly found word/highlight - temporarily discarded the custom placement until a resize happened to run UpdatePanelLayout().
