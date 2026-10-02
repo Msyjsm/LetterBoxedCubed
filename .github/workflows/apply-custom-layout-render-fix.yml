@@ -1,0 +1,35 @@
+name: Apply custom layout render fix
+
+on:
+  push:
+    branches:
+      - perf/drive-sync-event-driven
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Reapply custom layout after panel rerender
+        run: python tools/apply_custom_layout_render_fix.py
+      - name: Validate source and regressions
+        run: |
+          node --check LetterBoxedCubed.user.js
+          node --check tools/preview_runtime.js
+          node tests/merge-tests.js
+          node tests/cloud-sync-tests.js
+          node tests/final-polish-tests.js
+      - name: Commit fix and remove patch machinery
+        run: |
+          git config user.name "Nathan Burgdorff + Ari (ChatGPT)"
+          git config user.email "6709230+Msyjsm@users.noreply.github.com"
+          git rm -f .github/workflows/apply-custom-layout-render-fix.yml tools/apply_custom_layout_render_fix.py
+          git add LetterBoxedCubed.user.js tests/final-polish-tests.js
+          git commit -m "Reapply custom layout after panel rerenders"
+          git push origin HEAD:perf/drive-sync-event-driven
