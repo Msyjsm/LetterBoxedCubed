@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed
 // @namespace    https://nathanburgdorff.com/userscripts/
-// @version      1.13.1-beta.7
+// @version      1.13.1-beta.8
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -368,6 +368,9 @@
 
     let NativeRequestAnimationFrame = null;
     let LineAnimationAcceleration = null;
+    let DarkBoardCanvasHookInstalled = false;
+    let NativeBoardFillText = null;
+    let NativeBoardStrokeText = null;
 
     let GameObserver = null;
     let LayoutObserver = null;
@@ -404,6 +407,7 @@
         RecordBootstrapDiagnostic("initialize-start");
         LoadThemeState();
         AddStyles();
+        InstallDarkBoardCanvasHook();
         ApplyTheme();
 
         const Ready = await WaitForGame();
@@ -412,6 +416,7 @@
             return;
         }
 
+        RepairDarkBoardCanvas();
         LoadPuzzleData();
         UpdateCurrentPuzzleMetadata();
         LoadFoundWords();
@@ -1206,6 +1211,224 @@
             Boolean(Theme.InvertBoard)
         );
         Root.dataset.lbcTheme = Theme.Id || DefaultThemeId;
+
+        /*
+            If the board already exists when a theme changes, normalize its
+            current source bitmap immediately. Future NYT text draws are handled
+            by InstallDarkBoardCanvasHook().
+        */
+        requestAnimationFrame(RepairDarkBoardCanvas);
+    }
+
+    function IsLetterBoxedBoardCanvas(Canvas) {
+        return Boolean(
+            Canvas &&
+            typeof Canvas.closest === "function" &&
+            Canvas.closest(".lb-game-container .lb-square-container")
+        );
+    }
+
+    function ParseCanvasColor(Value) {
+        const Text = String(Value || "").trim().toLowerCase();
+
+        if (Text === "white") {
+            return [255, 255, 255, 255];
+        }
+
+        const ShortHex = /^#([0-9a-f]{3}|[0-9a-f]{4})$/i.exec(Text);
+        if (ShortHex) {
+            const Digits = ShortHex[1].split("").map(Character =>
+                parseInt(Character + Character, 16)
+            );
+            return Digits.length === 3
+                ? [Digits[0], Digits[1], Digits[2], 255]
+                : Digits;
+        }
+
+        const LongHex = /^#([0-9a-f]{6}|[0-9a-f]{8})$/i.exec(Text);
+        if (LongHex) {
+            const Hex = LongHex[1];
+            const Components = [
+                parseInt(Hex.slice(0, 2), 16),
+                parseInt(Hex.slice(2, 4), 16),
+                parseInt(Hex.slice(4, 6), 16)
+            ];
+            Components.push(
+                Hex.length === 8
+                    ? parseInt(Hex.slice(6, 8), 16)
+                    : 255
+            );
+            return Components;
+        }
+
+        const Rgb = /^rgba?\(\s*([\d.]+)\s*[, ]\s*([\d.]+)\s*[, ]\s*([\d.]+)(?:\s*[,/]\s*([\d.]+%?))?\s*\)$/i.exec(Text);
+        if (Rgb) {
+            const AlphaText = Rgb[4] || "1";
+            const Alpha = AlphaText.endsWith("%")
+                ? Math.round(parseFloat(AlphaText) * 2.55)
+                : Math.round(parseFloat(AlphaText) * 255);
+            return [
+                Number(Rgb[1]),
+                Number(Rgb[2]),
+                Number(Rgb[3]),
+                Alpha
+            ];
+        }
+
+        return null;
+    }
+
+    function IsLightNeutralCanvasColor(Value) {
+        const Color = ParseCanvasColor(Value);
+        if (!Color) {
+            return false;
+        }
+
+        const [Red, Green, Blue, Alpha] = Color;
+        const Maximum = Math.max(Red, Green, Blue);
+        const Minimum = Math.min(Red, Green, Blue);
+
+        return (
+            Alpha > 24 &&
+            Minimum >= 190 &&
+            Maximum - Minimum <= 24
+        );
+    }
+
+    function InstallDarkBoardCanvasHook() {
+        if (DarkBoardCanvasHookInstalled) {
+            return;
+        }
+
+        const Prototype = PageWindow.CanvasRenderingContext2D?.prototype;
+        if (!Prototype) {
+            return;
+        }
+
+        NativeBoardFillText = Prototype.fillText;
+        NativeBoardStrokeText = Prototype.strokeText;
+
+        const ShouldNormalizeText = Context =>
+            document.documentElement?.classList.contains(
+                "lb-cubed-board-inverted"
+            ) &&
+            IsLetterBoxedBoardCanvas(Context?.canvas);
+
+        if (typeof NativeBoardFillText === "function") {
+            Prototype.fillText = function (...Arguments) {
+                if (
+                    ShouldNormalizeText(this) &&
+                    IsLightNeutralCanvasColor(this.fillStyle)
+                ) {
+                    const Previous = this.fillStyle;
+                    this.fillStyle = "#000000";
+                    try {
+                        return NativeBoardFillText.apply(this, Arguments);
+                    } finally {
+                        this.fillStyle = Previous;
+                    }
+                }
+
+                return NativeBoardFillText.apply(this, Arguments);
+            };
+        }
+
+        if (typeof NativeBoardStrokeText === "function") {
+            Prototype.strokeText = function (...Arguments) {
+                if (
+                    ShouldNormalizeText(this) &&
+                    IsLightNeutralCanvasColor(this.strokeStyle)
+                ) {
+                    const Previous = this.strokeStyle;
+                    this.strokeStyle = "#000000";
+                    try {
+                        return NativeBoardStrokeText.apply(this, Arguments);
+                    } finally {
+                        this.strokeStyle = Previous;
+                    }
+                }
+
+                return NativeBoardStrokeText.apply(this, Arguments);
+            };
+        }
+
+        DarkBoardCanvasHookInstalled = true;
+    }
+
+    function RepairDarkBoardCanvas() {
+        if (
+            !document.documentElement?.classList.contains(
+                "lb-cubed-board-inverted"
+            )
+        ) {
+            return;
+        }
+
+        for (const Canvas of document.querySelectorAll(
+            ".lb-game-container .lb-square-container canvas"
+        )) {
+            const Context = Canvas.getContext?.("2d", {
+                willReadFrequently: true
+            });
+            if (!Context || !Canvas.width || !Canvas.height) {
+                continue;
+            }
+
+            try {
+                const Image = Context.getImageData(
+                    0,
+                    0,
+                    Canvas.width,
+                    Canvas.height
+                );
+                const Data = Image.data;
+                const CandidateOffsets = [];
+
+                for (let Offset = 0; Offset < Data.length; Offset += 4) {
+                    const Red = Data[Offset];
+                    const Green = Data[Offset + 1];
+                    const Blue = Data[Offset + 2];
+                    const Alpha = Data[Offset + 3];
+                    const Maximum = Math.max(Red, Green, Blue);
+                    const Minimum = Math.min(Red, Green, Blue);
+
+                    if (
+                        Alpha > 16 &&
+                        Minimum >= 190 &&
+                        Maximum - Minimum <= 24
+                    ) {
+                        CandidateOffsets.push(Offset);
+                    }
+                }
+
+                /*
+                    Neutral board letters occupy only a small portion of the
+                    transparent board bitmap. If light pixels unexpectedly make
+                    up a large area, do nothing rather than risk recoloring a
+                    future NYT canvas background.
+                */
+                const PixelCount = Canvas.width * Canvas.height;
+                if (
+                    !CandidateOffsets.length ||
+                    CandidateOffsets.length > PixelCount * 0.12
+                ) {
+                    continue;
+                }
+
+                for (const Offset of CandidateOffsets) {
+                    Data[Offset] = 0;
+                    Data[Offset + 1] = 0;
+                    Data[Offset + 2] = 0;
+                }
+
+                Context.putImageData(Image, 0, 0);
+            } catch (ErrorValue) {
+                console.debug(
+                    "[Letter Boxed Cubed] Could not normalize dark board canvas.",
+                    ErrorValue
+                );
+            }
+        }
     }
 
     function SetActiveTheme(ThemeId) {
@@ -7765,7 +7988,10 @@
 
     function QueuePostSubmissionScans() {
         for (const Delay of [0, 40, 100, 250, 500]) {
-            setTimeout(ScanGameState, Delay);
+            setTimeout(() => {
+                ScanGameState();
+                RepairDarkBoardCanvas();
+            }, Delay);
         }
     }
 
