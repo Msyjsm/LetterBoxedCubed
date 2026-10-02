@@ -9,7 +9,7 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
-assert(source.includes('// @version      1.13.1-beta.7'), 'beta.7 version missing');
+assert(source.includes('// @version      1.13.1-beta.8'), 'beta.8 version missing');
 assert(source.includes('const ExportFormatVersion = 4;'), 'backup schema v4 missing');
 assert(source.includes('LetterBoxedCubed_ThemeState'), 'theme state storage missing');
 assert(source.includes('Name: "NYT Dark"'), 'NYT Dark prebuilt theme missing');
@@ -18,6 +18,9 @@ assert(source.includes('LbPageBackground: "#121212"'), 'NYT Dark mobile backgrou
 assert(source.includes('LbText: "#F8F8F8"'), 'NYT Dark mobile text calibration missing');
 assert(source.includes('LbAccent: "#DA5D57"'), 'NYT Dark mobile accent calibration missing');
 assert(source.includes('--text: #000000 !important;'), 'canvas source-letter dark-mode correction missing');
+assert(source.includes('InstallDarkBoardCanvasHook'), 'dark board canvas text hook missing');
+assert(source.includes('RepairDarkBoardCanvas'), 'dark board bitmap repair missing');
+assert(source.includes('CandidateOffsets.length > PixelCount * 0.12'), 'dark board bitmap repair safety guard missing');
 assert(source.includes('lb-cubed-board-inverted'), 'board inversion theme class missing');
 assert(source.includes('Game-module_toolbarContainer__'), 'NYT post-start toolbar dark surface override missing');
 assert(source.includes('#js-global-nav'), 'NYT pre-start/global nav dark surface override missing');
