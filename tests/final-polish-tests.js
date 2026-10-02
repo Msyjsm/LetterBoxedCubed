@@ -9,11 +9,16 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
-assert(source.includes('// @version      1.13.1-beta.5'), 'beta.5 version missing');
+assert(source.includes('// @version      1.13.1-beta.6'), 'beta.6 version missing');
 assert(source.includes('const ExportFormatVersion = 4;'), 'backup schema v4 missing');
 assert(source.includes('LetterBoxedCubed_ThemeState'), 'theme state storage missing');
-assert(source.includes('NYT Dark (app)'), 'NYT Dark prebuilt theme missing');
+assert(source.includes('Name: "NYT Dark"'), 'NYT Dark prebuilt theme missing');
 assert(source.includes('MergeThemeStates'), 'theme merge missing');
+assert(source.includes('LbPageBackground: "#121212"'), 'NYT Dark mobile background calibration missing');
+assert(source.includes('LbText: "#F8F8F8"'), 'NYT Dark mobile text calibration missing');
+assert(source.includes('LbAccent: "#DA5D57"'), 'NYT Dark mobile accent calibration missing');
+assert(source.includes('lb-cubed-native-board-letter'), 'DOM board-letter dark-mode correction missing');
+assert(source.includes('lb-cubed-board-inverted'), 'board inversion theme class missing');
 assert(source.includes('InternalPanelLayoutBreakpoints = ['), 'original breakpoint list missing');
 for (const breakpoint of ['340', '390', '520', '650', '860', '1180']) {
   assert(source.includes(breakpoint), `original breakpoint missing: ${breakpoint}`);
