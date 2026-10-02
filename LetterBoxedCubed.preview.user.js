@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed [PREVIEW]
 // @namespace    https://nathanburgdorff.com/userscripts/preview/
-// @version      1.13.1-beta.5.191
+// @version      1.13.1-beta.6.193
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -2247,6 +2247,7 @@
                 LbText: "#000000",
                 LbSurface: "#FFFFFF",
                 LbBorder: "#000000",
+                LbAccent: "#DA5D57",
                 LbcBackground: "#D88482",
                 LbcSurface: "#E5A09E",
                 LbcText: "#301818",
@@ -2261,24 +2262,30 @@
         },
         [NytDarkThemeId]: {
             Id: NytDarkThemeId,
-            Name: "NYT Dark (app)",
+            Name: "NYT Dark",
             ApplyNative: true,
             InvertBoard: true,
             Palette: {
+                /*
+                    Calibrated from the NYT Android dark-mode screenshot:
+                    background #121212, primary line/text #F8F8F8, and
+                    active path/letters #DA5D57.
+                */
                 LbPageBackground: "#121212",
-                LbText: "#F4F4F4",
-                LbSurface: "#1C1C1C",
-                LbBorder: "#CFCFCF",
-                LbcBackground: "#202020",
-                LbcSurface: "#2B2B2B",
-                LbcText: "#F2F2F2",
-                LbcMuted: "#B8B8B8",
-                LbcBorder: "#686868",
-                LbcAccent: "#D7D7D7",
+                LbText: "#F8F8F8",
+                LbSurface: "#121212",
+                LbBorder: "#F8F8F8",
+                LbAccent: "#DA5D57",
+                LbcBackground: "#121212",
+                LbcSurface: "#212121",
+                LbcText: "#F8F8F8",
+                LbcMuted: "#BDBDBD",
+                LbcBorder: "#666666",
+                LbcAccent: "#DA5D57",
                 NytSolution: "#8E8246",
                 NewHighlight: "#8DDA3B",
                 Success: "#56A86A",
-                Danger: "#D86A6A"
+                Danger: "#DA5D57"
             }
         }
     };
@@ -2485,6 +2492,7 @@
             return;
         }
 
+        RefreshNativeBoardThemeTargets();
         LoadPuzzleData();
         UpdateCurrentPuzzleMetadata();
         LoadFoundWords();
@@ -3250,6 +3258,7 @@
             "--lb-cubed-lb-text": Palette.LbText,
             "--lb-cubed-lb-surface": Palette.LbSurface,
             "--lb-cubed-lb-border": Palette.LbBorder,
+            "--lb-cubed-lb-accent": Palette.LbAccent,
             "--lb-cubed-lbc-bg": Palette.LbcBackground,
             "--lb-cubed-lbc-surface": Palette.LbcSurface,
             "--lb-cubed-lbc-text": Palette.LbcText,
@@ -3273,7 +3282,45 @@
             "lb-cubed-native-theme",
             Boolean(Theme.ApplyNative)
         );
+        Root.classList.toggle(
+            "lb-cubed-board-inverted",
+            Boolean(Theme.InvertBoard)
+        );
         Root.dataset.lbcTheme = Theme.Id || DefaultThemeId;
+
+        /*
+            The web Letter Boxed board does not render every visible letter
+            through the canvas. Mark leaf nodes whose visible content is a
+            single board letter so the same inversion used for the canvas also
+            reaches those DOM-rendered glyphs. Applying the filter to the leaf
+            preserves NYT's own active/inactive colors: dark neutral glyphs
+            become light, while the red path/used-letter color remains red
+            after the hue rotation.
+        */
+        RefreshNativeBoardThemeTargets();
+    }
+
+    function RefreshNativeBoardThemeTargets() {
+        const SquareContainer = document.querySelector(
+            ".lb-game-container .lb-square-container"
+        );
+
+        if (!SquareContainer) {
+            return;
+        }
+
+        for (const Element of SquareContainer.querySelectorAll("*")) {
+            const Text = NormalizeWord(Element.textContent);
+            const IsSingleLetter = /^[A-Z]$/.test(Text);
+            const HasSingleLetterChild = [...Element.children].some(
+                Child => /^[A-Z]$/.test(NormalizeWord(Child.textContent))
+            );
+
+            Element.classList.toggle(
+                "lb-cubed-native-board-letter",
+                IsSingleLetter && !HasSingleLetterChild
+            );
+        }
     }
 
     function SetActiveTheme(ThemeId) {
@@ -4269,7 +4316,7 @@
             const Note = document.createElement("div");
             Note.className = "lb-cubed-theme-note";
             Note.textContent = GetActiveThemeDefinition().Id === NytDarkThemeId
-                ? "App-inspired NYT dark colors on web. Duplicate this theme to tune individual colors."
+                ? "NYT mobile dark-mode colors adapted to the web game. Duplicate this theme to tune individual colors."
                 : "Prebuilt themes are read-only. Use New from current to make an editable copy.";
             Section.appendChild(Note);
             return;
@@ -4280,7 +4327,8 @@
                 ["Page background", "LbPageBackground"],
                 ["Text", "LbText"],
                 ["Surface", "LbSurface"],
-                ["Border", "LbBorder"]
+                ["Border", "LbBorder"],
+                ["Active path / letters", "LbAccent"]
             ]],
             ["Letter Boxed Cubed", [
                 ["Background", "LbcBackground"],
@@ -9776,9 +9824,10 @@
         }
 
         SquareFeedbackObserver?.disconnect();
-        SquareFeedbackObserver = new MutationObserver(
-            QueueValidWordFeedbackPlacement
-        );
+        SquareFeedbackObserver = new MutationObserver(() => {
+            RefreshNativeBoardThemeTargets();
+            QueueValidWordFeedbackPlacement();
+        });
         SquareFeedbackObserver.observe(SquareContainer, {
             childList: true,
             subtree: true,
@@ -13997,7 +14046,20 @@
                 color: var(--lb-cubed-lb-text) !important;
             }
 
-            html.lb-cubed-native-theme .lb-square-container canvas {
+            html.lb-cubed-native-theme .lb-square-container {
+                color: var(--lb-cubed-lb-text) !important;
+            }
+
+            /*
+                NYT's web board is a hybrid: path/linework is canvas-rendered,
+                while at least some board-letter glyphs are DOM-rendered. The
+                original dark-theme pass filtered only the canvas, leaving
+                those glyphs too dark against #121212. Apply the identical
+                color transform to the marked leaf glyphs as well.
+            */
+            html.lb-cubed-board-inverted .lb-square-container canvas,
+            html.lb-cubed-board-inverted
+                .lb-square-container .lb-cubed-native-board-letter {
                 filter: var(--lb-cubed-board-filter, none);
             }
 
