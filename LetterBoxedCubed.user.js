@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed
 // @namespace    https://nathanburgdorff.com/userscripts/
-// @version      1.13.1-beta.8
+// @version      1.13.1-beta.9
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -1213,11 +1213,13 @@
         Root.dataset.lbcTheme = Theme.Id || DefaultThemeId;
 
         /*
-            If the board already exists when a theme changes, normalize its
-            current source bitmap immediately. Future NYT text draws are handled
-            by InstallDarkBoardCanvasHook().
+            Changing the native theme can itself make NYT redraw the canvas
+            asynchronously after ApplyTheme() returns. A single immediate
+            repair therefore wins on page load but can lose a race when the
+            user switches Light -> Dark at runtime. Queue a short burst of
+            idempotent repairs across NYT's repaint window instead.
         */
-        requestAnimationFrame(RepairDarkBoardCanvas);
+        ScheduleDarkBoardCanvasRepairs();
     }
 
     function IsLetterBoxedBoardCanvas(Canvas) {
@@ -1353,6 +1355,22 @@
         }
 
         DarkBoardCanvasHookInstalled = true;
+    }
+
+    function ScheduleDarkBoardCanvasRepairs() {
+        if (
+            !document.documentElement?.classList.contains(
+                "lb-cubed-board-inverted"
+            )
+        ) {
+            return;
+        }
+
+        requestAnimationFrame(RepairDarkBoardCanvas);
+
+        for (const Delay of [0, 40, 100, 250, 500, 1000]) {
+            setTimeout(RepairDarkBoardCanvas, Delay);
+        }
     }
 
     function RepairDarkBoardCanvas() {
