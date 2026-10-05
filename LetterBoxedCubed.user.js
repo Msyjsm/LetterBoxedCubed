@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed
 // @namespace    https://nathanburgdorff.com/userscripts/
-// @version      1.13.1-beta.9
+// @version      1.13.1-beta.10
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -371,6 +371,7 @@
     let DarkBoardCanvasHookInstalled = false;
     let NativeBoardFillText = null;
     let NativeBoardStrokeText = null;
+    let ThemeAppliedOnce = false;
 
     let GameObserver = null;
     let LayoutObserver = null;
@@ -1177,6 +1178,28 @@
             return;
         }
 
+        const NextBoardInverted = Boolean(Theme.InvertBoard);
+
+        /*
+            NYT's Letter Boxed board is a canvas whose source colors are baked
+            into its bitmap. Switching between non-inverted and inverted board
+            modes in place proved inherently fragile: NYT can asynchronously
+            repaint after Cubed's repair, and Cubed's own pixel normalization
+            intentionally mutates the dark-mode bitmap. Treat crossing that
+            boundary as a clean page-lifecycle change instead. The selected
+            theme is already persisted before ApplyTheme() is called, so the
+            reload comes back directly into the requested mode. Same-mode
+            palette edits remain live and do not reload.
+        */
+        if (
+            ThemeAppliedOnce &&
+            Root.classList.contains("lb-cubed-board-inverted") !==
+                NextBoardInverted
+        ) {
+            location.reload();
+            return;
+        }
+
         const Variables = {
             "--lb-cubed-lb-page-bg": Palette.LbPageBackground,
             "--lb-cubed-lb-text": Palette.LbText,
@@ -1208,9 +1231,10 @@
         );
         Root.classList.toggle(
             "lb-cubed-board-inverted",
-            Boolean(Theme.InvertBoard)
+            NextBoardInverted
         );
         Root.dataset.lbcTheme = Theme.Id || DefaultThemeId;
+        ThemeAppliedOnce = true;
 
         /*
             Changing the native theme can itself make NYT redraw the canvas
@@ -12172,6 +12196,35 @@
             html.lb-cubed-native-theme .lb-par,
             html.lb-cubed-native-theme input {
                 color: var(--lb-cubed-lb-text) !important;
+            }
+
+            /*
+                NYT uses its --text token for several game-native details that
+                are not ordinary text nodes, including the Letter Boxed entry
+                underline/cursor. Give the whole game the theme text token,
+                then override the square container back to black source colors
+                below when the board itself is inverted.
+            */
+            html.lb-cubed-native-theme .lb-game-container {
+                --text: var(--lb-cubed-lb-text);
+            }
+
+            html.lb-cubed-native-theme .lb-text-field,
+            html.lb-cubed-native-theme .lb-text-field * {
+                color: var(--lb-cubed-lb-text) !important;
+                caret-color: var(--lb-cubed-lb-text) !important;
+            }
+
+            html.lb-cubed-native-theme .lb-text-field {
+                border-color: var(--lb-cubed-lb-text) !important;
+                border-bottom-color: var(--lb-cubed-lb-text) !important;
+            }
+
+            html.lb-cubed-native-theme .lb-text-field::before,
+            html.lb-cubed-native-theme .lb-text-field::after,
+            html.lb-cubed-native-theme .lb-text-field-wrapper::before,
+            html.lb-cubed-native-theme .lb-text-field-wrapper::after {
+                border-color: var(--lb-cubed-lb-text) !important;
             }
 
             /*

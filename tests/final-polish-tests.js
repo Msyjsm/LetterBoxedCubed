@@ -9,7 +9,7 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
-assert(source.includes('// @version      1.13.1-beta.9'), 'beta.9 version missing');
+assert(source.includes('// @version      1.13.1-beta.10'), 'beta.10 version missing');
 assert(source.includes('const ExportFormatVersion = 4;'), 'backup schema v4 missing');
 assert(source.includes('LetterBoxedCubed_ThemeState'), 'theme state storage missing');
 assert(source.includes('Name: "NYT Dark"'), 'NYT Dark prebuilt theme missing');
@@ -21,6 +21,10 @@ assert(source.includes('--text: #000000 !important;'), 'canvas source-letter dar
 assert(source.includes('InstallDarkBoardCanvasHook'), 'dark board canvas text hook missing');
 assert(source.includes('RepairDarkBoardCanvas'), 'dark board bitmap repair missing');
 assert(source.includes('ScheduleDarkBoardCanvasRepairs'), 'runtime theme-switch dark board repair scheduler missing');
+assert(source.includes('ThemeAppliedOnce'), 'theme transition reload guard state missing');
+assert(source.includes('location.reload();'), 'light/dark board-mode transition reload missing');
+assert(source.includes('caret-color: var(--lb-cubed-lb-text)'), 'dark text-entry caret styling missing');
+assert(source.includes('html.lb-cubed-native-theme .lb-game-container'), 'game-native --text theme token missing');
 assert(source.includes('CandidateOffsets.length > PixelCount * 0.12'), 'dark board bitmap repair safety guard missing');
 assert(source.includes('lb-cubed-board-inverted'), 'board inversion theme class missing');
 assert(source.includes('Game-module_toolbarContainer__'), 'NYT post-start toolbar dark surface override missing');
