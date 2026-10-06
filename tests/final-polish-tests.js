@@ -9,7 +9,7 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
-assert(source.includes('// @version      1.13.1-beta.10'), 'beta.10 version missing');
+assert(source.includes('// @version      1.13.1-beta.11'), 'beta.11 version missing');
 assert(source.includes('const ExportFormatVersion = 4;'), 'backup schema v4 missing');
 assert(source.includes('LetterBoxedCubed_ThemeState'), 'theme state storage missing');
 assert(source.includes('Name: "NYT Dark"'), 'NYT Dark prebuilt theme missing');
@@ -24,6 +24,9 @@ assert(source.includes('ScheduleDarkBoardCanvasRepairs'), 'runtime theme-switch 
 assert(source.includes('ThemeAppliedOnce'), 'theme transition reload guard state missing');
 assert(source.includes('location.reload();'), 'light/dark board-mode transition reload missing');
 assert(source.includes('caret-color: var(--lb-cubed-lb-text)'), 'dark text-entry caret styling missing');
+assert(source.includes('inset 0 -2px 0 var(--lb-cubed-lb-text)'), 'dark text-entry underline guarantee missing');
+assert(source.includes('html.lb-cubed-native-theme .lb-cubed-valid-feedback-proxy'), 'dark valid-word toast theme override missing');
+assert(source.includes('clip-path: none !important;'), 'dark valid-word toast clipping reset missing');
 assert(source.includes('html.lb-cubed-native-theme .lb-game-container'), 'game-native --text theme token missing');
 assert(source.includes('CandidateOffsets.length > PixelCount * 0.12'), 'dark board bitmap repair safety guard missing');
 assert(source.includes('lb-cubed-board-inverted'), 'board inversion theme class missing');
