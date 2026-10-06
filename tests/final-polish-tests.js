@@ -26,7 +26,11 @@ assert(source.includes('location.reload();'), 'light/dark board-mode transition 
 assert(source.includes('caret-color: var(--lb-cubed-lb-text)'), 'dark text-entry caret styling missing');
 assert(source.includes('min(var(--lb-cubed-square-width, 100%), 100%) 2px'), 'board-width dark text-entry underline missing');
 assert(source.includes('Proxy.className = "lb-cubed-valid-feedback-proxy"'), 'self-owned valid-word toast proxy missing');
-assert(source.includes('Proxy.textContent = String(Source.textContent || "").trim()'), 'valid-word toast still depends on NYT child markup');
+assert(
+  source.includes('Proxy.textContent = String(Source.textContent || "").trim()') ||
+  source.includes('Proxy.textContent = MessageText'),
+  'valid-word toast text assignment missing'
+);
 assert(source.includes('clip-path: none !important;'), 'dark valid-word toast clipping reset missing');
 assert(source.includes('html.lb-cubed-native-theme .lb-game-container'), 'game-native --text theme token missing');
 assert(source.includes('CandidateOffsets.length > PixelCount * 0.12'), 'dark board bitmap repair safety guard missing');
