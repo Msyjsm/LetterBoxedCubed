@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed [PREVIEW]
 // @namespace    https://nathanburgdorff.com/userscripts/preview/
-// @version      1.13.1-beta.10.204
+// @version      1.13.1-beta.11.205
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -12715,6 +12715,43 @@
                 pointer-events: none !important;
             }
 
+            /*
+                Cubed mirrors NYT's valid-word toast into an independently
+                positioned proxy. In dark mode that proxy must not inherit the
+                native success-message animation's transient opacity/clip state
+                or child colors. The native source still owns the lifecycle;
+                the proxy only needs to remain visibly styled while that source
+                exists.
+            */
+            html.lb-cubed-native-theme .lb-cubed-valid-feedback-proxy {
+                opacity: 1 !important;
+                visibility: visible !important;
+                clip-path: none !important;
+                filter: none !important;
+                animation: none !important;
+                transition: none !important;
+                background:
+                    color-mix(
+                        in srgb,
+                        var(--lb-cubed-lb-text) 10%,
+                        var(--lb-cubed-lb-surface)
+                    ) !important;
+                color: var(--lb-cubed-lb-text) !important;
+                border: 1px solid
+                    color-mix(
+                        in srgb,
+                        var(--lb-cubed-lb-border) 75%,
+                        transparent
+                    ) !important;
+            }
+
+            html.lb-cubed-native-theme .lb-cubed-valid-feedback-proxy,
+            html.lb-cubed-native-theme .lb-cubed-valid-feedback-proxy * {
+                color: var(--lb-cubed-lb-text) !important;
+                fill: currentColor !important;
+                text-shadow: none !important;
+            }
+
             .lb-game-container.${LayoutClass}
             > .lb-word-container
             > .lb-text-field-wrapper
@@ -14298,6 +14335,17 @@
             html.lb-cubed-native-theme .lb-text-field {
                 border-color: var(--lb-cubed-lb-text) !important;
                 border-bottom-color: var(--lb-cubed-lb-text) !important;
+            }
+
+            /*
+                NYT's visible entry rule is not reliably the text field's own
+                border. Guarantee the themed underline without changing layout
+                by painting it as an inset edge on the existing wrapper. This
+                also survives the dark-mode page reload used for board themes.
+            */
+            html.lb-cubed-native-theme .lb-text-field-wrapper {
+                box-shadow:
+                    inset 0 -2px 0 var(--lb-cubed-lb-text) !important;
             }
 
             html.lb-cubed-native-theme .lb-text-field::before,
