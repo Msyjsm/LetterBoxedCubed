@@ -9,7 +9,7 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
-assert(source.includes('// @version      1.13.1-beta.12'), 'beta.12 version missing');
+assert(source.includes('// @version      1.13.1-beta.13'), 'beta.13 version missing');
 assert(source.includes('const ExportFormatVersion = 4;'), 'backup schema v4 missing');
 assert(source.includes('LetterBoxedCubed_ThemeState'), 'theme state storage missing');
 assert(source.includes('Name: "NYT Dark"'), 'NYT Dark prebuilt theme missing');
@@ -26,6 +26,9 @@ assert(source.includes('location.reload();'), 'light/dark board-mode transition 
 assert(source.includes('caret-color: var(--lb-cubed-lb-text)'), 'dark text-entry caret styling missing');
 assert(source.includes('min(var(--lb-cubed-square-width, 100%), 100%) 2px'), 'board-width dark text-entry underline missing');
 assert(source.includes('Proxy.className = "lb-cubed-valid-feedback-proxy"'), 'self-owned valid-word toast proxy missing');
+assert(source.includes('ValidFeedbackProxyMinimumVisibleMs = 600'), 'source-independent toast minimum lifetime missing');
+assert(source.includes('Source?.textContent || ActiveValidFeedbackText'), 'toast settling still requires live NYT source');
+assert(source.includes('Proxy.textContent = MessageText'), 'valid-word toast does not preserve captured praise text');
 assert(
   source.includes('Proxy.textContent = String(Source.textContent || "").trim()') ||
   source.includes('Proxy.textContent = MessageText'),
@@ -64,6 +67,9 @@ for (const label of [
   assert(preview.includes(label), `preview diagnostic missing: ${label}`);
 }
 assert(preview.includes('GetPreviewDebugBundle'), 'full debug bundle function missing');
+assert(preview.includes('InternalPanelLayoutStage'), 'debug bundle does not use current layout stage');
+assert(!preview.includes('                InternalPanelLayoutMode,'), 'debug bundle still references stale InternalPanelLayoutMode');
+assert(preview.includes('Full debug bundle fallback'), 'debug bundle copy lacks failure fallback');
 assert(preview.includes('PreviewTransientTrace'), 'transient trace state missing');
 assert(preview.includes('!PreviewDebugPaneVisible'), 'hidden debug pane render guard missing');
 assert(preview.includes('UpdatePreviewVersionLabelContrast'), 'preview version contrast helper missing');

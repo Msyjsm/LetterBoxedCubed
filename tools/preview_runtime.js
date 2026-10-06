@@ -1844,7 +1844,7 @@
                 OuterMode: document.querySelector(".lb-game-container")?.classList.contains(SideModeClass)
                     ? "side"
                     : "stacked",
-                InternalPanelLayoutMode,
+                InternalPanelLayoutStage,
                 PanelWidthPreference,
                 AdjustLayoutGap,
                 DisplayedLayoutGapPx: GetDisplayedLayoutGapPx(),
@@ -1968,10 +1968,33 @@
         );
         AddButton(
             "Copy Full Debug Bundle",
-            () => CopyPreviewDiagnostic(
-                GetPreviewDebugBundle(),
-                "Full debug bundle"
-            )
+            () => {
+                try {
+                    return CopyPreviewDiagnostic(
+                        GetPreviewDebugBundle(),
+                        "Full debug bundle"
+                    );
+                } catch (ErrorValue) {
+                    console.error(
+                        "[Letter Boxed Cubed][preview] Could not build full debug bundle.",
+                        ErrorValue
+                    );
+                    return CopyPreviewDiagnostic(
+                        {
+                            GeneratedAt: new Date().toISOString(),
+                            PreviewVersion: GetRunningUserscriptVersion(),
+                            DebugBundleError: {
+                                Name: ErrorValue?.name || "Error",
+                                Message: String(ErrorValue?.message || ErrorValue),
+                                Stack: String(ErrorValue?.stack || "")
+                            },
+                            Geometry: GetPreviewGeometrySnapshot(),
+                            TransientTrace: structuredClone(PreviewTransientTrace)
+                        },
+                        "Full debug bundle fallback"
+                    );
+                }
+            }
         );
 
         const Status = document.createElement("div");

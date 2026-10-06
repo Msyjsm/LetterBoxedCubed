@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed
 // @namespace    https://nathanburgdorff.com/userscripts/
-// @version      1.13.1-beta.12
+// @version      1.13.1-beta.13
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -391,8 +391,11 @@
     let ActiveValidFeedbackText = "";
     let PendingValidFeedbackBaselineChainLength = null;
     let PendingValidFeedbackStartedAt = 0;
+    let ValidFeedbackClearTimer = null;
+    let ValidFeedbackProxyShownAt = 0;
     const ValidFeedbackSettlePollMs = 30;
     const ValidFeedbackSettleMaximumMs = 400;
+    const ValidFeedbackProxyMinimumVisibleMs = 600;
 
     let ScanTimer = null;
     let LayoutTimer = null;
@@ -7721,11 +7724,14 @@
     function ClearValidWordFeedbackProxy(Source = null) {
         clearTimeout(ValidFeedbackPlacementTimer);
         ValidFeedbackPlacementTimer = null;
+        clearTimeout(ValidFeedbackClearTimer);
+        ValidFeedbackClearTimer = null;
         RenderedValidFeedbackKey = null;
         ActiveValidFeedbackSource = null;
         ActiveValidFeedbackText = "";
         PendingValidFeedbackBaselineChainLength = null;
         PendingValidFeedbackStartedAt = 0;
+        ValidFeedbackProxyShownAt = 0;
 
         document.querySelectorAll(".lb-cubed-valid-feedback-proxy")
             .forEach(Element => Element.remove());
@@ -7741,6 +7747,23 @@
                 "lb-cubed-valid-feedback-relocated-source"
             ));
         }
+    }
+
+    function ScheduleValidWordFeedbackProxyClear() {
+        clearTimeout(ValidFeedbackClearTimer);
+
+        const VisibleFor = ValidFeedbackProxyShownAt
+            ? performance.now() - ValidFeedbackProxyShownAt
+            : 0;
+        const Delay = Math.max(
+            0,
+            ValidFeedbackProxyMinimumVisibleMs - VisibleFor
+        );
+
+        ValidFeedbackClearTimer = setTimeout(() => {
+            ValidFeedbackClearTimer = null;
+            ClearValidWordFeedbackProxy();
+        }, Delay);
     }
 
     function PositionValidWordFeedbackProxy(
@@ -7846,17 +7869,30 @@
             !WordContainer ||
             !TextFieldWrapper ||
             !ListContainer ||
-            !SquareContainer ||
-            !Source
+            !SquareContainer
         ) {
             ClearValidWordFeedbackProxy();
             return;
         }
 
-        const MessageText = String(Source.textContent || "").trim();
+        /*
+            Snapshot praise text at lifecycle start and keep using it even if
+            NYT clears its native toast before the delayed history DOM commit.
+            Dark mode can shorten the native success-message lifecycle to less
+            than our settling window; tying proxy creation to Source existence
+            therefore made the toast disappear only in dark mode.
+        */
+        const MessageText = String(
+            Source?.textContent || ActiveValidFeedbackText || ""
+        ).trim();
         if (!MessageText) {
             ClearValidWordFeedbackProxy(Source);
             return;
+        }
+
+        if (Source) {
+            ActiveValidFeedbackSource = Source;
+            ActiveValidFeedbackText = MessageText;
         }
 
         /*
@@ -7866,8 +7902,9 @@
             the proxy before that commit made it appear in the old normal
             position and then jump above TI when wrapping finally settled.
 
-            The 400ms ceiling is only a safety fallback for an unexpected NYT
-            state where the history count does not advance.
+            Crucially, this settling wait is now owned by Cubed's captured
+            lifecycle, not by the continued existence of NYT's native node.
+            The 400ms ceiling remains the fallback when history does not move.
         */
         const CurrentChainLength = ReadCurrentChain().length;
         const WaitingForHistoryCommit =
@@ -7912,9 +7949,12 @@
                 needs the authoritative visible message text; the hidden native
                 source still determines creation/removal timing.
             */
-            Proxy.textContent = String(Source.textContent || "").trim();
+            Proxy.textContent = MessageText;
             GameContainer.appendChild(Proxy);
             RenderedValidFeedbackKey = FeedbackKey;
+            ValidFeedbackProxyShownAt = performance.now();
+        } else if (!ValidFeedbackProxyShownAt) {
+            ValidFeedbackProxyShownAt = performance.now();
         }
 
         PositionValidWordFeedbackProxy(
@@ -7926,9 +7966,20 @@
             SquareContainer
         );
 
-        Source.classList.add(
-            "lb-cubed-valid-feedback-relocated-source"
-        );
+        if (Source) {
+            clearTimeout(ValidFeedbackClearTimer);
+            ValidFeedbackClearTimer = null;
+            Source.classList.add(
+                "lb-cubed-valid-feedback-relocated-source"
+            );
+        } else {
+            /*
+                NYT has already retired its native success node. Keep Cubed's
+                independently-owned praise visible for at least the same rough
+                perceptual lifetime as the normal light-mode toast.
+            */
+            ScheduleValidWordFeedbackProxyClear();
+        }
     }
 
     function QueueValidWordFeedbackPlacement() {
@@ -7952,6 +8003,13 @@
                 !ActiveValidFeedbackText;
 
             if (StartsNewLifecycle) {
+                clearTimeout(ValidFeedbackClearTimer);
+                ValidFeedbackClearTimer = null;
+                document.querySelectorAll(".lb-cubed-valid-feedback-proxy")
+                    .forEach(Element => Element.remove());
+                RenderedValidFeedbackKey = null;
+                ValidFeedbackProxyShownAt = 0;
+
                 ActiveValidFeedbackSource = Source;
                 ActiveValidFeedbackText = MessageText;
                 ValidFeedbackGeneration++;
