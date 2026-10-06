@@ -15,3 +15,7 @@ Valid-word praise is rendered by an LBC-owned relocated feedback proxy while the
 Preview-only beta version text also adapts its contrast to the active Letter Boxed page background. A relative-luminance threshold switches the normally dark gray label to a lighter gray on sufficiently dark custom/NYT Dark backgrounds.
 
 Dark-mode toast timing note: NYT can retire its native success node before Cubed's 400ms history-settling window completes. Cubed therefore snapshots the praise text/lifecycle immediately, finishes history settling independently of the native node, and guarantees its own proxy at least 600ms of visible time once shown. This preserves stable placement without depending on NYT's shorter dark-mode toast lifetime.
+
+The Preview transient-element trace confirmed the timing difference directly: in the failing NYT Dark case the native `Awesome!` source was cleared about 230ms after it became a success message, before Cubed's proxy was ever created; in the working NYT Light case Cubed created the proxy about 160ms after source detection and kept it visible for roughly 600ms. Beta.13 therefore treats the captured praise lifecycle as authoritative even after the native source disappears.
+
+The Preview full-debug-bundle helper also now reports the current `InternalPanelLayoutStage` rather than the removed beta.3-era `InternalPanelLayoutMode`; a guarded fallback bundle is copied/logged if any future diagnostic field throws.
