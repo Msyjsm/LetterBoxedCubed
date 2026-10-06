@@ -16,6 +16,7 @@
     let PreviewDebugObserver = null;
     let PreviewChromeObserver = null;
     let PreviewDebugRenderTimer = null;
+    let PreviewVersionContrastObserver = null;
     let PreviewDebugNextElementId = 1;
     let PreviewDebugPaneVisible = false;
     let PreviewHistoricalTestModeActive = false;
@@ -102,7 +103,7 @@
             #${PreviewVersionLabelId} {
                 position: absolute;
                 z-index: 20;
-                color: rgba(92, 92, 92, 0.78);
+                color: var(--lb-cubed-preview-version-color, rgba(92, 92, 92, 0.78));
                 font: 10px/1.2 Consolas, "Courier New", monospace;
                 white-space: nowrap;
                 pointer-events: none;
@@ -824,6 +825,44 @@
         return "preview";
     }
 
+    function UpdatePreviewVersionLabelContrast() {
+        const Label = document.getElementById(PreviewVersionLabelId);
+        if (!Label) {
+            return;
+        }
+
+        const Raw = getComputedStyle(document.documentElement)
+            .getPropertyValue("--lb-cubed-lb-page-bg")
+            .trim();
+        const Hex = /^#([0-9a-f]{6})$/i.exec(Raw);
+
+        if (!Hex) {
+            Label.style.removeProperty("--lb-cubed-preview-version-color");
+            return;
+        }
+
+        const Value = Hex[1];
+        const Channels = [0, 2, 4].map(Index =>
+            parseInt(Value.slice(Index, Index + 2), 16) / 255
+        );
+        const Linear = Channels.map(Channel =>
+            Channel <= 0.04045
+                ? Channel / 12.92
+                : Math.pow((Channel + 0.055) / 1.055, 2.4)
+        );
+        const Luminance =
+            0.2126 * Linear[0] +
+            0.7152 * Linear[1] +
+            0.0722 * Linear[2];
+
+        Label.style.setProperty(
+            "--lb-cubed-preview-version-color",
+            Luminance < 0.22
+                ? "rgba(210, 210, 210, 0.74)"
+                : "rgba(92, 92, 92, 0.78)"
+        );
+    }
+
     function CreatePreviewVersionLabel() {
         if (
             UserscriptBuildChannel !== "preview" ||
@@ -838,6 +877,20 @@
         Label.id = PreviewVersionLabelId;
         Label.textContent = GetRunningUserscriptVersion();
         document.body.appendChild(Label);
+        UpdatePreviewVersionLabelContrast();
+
+        PreviewVersionContrastObserver?.disconnect();
+        PreviewVersionContrastObserver = new MutationObserver(
+            UpdatePreviewVersionLabelContrast
+        );
+        PreviewVersionContrastObserver.observe(
+            document.documentElement,
+            {
+                attributes: true,
+                attributeFilter: ["style", "class"]
+            }
+        );
+
         PositionPreviewVersionLabel();
     }
 
