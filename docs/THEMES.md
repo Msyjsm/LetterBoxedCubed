@@ -49,3 +49,7 @@ Preview-only beta version text continues to adapt its contrast to the Letter Box
 ## Migration
 
 ThemeState v1 custom themes migrate automatically. Old `InvertBoard` is interpreted only during migration: Dark-derived themes become `BoardMatchesBackground=true`, while other themes remain independent. Old palette keys are mapped into the semantic v2 fields; obsolete editable muted/accent/success/error values are discarded in favor of derived/fixed behavior. Existing theme IDs and per-theme timestamps/tombstones are retained for merge-safe Drive sync.
+
+## Preview acceptance checklist
+
+For the first v2 Preview pass, verify live NYT Light <-> NYT Dark switching without a reload; independent Background/Board behavior in a Light-derived custom theme; Board tracking while Same as background is checked; neutral and active GB colors during typing and after submission; the native word-entry underline; the generated outer game-container background; toast behavior; NYT-solution contrast/star color; and custom Redacted color.
