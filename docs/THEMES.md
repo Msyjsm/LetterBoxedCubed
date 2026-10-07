@@ -36,13 +36,13 @@ ThemeState v2 never mutates the canvas bitmap. Instead, LBC installs one SVG `fe
 
 Antialiased and blended pixels transform continuously between those anchors. Because NYT remains free to repaint its normal source canvas underneath the filter, theme changes are live: there is no board-inversion checkbox, bitmap repair, Canvas2D monkeypatch, or Light/Dark reload boundary.
 
-The square container is deliberately kept on NYT's neutral black source `--text` while board theming is active so NYT continues drawing the expected source palette before composition.
+NYT resolves inactive board-letter paint from the game-level `--text` token rather than reliably from the square container. While board theming is active, LBC therefore keeps that renderer-facing source token at native black. Visible DOM text, caret and entry-rule colors are styled explicitly from **Foreground**. This keeps the canvas source palette stable so inactive letters map through the affine matrix to the requested Foreground instead of accidentally becoming Board-colored/invisible.
 
 ## Native shell details
 
 The surrounding page, toolbar, generated outer `Game-module_gameContainer__*` wrapper and other native UI surfaces use Letter Boxed Background/Foreground directly. LBC themes NYT's real `.lb-text-field-underline` instead of painting a second synthetic line on the input wrapper.
 
-Valid-word praise still uses LBC's source-independent lifecycle/placement proxy while preserving NYT's native toast presentation classes. The proxy snapshots praise immediately because NYT Dark can retire its native source before Cubed's history-settling window completes.
+Transient valid and invalid word messages retain NYT's normal geometry/typography but use **Foreground (active)** as their background and **Board** as their text/icon color. Valid-word praise still uses LBC's source-independent lifecycle/placement proxy; the proxy snapshots praise immediately because NYT can retire its native source before Cubed's history-settling window completes.
 
 Preview-only beta version text continues to adapt its contrast to the Letter Boxed Background.
 
@@ -52,4 +52,4 @@ ThemeState v1 custom themes migrate automatically. Old `InvertBoard` is interpre
 
 ## Preview acceptance checklist
 
-For the first v2 Preview pass, verify live NYT Light <-> NYT Dark switching without a reload; independent Background/Board behavior in a Light-derived custom theme; Board tracking while Same as background is checked; neutral and active GB colors during typing and after submission; the native word-entry underline; the generated outer game-container background; toast behavior; NYT-solution contrast/star color; and custom Redacted color.
+For the first v2 Preview pass, verify live NYT Light <-> NYT Dark switching without a reload; independent Background/Board behavior in a Light-derived custom theme; Board tracking while Same as background is checked; neutral and active GB colors during typing and after submission; the native word-entry underline; the generated outer game-container background; valid/invalid message colors; NYT-solution contrast/star color; and custom Redacted color.
