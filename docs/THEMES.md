@@ -46,6 +46,10 @@ Transient valid and invalid word messages retain NYT's normal geometry/typograph
 
 Preview-only beta version text continues to adapt its contrast to the Letter Boxed Background.
 
+## Preview board diagnostics
+
+Preview builds expose two board-specific diagnostics in the Debug Pane. **Copy Board Source Snapshot** reads the unfiltered source bitmap once and reports the most common RGBA values together with the active theme variables, renderer-facing `--text` values, SVG matrix and computed canvas filter. **Start Board Canvas Trace** temporarily records `fillText`/`strokeText` calls made specifically to the Letter Boxed board canvas; after starting it, type or delete at least one board letter to force NYT to repaint, then use **Stop + Copy Board Trace**. These tools are preview-only and do not alter the production userscript.
+
 ## Migration
 
 ThemeState v1 custom themes migrate automatically. Old `InvertBoard` is interpreted only during migration: Dark-derived themes become `BoardMatchesBackground=true`, while other themes remain independent. Old palette keys are mapped into the semantic v2 fields; obsolete editable muted/accent/success/error values are discarded in favor of derived/fixed behavior. Existing theme IDs and per-theme timestamps/tombstones are retained for merge-safe Drive sync.
