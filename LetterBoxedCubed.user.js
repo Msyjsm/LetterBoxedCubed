@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed
 // @namespace    https://nathanburgdorff.com/userscripts/
-// @version      1.13.1-beta.15
+// @version      1.13.1-beta.16
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -10796,10 +10796,38 @@
                 transition: none !important;
             }
 
-            /* Theme only the colors; leave native toast geometry/typography. */
-            html.lb-cubed-native-theme .lb-cubed-valid-feedback-proxy,
+            /*
+                Theme transient validation/praise as one semantic LB surface:
+                Foreground (active) is the toast body; Board is its readable
+                foreground. Keep NYT's native toast geometry/typography.
+                Invalid messages live in the text-field wrapper; valid praise
+                uses Cubed's lifecycle proxy.
+            */
+            html.lb-cubed-native-theme .lb-game-container.${LayoutClass}
+            > .lb-word-container
+            > .lb-text-field-wrapper
+            > .lb-message-box,
+            html.lb-cubed-native-theme .lb-game-container.${LayoutClass}
+            > .lb-word-container
+            > .lb-text-field-wrapper
+            > .lb-par:not(.no-words),
+            html.lb-cubed-native-theme .lb-cubed-valid-feedback-proxy {
+                background-color: var(--lb-cubed-lb-active) !important;
+                color: var(--lb-cubed-lb-board) !important;
+                border-color: var(--lb-cubed-lb-active) !important;
+                text-shadow: none !important;
+            }
+
+            html.lb-cubed-native-theme .lb-game-container.${LayoutClass}
+            > .lb-word-container
+            > .lb-text-field-wrapper
+            > .lb-message-box *,
+            html.lb-cubed-native-theme .lb-game-container.${LayoutClass}
+            > .lb-word-container
+            > .lb-text-field-wrapper
+            > .lb-par:not(.no-words) *,
             html.lb-cubed-native-theme .lb-cubed-valid-feedback-proxy * {
-                color: var(--lb-cubed-lb-text) !important;
+                color: var(--lb-cubed-lb-board) !important;
                 fill: currentColor !important;
                 text-shadow: none !important;
             }
@@ -12375,8 +12403,18 @@
                 caret-color: var(--lb-cubed-lb-fg) !important;
             }
 
-            html.lb-cubed-native-theme .lb-game-container {
-                --text: var(--lb-cubed-lb-fg);
+            /*
+                Keep NYT's canvas SOURCE palette native even when the visible
+                theme foreground is light. NYT resolves inactive GB letter
+                paint from the game-level --text token, not reliably from the
+                square container. Feeding the themed foreground here caused
+                Dark mode to draw white source glyphs; the affine matrix then
+                correctly mapped source white -> Board, making those letters
+                disappear. DOM text/caret/rule colors are styled explicitly,
+                so the renderer-facing source token can stay native black.
+            */
+            html.lb-cubed-board-themed .lb-game-container {
+                --text: #000000 !important;
             }
 
             /* Theme NYT's real entry rule; do not draw a duplicate synthetic line. */

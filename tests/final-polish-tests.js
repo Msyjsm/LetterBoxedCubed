@@ -9,7 +9,7 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
-assert(source.includes('// @version      1.13.1-beta.15'), 'beta.15 version missing');
+assert(source.includes('// @version      1.13.1-beta.16'), 'beta.16 version missing');
 assert(source.includes('const ExportFormatVersion = 4;'), 'backup schema v4 missing');
 assert(source.includes('LetterBoxedCubed_ThemeState'), 'theme state storage missing');
 assert(source.includes('Name: "NYT Dark"'), 'NYT Dark prebuilt theme missing');
@@ -26,6 +26,11 @@ assert(source.includes('BuildBoardThemeAffineMatrix'), 'semantic affine board tr
 assert(source.includes('feColorMatrix'), 'SVG board color matrix missing');
 assert(source.includes('NativeBoardActiveSourceColor = "#E8A9A0"'), 'native active source anchor missing');
 assert(source.includes('filter: url(#lb-cubed-board-theme-filter)'), 'semantic board filter CSS missing');
+assert(source.includes('html.lb-cubed-board-themed .lb-game-container'), 'game-level native source color guard missing');
+assert(source.includes('--text: #000000 !important;'), 'inactive GB letter source normalization missing');
+assert(source.includes('background-color: var(--lb-cubed-lb-active) !important;'), 'active-color toast background missing');
+assert(source.includes('color: var(--lb-cubed-lb-board) !important;'), 'board-color toast foreground missing');
+assert(source.includes('> .lb-par:not(.no-words)'), 'validation-message semantic toast selector missing');
 assert(!source.includes('invert(1) hue-rotate(180deg)'), 'legacy inversion filter remains');
 assert(!source.includes('InstallDarkBoardCanvasHook'), 'legacy canvas text hook remains');
 assert(!source.includes('RepairDarkBoardCanvas'), 'legacy bitmap repair remains');
