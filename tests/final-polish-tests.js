@@ -9,40 +9,48 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
-assert(source.includes('// @version      1.13.1-beta.14'), 'beta.14 version missing');
+assert(source.includes('// @version      1.13.1-beta.15'), 'beta.15 version missing');
 assert(source.includes('const ExportFormatVersion = 4;'), 'backup schema v4 missing');
 assert(source.includes('LetterBoxedCubed_ThemeState'), 'theme state storage missing');
 assert(source.includes('Name: "NYT Dark"'), 'NYT Dark prebuilt theme missing');
 assert(source.includes('MergeThemeStates'), 'theme merge missing');
-assert(source.includes('LbPageBackground: "#121212"'), 'NYT Dark mobile background calibration missing');
-assert(source.includes('LbText: "#F8F8F8"'), 'NYT Dark mobile text calibration missing');
-assert(source.includes('LbAccent: "#DA5D57"'), 'NYT Dark mobile accent calibration missing');
-assert(source.includes('--text: #000000 !important;'), 'canvas source-letter dark-mode correction missing');
-assert(source.includes('InstallDarkBoardCanvasHook'), 'dark board canvas text hook missing');
-assert(source.includes('RepairDarkBoardCanvas'), 'dark board bitmap repair missing');
-assert(source.includes('ScheduleDarkBoardCanvasRepairs'), 'runtime theme-switch dark board repair scheduler missing');
-assert(source.includes('ThemeAppliedOnce'), 'theme transition reload guard state missing');
-assert(source.includes('location.reload();'), 'light/dark board-mode transition reload missing');
-assert(source.includes('caret-color: var(--lb-cubed-lb-text)'), 'dark text-entry caret styling missing');
-assert(source.includes('min(var(--lb-cubed-square-width, 100%), 100%) 2px'), 'board-width dark text-entry underline missing');
+assert(source.includes('const ThemeStateVersion = 2;'), 'ThemeState v2 missing');
+assert(source.includes('LbBackground: "#FAA6A4"'), 'NYT Light page background calibration missing');
+assert(source.includes('LbBoard: "#FFFFFF"'), 'NYT Light board color missing');
+assert(source.includes('BoardMatchesBackground: false'), 'NYT Light board/background separation missing');
+assert(source.includes('BoardMatchesBackground: true'), 'NYT Dark board/background tie missing');
+assert(source.includes('LbForeground: "#F8F8F8"'), 'NYT Dark foreground calibration missing');
+assert(source.includes('LbActive: "#DA5D57"'), 'NYT Dark active calibration missing');
+assert(source.includes('Redacted: "#F8F8F8"'), 'NYT Dark redacted calibration missing');
+assert(source.includes('BuildBoardThemeAffineMatrix'), 'semantic affine board transform missing');
+assert(source.includes('feColorMatrix'), 'SVG board color matrix missing');
+assert(source.includes('NativeBoardActiveSourceColor = "#E8A9A0"'), 'native active source anchor missing');
+assert(source.includes('filter: url(#lb-cubed-board-theme-filter)'), 'semantic board filter CSS missing');
+assert(!source.includes('invert(1) hue-rotate(180deg)'), 'legacy inversion filter remains');
+assert(!source.includes('InstallDarkBoardCanvasHook'), 'legacy canvas text hook remains');
+assert(!source.includes('RepairDarkBoardCanvas'), 'legacy bitmap repair remains');
+assert(!source.includes('ThemeAppliedOnce'), 'legacy reload-boundary state remains');
+assert(!source.includes('Invert Letter Boxed board/canvas'), 'legacy inversion setting remains');
+assert(source.includes('Same as background'), 'board/background tie control missing');
+assert(source.includes('Foreground (active)'), 'semantic active foreground control missing');
+assert(source.includes('Heading background'), 'LBC heading background control missing');
+assert(source.includes('CreateThemeColorRow("Redacted", "Redacted")'), 'redacted theme control missing');
+assert(!source.includes('["Muted text", "LbcMuted"]'), 'editable muted text control remains');
+assert(!source.includes('["Accent", "LbcAccent"]'), 'editable LBC accent control remains');
+assert(!source.includes('["Success", "Success"]'), 'editable success color remains');
+assert(!source.includes('["Error", "Danger"]'), 'editable error color remains');
+assert(source.includes('FixedSuccessColor = "#2D7D3E"'), 'fixed success color missing');
+assert(source.includes('FixedDangerColor = "#AF3636"'), 'fixed error color missing');
+assert(source.includes('.lb-text-field-underline'), 'native word-entry underline theme missing');
+assert(source.includes('[class*="Game-module_gameContainer__"]'), 'outer NYT game background override missing');
+assert(source.includes('NytLabel.textContent = "★ NYT Solution"'), 'themeable NYT solution star missing');
+assert(source.includes('--lb-cubed-nyt-solution-text'), 'derived NYT solution text color missing');
+assert(source.includes('--lb-cubed-redacted'), 'redacted CSS variable missing');
 assert(source.includes('lb-message-box success-message lb-cubed-valid-feedback-proxy'), 'valid-word toast no longer reuses native NYT styling classes');
 assert(source.includes('ValidFeedbackProxyMinimumVisibleMs = 600'), 'source-independent toast minimum lifetime missing');
 assert(source.includes('Source?.textContent || ActiveValidFeedbackText'), 'toast settling still requires live NYT source');
 assert(source.includes('Proxy.textContent = MessageText'), 'valid-word toast does not preserve captured praise text');
-assert(!source.includes('ScanGameState();\n                RepairDarkBoardCanvas();'), 'post-submission path still performs expensive canvas bitmap repair');
-assert(source.includes('Repeated full-bitmap'), 'dark board repair performance rationale missing');
-assert(
-  source.includes('Proxy.textContent = String(Source.textContent || "").trim()') ||
-  source.includes('Proxy.textContent = MessageText'),
-  'valid-word toast text assignment missing'
-);
 assert(source.includes('clip-path: none !important;'), 'dark valid-word toast clipping reset missing');
-assert(source.includes('html.lb-cubed-native-theme .lb-game-container'), 'game-native --text theme token missing');
-assert(source.includes('CandidateOffsets.length > PixelCount * 0.12'), 'dark board bitmap repair safety guard missing');
-assert(source.includes('lb-cubed-board-inverted'), 'board inversion theme class missing');
-assert(source.includes('Game-module_toolbarContainer__'), 'NYT post-start toolbar dark surface override missing');
-assert(source.includes('#js-global-nav'), 'NYT pre-start/global nav dark surface override missing');
-assert(source.includes('#js-logo-nav .pz-nav__logo rect'), 'NYT logo background dark-mode override missing');
 assert(source.includes('InternalPanelLayoutBreakpoints = ['), 'original breakpoint list missing');
 for (const breakpoint of ['340', '390', '520', '650', '860', '1180']) {
   assert(source.includes(breakpoint), `original breakpoint missing: ${breakpoint}`);

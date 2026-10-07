@@ -1,23 +1,51 @@
 # Letter Boxed Cubed themes
 
-LBC ships with two read-only presets: NYT Light and NYT Dark. Custom themes can be created from either preset and are stored in portable ThemeState so they can sync independently of word/history data.
+LBC ships with two immutable presets, **NYT Light** and **NYT Dark**, plus portable custom themes. Custom definitions and the active selection live in the versioned `LetterBoxedCubed_ThemeState` record and sync independently of word/history data.
 
-## NYT Dark
+## ThemeState v2 semantic palette
 
-NYT Dark is calibrated from the NYT mobile app appearance and adapts the web Letter Boxed page as closely as practical. The Letter Boxed board is canvas-rendered on the web, so its source bitmap needs special handling in dark mode.
+ThemeState v2 describes what a color *means* rather than exposing implementation-specific CSS colors.
 
-Crossing between a non-inverted board theme and an inverted board theme intentionally reloads the Letter Boxed page after the new theme selection has been saved. This gives NYT a clean canvas lifecycle and avoids the race conditions and destructive double-inversion artifacts that occur when the already-painted board is recolored in place. Switching between themes that use the same board-inversion mode, or editing ordinary palette colors inside a custom theme, remains live and does not reload.
+### Letter Boxed
 
-Dark native styling supplies the NYT game-level `--text` token and explicit caret colors. Because NYT's visible word-entry rule is not reliably the text field's own border, LBC paints a non-layout-affecting centered underline on the existing text-field wrapper. Its width follows the measured Letter Boxed square-container width rather than spanning the entire text-input column, so it stays visually aligned with the board/outer-letter footprint. The square container overrides `--text` back to the canvas source color required by the dark-board transform.
+- **Background** - page/game shell surrounding the board.
+- **Board** - the white/dark filled region inside the GB square and node interiors.
+- **Same as background** - when enabled, Board tracks Background live and its picker is disabled.
+- **Foreground** - neutral text, lines, borders, board letters, square outline, node outlines and word-entry rule.
+- **Foreground (active)** - current/submitted paths and active/used board details.
 
-Valid-word praise uses an LBC-owned lifecycle and placement proxy while preserving NYT's native `lb-message-box` / `success-message` presentation classes. LBC neutralizes only the native animation/visibility lifecycle that conflicts with its delayed placement and applies theme-aware text/icon colors; NYT continues to supply the normal toast typography, padding, sizing, background, border and shape.
+NYT Light intentionally keeps its white Board separate from the pink web Background. NYT Dark intentionally ties Board to its `#121212` Background. Custom themes inherit that relationship from the preset/theme they are duplicated from.
 
-Preview-only beta version text also adapts its contrast to the active Letter Boxed page background. A relative-luminance threshold switches the normally dark gray label to a lighter gray on sufficiently dark custom/NYT Dark backgrounds.
+### Letter Boxed Cubed
 
-Dark-mode toast timing note: NYT can retire its native success node before Cubed's 400ms history-settling window completes. Cubed therefore snapshots the praise text/lifecycle immediately, finishes history settling independently of the native node, and guarantees its own proxy at least 600ms of visible time once shown. This preserves stable placement without depending on NYT's shorter dark-mode toast lifetime.
+Custom themes expose **Background**, **Heading background**, **Text** and **Border**. Muted text is derived by mixing Text toward Background. Secondary accent surfaces are derived by shifting Background toward whichever black/white pole provides contrast.
 
-The Preview transient-element trace confirmed the timing difference directly: in the failing NYT Dark case the native `Awesome!` source was cleared about 230ms after it became a success message, before Cubed's proxy was ever created; in the working NYT Light case Cubed created the proxy about 160ms after source detection and kept it visible for roughly 600ms. Beta.13 therefore treats the captured praise lifecycle as authoritative even after the native source disappears.
+### Highlights
 
-Dark-board performance note: the CanvasRenderingContext2D text hook is the normal path for keeping later NYT redraws compatible with the inverted board. Full `getImageData()` bitmap repair is retained only as a one-shot recovery tool for an already-painted board; it is no longer repeated after every submission or in a burst of delayed theme-repair scans. Repeated whole-canvas pixel walks can monopolize the main thread on older hardware and are unnecessary once the hook is installed.
+Custom themes expose **NYT solution**, **New item** and **Redacted**. NYT-solution text (including its `★`) is derived toward a contrasting light/dark shade. Redacted blocks use one opaque color for background, text, border and selection so spoilers remain unreadable. Success/error indicators are fixed green/red rather than theme-editable.
 
-The Preview full-debug-bundle helper also now reports the current `InternalPanelLayoutStage` rather than the removed beta.3-era `InternalPanelLayoutMode`; a guarded fallback bundle is copied/logged if any future diagnostic field throws.
+## Semantic affine board transform
+
+The visible web Letter Boxed board is a single canvas. Earlier betas tried to create dark mode by inverting the completed bitmap, normalizing canvas text calls, and occasionally walking the whole pixel buffer. That approach caused source-color races, double inversion during live theme changes, forced reloads, and expensive synchronous `getImageData()` work on slower hardware.
+
+ThemeState v2 never mutates the canvas bitmap. Instead, LBC installs one SVG `feColorMatrix` compositor filter and updates its matrix whenever a native/custom theme changes. The matrix is solved as an affine RGB transformation anchored to three known colors in NYT's native Light renderer:
+
+- source black -> theme **Foreground**;
+- source white -> theme **Board**;
+- source active coral (`#E8A9A0`) -> theme **Foreground (active)**.
+
+Antialiased and blended pixels transform continuously between those anchors. Because NYT remains free to repaint its normal source canvas underneath the filter, theme changes are live: there is no board-inversion checkbox, bitmap repair, Canvas2D monkeypatch, or Light/Dark reload boundary.
+
+The square container is deliberately kept on NYT's neutral black source `--text` while board theming is active so NYT continues drawing the expected source palette before composition.
+
+## Native shell details
+
+The surrounding page, toolbar, generated outer `Game-module_gameContainer__*` wrapper and other native UI surfaces use Letter Boxed Background/Foreground directly. LBC themes NYT's real `.lb-text-field-underline` instead of painting a second synthetic line on the input wrapper.
+
+Valid-word praise still uses LBC's source-independent lifecycle/placement proxy while preserving NYT's native toast presentation classes. The proxy snapshots praise immediately because NYT Dark can retire its native source before Cubed's history-settling window completes.
+
+Preview-only beta version text continues to adapt its contrast to the Letter Boxed Background.
+
+## Migration
+
+ThemeState v1 custom themes migrate automatically. Old `InvertBoard` is interpreted only during migration: Dark-derived themes become `BoardMatchesBackground=true`, while other themes remain independent. Old palette keys are mapped into the semantic v2 fields; obsolete editable muted/accent/success/error values are discarded in favor of derived/fixed behavior. Existing theme IDs and per-theme timestamps/tombstones are retained for merge-safe Drive sync.
