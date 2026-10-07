@@ -1,5 +1,5 @@
 Generated userscript preview. Do not edit this branch directly.
 Source branch: perf/drive-sync-event-driven
-Source commit: d3438a6881c327a4f5a9d031a04248db2e2835e3
-Workflow run: 37682068187
+Source commit: 4c38931964dd176ec6995aeadbea2dcb588049fb
+Workflow run: 37682091201
 Preview selector: #lbc-preview
