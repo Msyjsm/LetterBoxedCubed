@@ -10,7 +10,7 @@ Crossing between a non-inverted board theme and an inverted board theme intentio
 
 Dark native styling supplies the NYT game-level `--text` token and explicit caret colors. Because NYT's visible word-entry rule is not reliably the text field's own border, LBC paints a non-layout-affecting centered underline on the existing text-field wrapper. Its width follows the measured Letter Boxed square-container width rather than spanning the entire text-input column, so it stays visually aligned with the board/outer-letter footprint. The square container overrides `--text` back to the canvas source color required by the dark-board transform.
 
-Valid-word praise uses an LBC-owned lifecycle and placement proxy while preserving NYT's native `lb-message-box` / `success-message` presentation classes. LBC neutralizes only the native animation/visibility lifecycle that conflicts with its delayed placement and applies theme-aware colors; NYT continues to supply the normal toast typography, padding, sizing and shape.
+Valid-word praise uses an LBC-owned lifecycle and placement proxy while preserving NYT's native `lb-message-box` / `success-message` presentation classes. LBC neutralizes only the native animation/visibility lifecycle that conflicts with its delayed placement and applies theme-aware text/icon colors; NYT continues to supply the normal toast typography, padding, sizing, background, border and shape.
 
 Preview-only beta version text also adapts its contrast to the active Letter Boxed page background. A relative-luminance threshold switches the normally dark gray label to a lighter gray on sufficiently dark custom/NYT Dark backgrounds.
 
