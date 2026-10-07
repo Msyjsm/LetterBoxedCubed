@@ -76,6 +76,9 @@ for (const label of [
   'Copy Geometry Snapshot',
   'Start Transient Element Trace',
   'Stop + Copy Trace',
+  'Copy Board Source Snapshot',
+  'Start Board Canvas Trace',
+  'Stop + Copy Board Trace',
   'Copy Bootstrap Trace',
   'Copy Full Debug Bundle'
 ]) {
@@ -86,6 +89,10 @@ assert(preview.includes('InternalPanelLayoutStage'), 'debug bundle does not use 
 assert(!preview.includes('                InternalPanelLayoutMode,'), 'debug bundle still references stale InternalPanelLayoutMode');
 assert(preview.includes('Full debug bundle fallback'), 'debug bundle copy lacks failure fallback');
 assert(preview.includes('PreviewTransientTrace'), 'transient trace state missing');
+assert(preview.includes('GetPreviewBoardCanvasSnapshot'), 'board source snapshot diagnostic missing');
+assert(preview.includes('InstallPreviewBoardCanvasTraceHook'), 'board Canvas2D trace hook missing');
+assert(preview.includes('SourcePixelHistogram'), 'board source pixel histogram missing');
+assert(preview.includes('TextDraws: structuredClone(PreviewBoardCanvasTrace)'), 'board trace missing from full debug bundle');
 assert(preview.includes('!PreviewDebugPaneVisible'), 'hidden debug pane render guard missing');
 assert(preview.includes('UpdatePreviewVersionLabelContrast'), 'preview version contrast helper missing');
 assert(preview.includes('Luminance < 0.22'), 'preview version darkness threshold missing');
