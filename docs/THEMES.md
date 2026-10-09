@@ -24,7 +24,7 @@ Muted text is derived by mixing Text toward Background. Secondary accent surface
 
 ### Highlights
 
-Custom themes expose **NYT solution**, **New item** and **Redacted**. NYT-solution text is a darker shade of a light solution color or a lighter tint of a dark solution color, preserving the selected hue rather than snapping all the way to black/white. Its `★` uses the same derived color and is rendered 2px larger than the neighboring label while remaining vertically centered. Redacted blocks use one opaque color for background, text, border and selection so spoilers remain unreadable. Success/error indicators are fixed green/red rather than theme-editable.
+Custom themes expose **NYT solution**, **New item** and **Redacted**. NYT-solution text is a hue-preserving darker shade of a light solution color or lighter tint of a dark solution color rather than being washed toward generic black/white. Its `★` uses the same derived color and is rendered 5px larger than the neighboring label while remaining vertically centered. Redacted blocks use one opaque color for background, text, border and selection so spoilers remain unreadable. Success/error indicators are fixed green/red rather than theme-editable.
 
 ## Semantic affine board transform
 
@@ -44,9 +44,9 @@ When a theme is first applied to an already-painted board, LBC issues a short re
 
 ## Native shell and control details
 
-The surrounding page, toolbar, generated outer `Game-module_gameContainer__*` wrapper and other native UI surfaces use Letter Boxed Background/Foreground directly. LBC themes NYT's real `.lb-text-field-underline` instead of painting a second synthetic line on the input wrapper. NYT's visible insertion cursor is a `.lb-text-field__caret` span rather than the browser-native caret, so that element and its pseudo-elements are explicitly themed to Foreground too. Native text fill and opacity are normalized so the DOM Foreground matches the matrix-rendered GB Foreground instead of retaining NYT's lighter/tinted text treatment.
+The surrounding page, toolbar, generated outer `Game-module_gameContainer__*` wrapper and other native UI surfaces use Letter Boxed Background/Foreground directly. LBC themes NYT's real `.lb-text-field-underline` instead of painting a second synthetic line on the input wrapper. NYT's visible insertion cursor is a `.lb-text-field__caret` span rather than the browser-native caret, so that element and its pseudo-elements are explicitly themed to Foreground too. Native text fill, opacity, filter and blend treatment are normalized so the DOM Foreground matches the matrix-rendered GB Foreground instead of retaining NYT's lighter/tinted text treatment.
 
-LBC's sliders, checkboxes, number-input steppers, scrollbars and draggable resize/gap handles are theme-aware. The control `color-scheme` follows the current LBC background brightness, while accent/track/thumb/handle colors come from semantic LBC palette values. Number inputs share one compact presentation: right-aligned values, always-visible steppers, a small value-to-stepper gap, and widths derived from the control's maximum digit count rather than one oversized fixed width.
+LBC's sliders, checkboxes, number-input steppers, scrollbars and draggable resize/gap handles are theme-aware. The control `color-scheme` follows the current LBC background brightness, while accent/track/thumb/handle colors come from semantic LBC palette values. Scrollbar thumbs/buttons now follow semantic Text/Foreground rather than the legacy maroon Border color. Number inputs share one compact presentation: right-aligned values, always-visible steppers, a small value-to-stepper gap, widths derived from the control's maximum digit count, and one extra character of left-side breathing room at that maximum width.
 
 Transient valid and invalid word messages retain NYT's normal geometry/typography but use **Foreground (active)** as their background and **Board** as their text/icon color. Valid-word praise still uses LBC's source-independent lifecycle/placement proxy; the proxy snapshots praise immediately because NYT can retire its native source before Cubed's history-settling window completes.
 
