@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed
 // @namespace    https://nathanburgdorff.com/userscripts/
-// @version      1.13.1-beta.16
+// @version      1.13.1-beta.17
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -363,6 +363,9 @@
 
     let NativeRequestAnimationFrame = null;
     let LineAnimationAcceleration = null;
+    let BoardTextSourceHookInstalled = false;
+    let NativeBoardFillText = null;
+    let NativeBoardStrokeText = null;
 
     let GameObserver = null;
     let LayoutObserver = null;
@@ -402,6 +405,7 @@
         RecordBootstrapDiagnostic("initialize-start");
         LoadThemeState();
         AddStyles();
+        InstallBoardTextSourceHook();
         ApplyTheme();
 
         const Ready = await WaitForGame();
@@ -409,6 +413,13 @@
             console.warn("[Letter Boxed Cubed] Could not find Letter Boxed game data.");
             return;
         }
+
+        /*
+            The first theme application can precede NYT's board canvas. Apply
+            it once more after readiness so an already-painted board gets one
+            harmless renderer refresh through the semantic text hook.
+        */
+        ApplyTheme();
 
         LoadPuzzleData();
         UpdateCurrentPuzzleMetadata();
@@ -1432,6 +1443,143 @@
         );
     }
 
+    function IsLetterBoxedBoardCanvas(Canvas) {
+        return Boolean(
+            Canvas &&
+            typeof Canvas.closest === "function" &&
+            Canvas.closest(".lb-game-container .lb-square-container")
+        );
+    }
+
+    function IsNativeBoardWhite(Value) {
+        const Text = String(Value || "")
+            .trim()
+            .toLowerCase()
+            .replace(/\s+/g, "");
+
+        return (
+            Text === "#fff" ||
+            Text === "#ffffff" ||
+            Text === "white" ||
+            Text === "rgb(255,255,255)" ||
+            Text === "rgba(255,255,255,1)"
+        );
+    }
+
+    function InstallBoardTextSourceHook() {
+        if (BoardTextSourceHookInstalled) {
+            return;
+        }
+
+        const Prototype = PageWindow.CanvasRenderingContext2D?.prototype;
+        if (!Prototype) {
+            return;
+        }
+
+        NativeBoardFillText = Prototype.fillText;
+        NativeBoardStrokeText = Prototype.strokeText;
+
+        const IsThemedBoardLetterDraw = (Context, Text) =>
+            document.documentElement?.classList.contains(
+                "lb-cubed-board-themed"
+            ) &&
+            IsLetterBoxedBoardCanvas(Context?.canvas) &&
+            /^[A-Z]$/.test(String(Text || "").trim());
+
+        /*
+            Board diagnostics proved that NYT uses the SAME native white for
+            two different semantic jobs: the board fill and inactive letter
+            glyphs. An RGB matrix cannot map one source color to both Board and
+            Foreground. Keep the affine transform for the bitmap as a whole,
+            but normalize only white single-letter text draws to native black.
+            The matrix then maps those glyphs to Foreground while leaving the
+            white board fill available to map to Board. This is intentionally
+            tiny and draw-semantic: no getImageData(), pixel walks, inversion,
+            repaint polling, or mutation of path/node rendering.
+        */
+        if (typeof NativeBoardFillText === "function") {
+            Prototype.fillText = function (Text, ...Arguments) {
+                if (
+                    IsThemedBoardLetterDraw(this, Text) &&
+                    IsNativeBoardWhite(this.fillStyle)
+                ) {
+                    const Previous = this.fillStyle;
+                    this.fillStyle = "#000000";
+                    try {
+                        return NativeBoardFillText.call(
+                            this,
+                            Text,
+                            ...Arguments
+                        );
+                    } finally {
+                        this.fillStyle = Previous;
+                    }
+                }
+
+                return NativeBoardFillText.call(
+                    this,
+                    Text,
+                    ...Arguments
+                );
+            };
+        }
+
+        if (typeof NativeBoardStrokeText === "function") {
+            Prototype.strokeText = function (Text, ...Arguments) {
+                if (
+                    IsThemedBoardLetterDraw(this, Text) &&
+                    IsNativeBoardWhite(this.strokeStyle)
+                ) {
+                    const Previous = this.strokeStyle;
+                    this.strokeStyle = "#000000";
+                    try {
+                        return NativeBoardStrokeText.call(
+                            this,
+                            Text,
+                            ...Arguments
+                        );
+                    } finally {
+                        this.strokeStyle = Previous;
+                    }
+                }
+
+                return NativeBoardStrokeText.call(
+                    this,
+                    Text,
+                    ...Arguments
+                );
+            };
+        }
+
+        BoardTextSourceHookInstalled = true;
+    }
+
+    function QueueBoardThemeRendererRefresh() {
+        if (
+            !document.documentElement?.classList.contains(
+                "lb-cubed-board-themed"
+            ) ||
+            !document.querySelector(
+                ".lb-game-container .lb-square-container canvas"
+            )
+        ) {
+            return;
+        }
+
+        /*
+            NYT redraws the board on resize. One short two-frame nudge is enough
+            to route an already-painted canvas through the semantic text hook;
+            unlike the old bitmap repair this does no synchronous pixel work.
+        */
+        requestAnimationFrame(() => {
+            window.dispatchEvent(new Event("resize"));
+            setTimeout(
+                () => window.dispatchEvent(new Event("resize")),
+                80
+            );
+        });
+    }
+
     function ApplyTheme() {
         if (!ThemeState) {
             ThemeState = CreateDefaultThemeState();
@@ -1494,6 +1642,7 @@
 
         if (ApplyNative) {
             ApplyBoardThemeMatrix(Palette);
+            QueueBoardThemeRendererRefresh();
         }
     }
 
@@ -12438,6 +12587,14 @@
                 border-color: var(--lb-cubed-lb-fg) !important;
             }
 
+            /* NYT's visible caret is a span, not the browser-native caret. */
+            html.lb-cubed-native-theme .lb-text-field__caret {
+                color: var(--lb-cubed-lb-fg) !important;
+                background: var(--lb-cubed-lb-fg) !important;
+                background-color: var(--lb-cubed-lb-fg) !important;
+                border-color: var(--lb-cubed-lb-fg) !important;
+            }
+
             /*
                 Keep NYT drawing its normal Light source palette into the canvas.
                 The SVG affine filter above the bitmap maps source black ->
@@ -12500,6 +12657,7 @@
             }
 
             #${PanelId} .lb-cubed-stat,
+            #${HistoryOverlayId} .lb-cubed-stat,
             #${PanelId} .lb-cubed-tree > summary,
             #${PanelId} .lb-cubed-nested-tree > summary,
             #${HistoryOverlayId} .lb-cubed-history-section-title,
@@ -12524,6 +12682,7 @@
             #${PanelId} .lb-cubed-settings-number-row,
             #${PanelId} .lb-cubed-settings-action-row,
             #${PanelId} .lb-cubed-stat-value,
+            #${HistoryOverlayId} .lb-cubed-stat-value,
             #${PanelId} .lb-cubed-twofer-solution-text,
             #${PanelId} .lb-cubed-length-value,
             #${PanelId} .lb-cubed-invalid-word,
@@ -12537,6 +12696,7 @@
             #${PanelId} .lb-cubed-subtitle,
             #${PanelId} .lb-cubed-drive-status,
             #${PanelId} .lb-cubed-stat-label,
+            #${HistoryOverlayId} .lb-cubed-stat-label,
             #${PanelId} .lb-cubed-potential-word,
             #${PanelId} .lb-cubed-potential-word-progress,
             #${PanelId} .lb-cubed-twofer-disclaimer,

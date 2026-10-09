@@ -9,7 +9,7 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
-assert(source.includes('// @version      1.13.1-beta.16'), 'beta.16 version missing');
+assert(source.includes('// @version      1.13.1-beta.17'), 'beta.17 version missing');
 assert(source.includes('const ExportFormatVersion = 4;'), 'backup schema v4 missing');
 assert(source.includes('LetterBoxedCubed_ThemeState'), 'theme state storage missing');
 assert(source.includes('Name: "NYT Dark"'), 'NYT Dark prebuilt theme missing');
@@ -28,6 +28,13 @@ assert(source.includes('NativeBoardActiveSourceColor = "#E8A9A0"'), 'native acti
 assert(source.includes('filter: url(#lb-cubed-board-theme-filter)'), 'semantic board filter CSS missing');
 assert(source.includes('html.lb-cubed-board-themed .lb-game-container'), 'game-level native source color guard missing');
 assert(source.includes('--text: #000000 !important;'), 'inactive GB letter source normalization missing');
+assert(source.includes('InstallBoardTextSourceHook'), 'semantic board text source hook missing');
+assert(source.includes('IsThemedBoardLetterDraw'), 'board text hook is not restricted to letter draws');
+assert(source.includes('IsNativeBoardWhite(this.fillStyle)'), 'white inactive board letters are not normalized before affine mapping');
+assert(source.includes('QueueBoardThemeRendererRefresh'), 'already-painted board renderer refresh missing');
+assert(source.includes('.lb-text-field__caret'), 'visible NYT caret theme selector missing');
+assert(source.includes('#${HistoryOverlayId} .lb-cubed-stat-value'), 'Browse History stat value theming missing');
+assert(source.includes('#${HistoryOverlayId} .lb-cubed-stat-label'), 'Browse History stat label theming missing');
 assert(source.includes('background-color: var(--lb-cubed-lb-active) !important;'), 'active-color toast background missing');
 assert(source.includes('color: var(--lb-cubed-lb-board) !important;'), 'board-color toast foreground missing');
 assert(source.includes('> .lb-par:not(.no-words)'), 'validation-message semantic toast selector missing');
