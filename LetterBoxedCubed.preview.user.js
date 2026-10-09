@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed [PREVIEW]
 // @namespace    https://nathanburgdorff.com/userscripts/preview/
-// @version      1.13.1-beta.19.240
+// @version      1.13.1-beta.20.241
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -3792,8 +3792,8 @@
 
         const IsDark = GetThemeRelativeLuminance(Palette.NytSolution) < 0.38;
         const TargetLightness = IsDark
-            ? 1 - (1 - Lightness) * 0.24
-            : Lightness * 0.24;
+            ? Lightness + (1 - Lightness) * 0.55
+            : Lightness * 0.55;
         const Chroma = (1 - Math.abs(2 * TargetLightness - 1)) * Saturation;
         const HueSector = Hue / 60;
         const Secondary = Chroma * (1 - Math.abs((HueSector % 2) - 1));
@@ -15266,6 +15266,64 @@
                 background: var(--lb-cubed-lb-fg);
             }
 
+            /* Mirror the page scrollbar inside LBC and its popovers/modals. */
+            #${PanelId},
+            #${PanelContentId},
+            .lb-cubed-settings-panel,
+            #${HistoryOverlayId},
+            .lb-cubed-history-modal {
+                scrollbar-width: thin;
+                scrollbar-color:
+                    var(--lb-cubed-lbc-text, #301818)
+                    var(--lb-cubed-lbc-bg, #D88482);
+            }
+
+            #${PanelId}::-webkit-scrollbar,
+            #${PanelContentId}::-webkit-scrollbar,
+            #${PanelId} *::-webkit-scrollbar,
+            .lb-cubed-settings-panel::-webkit-scrollbar,
+            .lb-cubed-settings-panel *::-webkit-scrollbar,
+            #${HistoryOverlayId}::-webkit-scrollbar,
+            #${HistoryOverlayId} *::-webkit-scrollbar,
+            .lb-cubed-history-modal::-webkit-scrollbar,
+            .lb-cubed-history-modal *::-webkit-scrollbar {
+                width: 8px;
+                height: 8px;
+            }
+
+            #${PanelId}::-webkit-scrollbar-track,
+            #${PanelContentId}::-webkit-scrollbar-track,
+            #${PanelId} *::-webkit-scrollbar-track,
+            .lb-cubed-settings-panel::-webkit-scrollbar-track,
+            .lb-cubed-settings-panel *::-webkit-scrollbar-track,
+            #${HistoryOverlayId}::-webkit-scrollbar-track,
+            #${HistoryOverlayId} *::-webkit-scrollbar-track,
+            .lb-cubed-history-modal::-webkit-scrollbar-track,
+            .lb-cubed-history-modal *::-webkit-scrollbar-track {
+                background: var(--lb-cubed-lbc-bg, #D88482);
+            }
+
+            #${PanelId}::-webkit-scrollbar-thumb,
+            #${PanelContentId}::-webkit-scrollbar-thumb,
+            #${PanelId} *::-webkit-scrollbar-thumb,
+            .lb-cubed-settings-panel::-webkit-scrollbar-thumb,
+            .lb-cubed-settings-panel *::-webkit-scrollbar-thumb,
+            #${HistoryOverlayId}::-webkit-scrollbar-thumb,
+            #${HistoryOverlayId} *::-webkit-scrollbar-thumb,
+            .lb-cubed-history-modal::-webkit-scrollbar-thumb,
+            .lb-cubed-history-modal *::-webkit-scrollbar-thumb,
+            #${PanelId}::-webkit-scrollbar-button,
+            #${PanelContentId}::-webkit-scrollbar-button,
+            #${PanelId} *::-webkit-scrollbar-button,
+            .lb-cubed-settings-panel::-webkit-scrollbar-button,
+            .lb-cubed-settings-panel *::-webkit-scrollbar-button,
+            #${HistoryOverlayId}::-webkit-scrollbar-button,
+            #${HistoryOverlayId} *::-webkit-scrollbar-button,
+            .lb-cubed-history-modal::-webkit-scrollbar-button,
+            .lb-cubed-history-modal *::-webkit-scrollbar-button {
+                background: var(--lb-cubed-lbc-text, #301818);
+            }
+
             #${LayoutGapHandleId}::after,
             .lb-cubed-page-resize-handle::after,
             .lb-cubed-resize-handle::after {
@@ -15370,6 +15428,31 @@
             html.lb-cubed-native-theme .lb-text-field-wrapper {
                 background-image: none !important;
                 box-shadow: none !important;
+            }
+
+            /* Current word entry belongs to the same active semantic lane as the GB path. */
+            html.lb-cubed-native-theme .lb-text-field-label,
+            html.lb-cubed-native-theme .lb-text-field,
+            html.lb-cubed-native-theme .lb-text-field *,
+            html.lb-cubed-native-theme .lb-text-field-underline,
+            html.lb-cubed-native-theme .lb-text-field__caret,
+            html.lb-cubed-native-theme .lb-text-field__caret::before,
+            html.lb-cubed-native-theme .lb-text-field__caret::after {
+                color: var(--lb-cubed-lb-active) !important;
+                -webkit-text-fill-color: var(--lb-cubed-lb-active) !important;
+                caret-color: var(--lb-cubed-lb-active) !important;
+            }
+
+            html.lb-cubed-native-theme .lb-text-field-underline,
+            html.lb-cubed-native-theme .lb-text-field__caret,
+            html.lb-cubed-native-theme .lb-text-field__caret::before,
+            html.lb-cubed-native-theme .lb-text-field__caret::after {
+                background: var(--lb-cubed-lb-active) !important;
+                background-color: var(--lb-cubed-lb-active) !important;
+                border-color: var(--lb-cubed-lb-active) !important;
+                border-left-color: var(--lb-cubed-lb-active) !important;
+                border-right-color: var(--lb-cubed-lb-active) !important;
+                outline-color: var(--lb-cubed-lb-active) !important;
             }
 
             html.lb-cubed-native-theme .lb-text-field-underline {
@@ -15560,6 +15643,28 @@
             #${PanelId} .lb-cubed-nyt-solution .lb-cubed-twofer-arrow,
             #${PanelId} .lb-cubed-nyt-solution .lb-cubed-twofer-revealed {
                 background-color: inherit !important;
+            }
+
+            #${PanelId} .lb-cubed-nyt-solution,
+            #${PanelId} .lb-cubed-nyt-solution * {
+                color: var(--lb-cubed-nyt-solution-text) !important;
+                -webkit-text-fill-color: var(--lb-cubed-nyt-solution-text) !important;
+            }
+
+            #${PanelId} .lb-cubed-nyt-solution {
+                border-color: color-mix(
+                    in srgb,
+                    var(--lb-cubed-nyt-solution-text) 52%,
+                    transparent
+                ) !important;
+            }
+
+            #${PanelId} .lb-cubed-nyt-solution .lb-cubed-twofer-revealed {
+                border-color: color-mix(
+                    in srgb,
+                    var(--lb-cubed-nyt-solution-text) 38%,
+                    transparent
+                ) !important;
             }
 
             #${PanelId} .lb-cubed-nyt-solution-label {
