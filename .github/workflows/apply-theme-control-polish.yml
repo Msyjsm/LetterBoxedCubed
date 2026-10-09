@@ -1,0 +1,35 @@
+name: Apply theme control polish
+
+on:
+  push:
+    branches:
+      - perf/drive-sync-event-driven
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply theme/control/Drive polish
+        run: python tools/apply_theme_control_polish.py
+      - name: Validate source and regressions
+        run: |
+          node --check LetterBoxedCubed.user.js
+          node --check tools/preview_runtime.js
+          node tests/merge-tests.js
+          node tests/cloud-sync-tests.js
+          node tests/final-polish-tests.js
+      - name: Commit polish and remove patch machinery
+        run: |
+          git config user.name "Nathan Burgdorff + Ari (ChatGPT)"
+          git config user.email "6709230+Msyjsm@users.noreply.github.com"
+          git rm -f .github/workflows/apply-theme-control-polish.yml tools/apply_theme_control_polish.py
+          git add LetterBoxedCubed.user.js tests/cloud-sync-tests.js tests/final-polish-tests.js
+          git commit -m "Polish theme-linked controls and Drive responses"
+          git push origin HEAD:perf/drive-sync-event-driven
