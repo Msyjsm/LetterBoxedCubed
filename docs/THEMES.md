@@ -10,7 +10,7 @@ ThemeState v2 describes what a color *means* rather than exposing implementation
 
 - **Background** - page/game shell surrounding the board.
 - **Board** - the white/dark filled region inside the GB square and node interiors.
-- **Same as background** - when enabled, Board tracks Background live and its picker is disabled.
+- **Same as Background** - when enabled, Board tracks Background live and its picker is disabled.
 - **Foreground** - neutral text, lines, borders, board letters, square outline, node outlines and word-entry rule.
 - **Foreground (active)** - current/submitted paths and active/used board details.
 
@@ -18,11 +18,13 @@ NYT Light intentionally keeps its white Board separate from the pink web Backgro
 
 ### Letter Boxed Cubed
 
-Custom themes expose **Background**, **Heading background**, **Text** and **Border**. Muted text is derived by mixing Text toward Background. Secondary accent surfaces are derived by shifting Background toward whichever black/white pole provides contrast.
+Custom themes expose **Background**, **Heading background**, **Text** and **Border**. Background has a **Same as Letter Boxed Background** relationship and Text has **Same as Letter Boxed Foreground**; both relationships are enabled in the two built-in presets and are inherited by custom themes duplicated from them. When a relationship is enabled, the dependent picker is disabled and follows its Letter Boxed source live. Existing beta custom themes that predate these flags infer the relationship only when the two stored colors already match, so intentionally independent colors are not overwritten.
+
+Muted text is derived by mixing Text toward Background. Secondary accent surfaces are derived by shifting Background toward whichever black/white pole provides contrast.
 
 ### Highlights
 
-Custom themes expose **NYT solution**, **New item** and **Redacted**. NYT-solution text (including its `★`) is derived toward a contrasting light/dark shade. Redacted blocks use one opaque color for background, text, border and selection so spoilers remain unreadable. Success/error indicators are fixed green/red rather than theme-editable.
+Custom themes expose **NYT solution**, **New item** and **Redacted**. NYT-solution text is a darker shade of a light solution color or a lighter tint of a dark solution color, preserving the selected hue rather than snapping all the way to black/white. Its `★` uses the same derived color and is rendered 2px larger than the neighboring label while remaining vertically centered. Redacted blocks use one opaque color for background, text, border and selection so spoilers remain unreadable. Success/error indicators are fixed green/red rather than theme-editable.
 
 ## Semantic affine board transform
 
@@ -40,15 +42,21 @@ Preview diagnostics exposed one unavoidable source-palette collision: NYT paints
 
 When a theme is first applied to an already-painted board, LBC issues a short resize-based renderer refresh so NYT repaints through the semantic text shim. Subsequent NYT redraws automatically use the same hook.
 
-## Native shell details
+## Native shell and control details
 
-The surrounding page, toolbar, generated outer `Game-module_gameContainer__*` wrapper and other native UI surfaces use Letter Boxed Background/Foreground directly. LBC themes NYT's real `.lb-text-field-underline` instead of painting a second synthetic line on the input wrapper. NYT's visible insertion cursor is a `.lb-text-field__caret` span rather than the browser-native caret, so that element is explicitly themed to Foreground too.
+The surrounding page, toolbar, generated outer `Game-module_gameContainer__*` wrapper and other native UI surfaces use Letter Boxed Background/Foreground directly. LBC themes NYT's real `.lb-text-field-underline` instead of painting a second synthetic line on the input wrapper. NYT's visible insertion cursor is a `.lb-text-field__caret` span rather than the browser-native caret, so that element and its pseudo-elements are explicitly themed to Foreground too. Native text fill and opacity are normalized so the DOM Foreground matches the matrix-rendered GB Foreground instead of retaining NYT's lighter/tinted text treatment.
+
+LBC's sliders, checkboxes, number-input steppers, scrollbars and draggable resize/gap handles are theme-aware. The control `color-scheme` follows the current LBC background brightness, while accent/track/thumb/handle colors come from semantic LBC palette values. Number inputs share one compact presentation: right-aligned values, always-visible steppers, a small value-to-stepper gap, and widths derived from the control's maximum digit count rather than one oversized fixed width.
 
 Transient valid and invalid word messages retain NYT's normal geometry/typography but use **Foreground (active)** as their background and **Board** as their text/icon color. Valid-word praise still uses LBC's source-independent lifecycle/placement proxy; the proxy snapshots praise immediately because NYT can retire its native source before Cubed's history-settling window completes.
 
 Browse History reuses the same themed Completion / Longest Found stat-card treatment as the main LBC dashboard, including heading background, value text, muted labels and borders.
 
 Preview-only beta version text continues to adapt its contrast to the Letter Boxed Background.
+
+## Google Drive response safety
+
+The Apps Script bridge is expected to return JSON. If Google/Apps Script transiently returns an HTML page instead (for example an authorization/error/interstitial response beginning with `<!DOCTYPE html>`), LBC detects that before parsing or merging any data. It retries the same request once after a short delay; Write retries retain the same idempotency `WriteId`. If the bridge still returns HTML, sync stops with a descriptive error. The HTML response is never imported into the LBC storage snapshot or written into the synced data payload.
 
 ## Preview board diagnostics
 
@@ -60,4 +68,4 @@ ThemeState v1 custom themes migrate automatically. Old `InvertBoard` is interpre
 
 ## Preview acceptance checklist
 
-Verify live NYT Light <-> NYT Dark switching without a reload; independent Background/Board behavior in a Light-derived custom theme; Board tracking while Same as background is checked; neutral and active GB colors during typing and after submission; the native word-entry underline and visible caret; the generated outer game-container background; valid/invalid message colors; NYT-solution contrast/star color; custom Redacted color; and Browse History Completion / Longest Found cards matching their main-dashboard counterparts.
+Verify live NYT Light <-> NYT Dark switching without a reload; independent Background/Board behavior in a Light-derived custom theme; Board tracking while Same as Background is checked; LBC Background/Text semantic links; neutral and active GB colors during typing and after submission; exact DOM-vs-GB Foreground parity; the native word-entry underline and visible caret; theme-aware sliders/checkboxes/scrollbars/number steppers/drag handles; compact number inputs; the generated outer game-container background; valid/invalid message colors; NYT-solution tint/shade and larger star; custom Redacted color; Browse History Completion / Longest Found cards matching their main-dashboard counterparts; and a transient HTML Drive response failing safely rather than being treated as backup JSON.
