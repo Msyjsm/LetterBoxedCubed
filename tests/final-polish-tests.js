@@ -9,7 +9,7 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
-assert(source.includes('// @version      1.13.1-beta.18'), 'beta.18 version missing');
+assert(source.includes('// @version      1.13.1-beta.19'), 'beta.19 version missing');
 assert(source.includes('const ExportFormatVersion = 4;'), 'backup schema v4 missing');
 assert(source.includes('LetterBoxedCubed_ThemeState'), 'theme state storage missing');
 assert(source.includes('Name: "NYT Dark"'), 'NYT Dark prebuilt theme missing');
@@ -51,12 +51,14 @@ assert(source.includes('LbcTextMatchesLbForeground'), 'LBC/text semantic link mi
 assert(source.includes('Same as Letter Boxed Background'), 'LBC background link checkbox missing');
 assert(source.includes('Same as Letter Boxed Foreground'), 'LBC text link checkbox missing');
 assert(source.includes('ApplyCompactNumberInputWidth'), 'compact number input sizing missing');
+assert(source.includes('DigitCount + 1}ch + 22px'), 'compact number inputs lack one-character breathing room');
 assert(source.includes('--lb-cubed-control-color-scheme'), 'theme-aware native control color scheme missing');
 assert(source.includes('scrollbar-color:'), 'theme-aware scrollbar styling missing');
+assert(source.includes('var(--lb-cubed-lbc-text, #301818)'), 'LBC scrollbar still uses stale border/maroon color');
 assert(source.includes('::-webkit-inner-spin-button'), 'always-visible number steppers missing');
 assert(source.includes('0.6ch !important'), 'number input stepper spacing missing');
-assert(source.includes('font-size: calc(1em + 2px)'), 'NYT solution star +2px sizing missing');
-assert(source.includes('0.65'), 'NYT solution tint/shade derivation missing');
+assert(source.includes('font-size: calc(1em + 5px)'), 'NYT solution star +5px sizing missing');
+assert(source.includes('const TargetLightness = IsDark'), 'NYT solution hue-preserving tint/shade derivation missing');
 assert(source.includes('Google Drive bridge returned HTML instead of JSON'), 'Drive HTML response retry guard missing');
 assert(source.includes('no HTML was imported into LBC data'), 'Drive HTML failure explanation missing');
 assert(source.includes('.lb-text-field__caret::before'), 'caret pseudo-element theming missing');
