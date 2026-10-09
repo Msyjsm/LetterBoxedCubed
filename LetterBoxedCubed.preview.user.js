@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed [PREVIEW]
 // @namespace    https://nathanburgdorff.com/userscripts/preview/
-// @version      1.13.1-beta.18.237
+// @version      1.13.1-beta.19.238
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -3761,14 +3761,66 @@
     }
 
     function GetDerivedNytSolutionText(Palette) {
-        const Pole = GetThemeRelativeLuminance(Palette.NytSolution) < 0.38
-            ? "#FFFFFF"
-            : "#000000";
-        return MixThemeColors(
-            Palette.NytSolution,
-            Pole,
-            0.65
-        );
+        /*
+            Keep the NYT-solution foreground as a true tint/shade of the
+            selected solution color rather than washing it toward generic
+            white/black. Preserve hue + saturation and move only HSL
+            lightness far enough to recreate the original LBC-style contrast.
+        */
+        const [Red, Green, Blue] = ThemeHexToRgb(Palette.NytSolution)
+            .map(Channel => Channel / 255);
+        const Maximum = Math.max(Red, Green, Blue);
+        const Minimum = Math.min(Red, Green, Blue);
+        const Delta = Maximum - Minimum;
+        const Lightness = (Maximum + Minimum) / 2;
+
+        let Hue = 0;
+        let Saturation = 0;
+        if (Delta > 0) {
+            Saturation = Delta / (1 - Math.abs(2 * Lightness - 1));
+            if (Maximum === Red) {
+                Hue = 60 * (((Green - Blue) / Delta) % 6);
+            } else if (Maximum === Green) {
+                Hue = 60 * (((Blue - Red) / Delta) + 2);
+            } else {
+                Hue = 60 * (((Red - Green) / Delta) + 4);
+            }
+            if (Hue < 0) {
+                Hue += 360;
+            }
+        }
+
+        const IsDark = GetThemeRelativeLuminance(Palette.NytSolution) < 0.38;
+        const TargetLightness = IsDark
+            ? 1 - (1 - Lightness) * 0.24
+            : Lightness * 0.24;
+        const Chroma = (1 - Math.abs(2 * TargetLightness - 1)) * Saturation;
+        const HueSector = Hue / 60;
+        const Secondary = Chroma * (1 - Math.abs((HueSector % 2) - 1));
+        let R1 = 0;
+        let G1 = 0;
+        let B1 = 0;
+
+        if (HueSector < 1) {
+            [R1, G1, B1] = [Chroma, Secondary, 0];
+        } else if (HueSector < 2) {
+            [R1, G1, B1] = [Secondary, Chroma, 0];
+        } else if (HueSector < 3) {
+            [R1, G1, B1] = [0, Chroma, Secondary];
+        } else if (HueSector < 4) {
+            [R1, G1, B1] = [0, Secondary, Chroma];
+        } else if (HueSector < 5) {
+            [R1, G1, B1] = [Secondary, 0, Chroma];
+        } else {
+            [R1, G1, B1] = [Chroma, 0, Secondary];
+        }
+
+        const Match = TargetLightness - Chroma / 2;
+        return ThemeRgbToHex([
+            (R1 + Match) * 255,
+            (G1 + Match) * 255,
+            (B1 + Match) * 255
+        ]);
     }
 
     function EnsureBoardThemeFilter() {
@@ -4964,7 +5016,7 @@
     function ApplyCompactNumberInputWidth(Input, Maximum) {
         const NumericMaximum = Math.abs(Math.trunc(Number(Maximum) || 0));
         const DigitCount = Math.max(2, String(NumericMaximum).length);
-        Input.style.width = `calc(${DigitCount}ch + 22px)`;
+        Input.style.width = `calc(${DigitCount + 1}ch + 22px)`;
     }
 
     function CreateSettingsNumberWithReset(
@@ -15118,7 +15170,7 @@
             #${HistoryOverlayId} {
                 color-scheme: var(--lb-cubed-control-color-scheme, light);
                 scrollbar-color:
-                    var(--lb-cubed-lbc-border, #4C2222)
+                    var(--lb-cubed-lbc-text, #301818)
                     color-mix(
                         in srgb,
                         var(--lb-cubed-lbc-heading-bg, #E5A09E) 55%,
@@ -15185,7 +15237,7 @@
             #${PanelContentId}::-webkit-scrollbar-thumb,
             #${PanelId} *::-webkit-scrollbar-thumb,
             #${HistoryOverlayId} *::-webkit-scrollbar-thumb {
-                background: var(--lb-cubed-lbc-border, #4C2222);
+                background: var(--lb-cubed-lbc-text, #301818);
                 border-radius: 4px;
             }
 
@@ -15193,7 +15245,25 @@
             #${PanelId} *::-webkit-scrollbar-button,
             #${HistoryOverlayId} *::-webkit-scrollbar-button {
                 color-scheme: var(--lb-cubed-control-color-scheme, light);
-                background-color: var(--lb-cubed-lbc-heading-bg, #E5A09E);
+                background-color: var(--lb-cubed-lbc-text, #301818);
+            }
+
+            html.lb-cubed-native-theme::-webkit-scrollbar,
+            html.lb-cubed-native-theme *::-webkit-scrollbar {
+                width: 8px;
+                height: 8px;
+            }
+
+            html.lb-cubed-native-theme::-webkit-scrollbar-track,
+            html.lb-cubed-native-theme *::-webkit-scrollbar-track {
+                background: var(--lb-cubed-lb-bg);
+            }
+
+            html.lb-cubed-native-theme::-webkit-scrollbar-thumb,
+            html.lb-cubed-native-theme *::-webkit-scrollbar-thumb,
+            html.lb-cubed-native-theme::-webkit-scrollbar-button,
+            html.lb-cubed-native-theme *::-webkit-scrollbar-button {
+                background: var(--lb-cubed-lb-fg);
             }
 
             #${LayoutGapHandleId}::after,
@@ -15272,9 +15342,14 @@
             html.lb-cubed-native-theme .lb-word-list,
             html.lb-cubed-native-theme .lb-word-list *,
             html.lb-cubed-native-theme .lb-word-list-length,
+            html.lb-cubed-native-theme .lb-par,
             html.lb-cubed-native-theme .lb-text-field-label,
-            html.lb-cubed-native-theme .lb-text-field {
+            html.lb-cubed-native-theme .lb-text-field,
+            html.lb-cubed-native-theme .lb-text-field * {
                 opacity: 1 !important;
+                filter: none !important;
+                text-shadow: none !important;
+                mix-blend-mode: normal !important;
             }
 
             /*
@@ -15497,7 +15572,7 @@
                 display: inline-flex;
                 align-items: center;
                 justify-content: center;
-                font-size: calc(1em + 2px);
+                font-size: calc(1em + 5px);
                 line-height: 1;
             }
 
