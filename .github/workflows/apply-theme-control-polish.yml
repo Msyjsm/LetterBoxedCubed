@@ -16,6 +16,36 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Fix bridge patch signature handling
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('tools/apply_theme_control_polish.py')
+          s = p.read_text(encoding='utf-8')
+          old = '''def edit_bridge_request(fn):
+              fn = replace_once(
+                  fn,
+                  "    function GoogleDriveBridgeRequest(Action, Payload = {}) {",
+                  "    function GoogleDriveBridgeRequest(Action, Payload = {}, RetryAttempt = 0) {",
+                  "bridge retry signature"
+              )
+          '''
+          if old not in s:
+              raise SystemExit('bridge editor signature block not found')
+          s = s.replace(old, 'def edit_bridge_request(fn):\n', 1)
+          marker = 'source = edit_function(source, "GoogleDriveBridgeRequest", edit_bridge_request)'
+          replacement = '''source = replace_once(
+              source,
+              "    function GoogleDriveBridgeRequest(Action, Payload = {}) {",
+              "    function GoogleDriveBridgeRequest(Action, Payload = {}, RetryAttempt = 0) {",
+              "bridge retry signature"
+          )
+          source = edit_function(source, "GoogleDriveBridgeRequest", edit_bridge_request)'''
+          if marker not in s:
+              raise SystemExit('bridge editor call not found')
+          s = s.replace(marker, replacement, 1)
+          p.write_text(s, encoding='utf-8')
+          PY
       - name: Apply theme/control/Drive polish
         run: python tools/apply_theme_control_polish.py
       - name: Validate source and regressions
