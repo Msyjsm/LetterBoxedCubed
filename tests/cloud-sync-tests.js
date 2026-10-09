@@ -49,8 +49,10 @@ global.GM_xmlhttpRequest = Options => {
     }
 
     Options.onload({
-      status: 200,
-      responseText: JSON.stringify(Response)
+      status: Response?.__status ?? 200,
+      responseText: Object.prototype.hasOwnProperty.call(Response || {}, '__raw')
+        ? String(Response.__raw)
+        : JSON.stringify(Response)
     });
   } catch (Error) {
     Options.onerror?.(Error);
@@ -109,6 +111,31 @@ test('clean automatic sync does literally no cloud work', async () => {
 
   eq(actions(), [], 'clean automatic sync should not issue Read or Write');
   assert(T.GetState().Dirty === false, 'clean automatic sync became dirty');
+});
+
+test('transient Apps Script HTML response retries once with the same idempotent WriteId', async () => {
+  const key = 'LetterBoxedTracker_3000';
+  put(key, ['ALPHA']);
+  T.SetSession({Ready: true, ExpectedRevision: 7, Dirty: false, Status: 'Synced'});
+  T.MarkCloudSyncDirty();
+
+  let count = 0;
+  BridgeHandler = Request => {
+    count++;
+    if (count === 1) {
+      return {__raw: '<!DOCTYPE html><html><body>temporary Apps Script page</body></html>'};
+    }
+    return {Status: 'ok', Revision: 8};
+  };
+
+  await T.SyncWithGoogleDrive();
+
+  eq(actions(), ['Write', 'Write'], 'HTML response should retry the same Write once');
+  assert(Requests[0].WriteId === Requests[1].WriteId, 'HTML retry changed the idempotency WriteId');
+  const State = T.GetState();
+  assert(State.ExpectedRevision === 8, 'HTML retry did not retain successful revision');
+  assert(State.Dirty === false, 'HTML retry left successful data dirty');
+  assert(State.Status === 'Synced', 'HTML retry did not finish Synced');
 });
 
 test('dirty automatic sync is push-only and increments expected revision', async () => {

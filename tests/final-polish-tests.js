@@ -9,7 +9,7 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
-assert(source.includes('// @version      1.13.1-beta.17'), 'beta.17 version missing');
+assert(source.includes('// @version      1.13.1-beta.18'), 'beta.18 version missing');
 assert(source.includes('const ExportFormatVersion = 4;'), 'backup schema v4 missing');
 assert(source.includes('LetterBoxedCubed_ThemeState'), 'theme state storage missing');
 assert(source.includes('Name: "NYT Dark"'), 'NYT Dark prebuilt theme missing');
@@ -43,9 +43,24 @@ assert(!source.includes('InstallDarkBoardCanvasHook'), 'legacy canvas text hook 
 assert(!source.includes('RepairDarkBoardCanvas'), 'legacy bitmap repair remains');
 assert(!source.includes('ThemeAppliedOnce'), 'legacy reload-boundary state remains');
 assert(!source.includes('Invert Letter Boxed board/canvas'), 'legacy inversion setting remains');
-assert(source.includes('Same as background'), 'board/background tie control missing');
+assert(source.includes('Same as Background'), 'board/background tie control missing');
 assert(source.includes('Foreground (active)'), 'semantic active foreground control missing');
 assert(source.includes('Heading background'), 'LBC heading background control missing');
+assert(source.includes('LbcBackgroundMatchesLbBackground'), 'LBC/background semantic link missing');
+assert(source.includes('LbcTextMatchesLbForeground'), 'LBC/text semantic link missing');
+assert(source.includes('Same as Letter Boxed Background'), 'LBC background link checkbox missing');
+assert(source.includes('Same as Letter Boxed Foreground'), 'LBC text link checkbox missing');
+assert(source.includes('ApplyCompactNumberInputWidth'), 'compact number input sizing missing');
+assert(source.includes('--lb-cubed-control-color-scheme'), 'theme-aware native control color scheme missing');
+assert(source.includes('scrollbar-color:'), 'theme-aware scrollbar styling missing');
+assert(source.includes('::-webkit-inner-spin-button'), 'always-visible number steppers missing');
+assert(source.includes('0.6ch !important'), 'number input stepper spacing missing');
+assert(source.includes('font-size: calc(1em + 2px)'), 'NYT solution star +2px sizing missing');
+assert(source.includes('0.65'), 'NYT solution tint/shade derivation missing');
+assert(source.includes('Google Drive bridge returned HTML instead of JSON'), 'Drive HTML response retry guard missing');
+assert(source.includes('no HTML was imported into LBC data'), 'Drive HTML failure explanation missing');
+assert(source.includes('.lb-text-field__caret::before'), 'caret pseudo-element theming missing');
+assert(source.includes('-webkit-text-fill-color: var(--lb-cubed-lb-fg)'), 'exact native foreground fill missing');
 assert(source.includes('CreateThemeColorRow("Redacted", "Redacted")'), 'redacted theme control missing');
 assert(!source.includes('["Muted text", "LbcMuted"]'), 'editable muted text control remains');
 assert(!source.includes('["Accent", "LbcAccent"]'), 'editable LBC accent control remains');
@@ -55,7 +70,7 @@ assert(source.includes('FixedSuccessColor = "#2D7D3E"'), 'fixed success color mi
 assert(source.includes('FixedDangerColor = "#AF3636"'), 'fixed error color missing');
 assert(source.includes('.lb-text-field-underline'), 'native word-entry underline theme missing');
 assert(source.includes('[class*="Game-module_gameContainer__"]'), 'outer NYT game background override missing');
-assert(source.includes('NytLabel.textContent = "★ NYT Solution"'), 'themeable NYT solution star missing');
+assert(source.includes('lb-cubed-nyt-solution-star'), 'separately sized NYT solution star missing');
 assert(source.includes('--lb-cubed-nyt-solution-text'), 'derived NYT solution text color missing');
 assert(source.includes('--lb-cubed-redacted'), 'redacted CSS variable missing');
 assert(source.includes('lb-message-box success-message lb-cubed-valid-feedback-proxy'), 'valid-word toast no longer reuses native NYT styling classes');

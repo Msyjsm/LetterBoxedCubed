@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed
 // @namespace    https://nathanburgdorff.com/userscripts/
-// @version      1.13.1-beta.17
+// @version      1.13.1-beta.18
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -169,14 +169,16 @@
             /* Native web Light already supplies this exact presentation. */
             ApplyNative: false,
             BoardMatchesBackground: false,
+            LbcBackgroundMatchesLbBackground: true,
+            LbcTextMatchesLbForeground: true,
             Palette: {
                 LbBackground: "#FAA6A4",
                 LbBoard: "#FFFFFF",
                 LbForeground: "#000000",
                 LbActive: NativeBoardActiveSourceColor,
-                LbcBackground: "#D88482",
+                LbcBackground: "#FAA6A4",
                 LbcHeadingBackground: "#E5A09E",
-                LbcText: "#301818",
+                LbcText: "#000000",
                 LbcBorder: "#4C2222",
                 NytSolution: "#DACB77",
                 NewHighlight: "#7FFF00",
@@ -188,6 +190,8 @@
             Name: "NYT Dark",
             ApplyNative: true,
             BoardMatchesBackground: true,
+            LbcBackgroundMatchesLbBackground: true,
+            LbcTextMatchesLbForeground: true,
             Palette: {
                 /* Calibrated from the supplied NYT Android dark-mode view. */
                 LbBackground: "#121212",
@@ -1140,8 +1144,29 @@
             BoardMatchesBackground
         );
 
+        const LbcBackgroundMatchesLbBackground =
+            Object.prototype.hasOwnProperty.call(
+                RawTheme,
+                "LbcBackgroundMatchesLbBackground"
+            )
+                ? Boolean(RawTheme.LbcBackgroundMatchesLbBackground)
+                : Palette.LbcBackground === Palette.LbBackground;
+        const LbcTextMatchesLbForeground =
+            Object.prototype.hasOwnProperty.call(
+                RawTheme,
+                "LbcTextMatchesLbForeground"
+            )
+                ? Boolean(RawTheme.LbcTextMatchesLbForeground)
+                : Palette.LbcText === Palette.LbForeground;
+
         if (BoardMatchesBackground) {
             Palette.LbBoard = Palette.LbBackground;
+        }
+        if (LbcBackgroundMatchesLbBackground) {
+            Palette.LbcBackground = Palette.LbBackground;
+        }
+        if (LbcTextMatchesLbForeground) {
+            Palette.LbcText = Palette.LbForeground;
         }
 
         return {
@@ -1149,6 +1174,8 @@
             Name: String(RawTheme.Name || "Custom Theme").trim() || "Custom Theme",
             Palette,
             BoardMatchesBackground,
+            LbcBackgroundMatchesLbBackground,
+            LbcTextMatchesLbForeground,
             Deleted: Boolean(RawTheme.Deleted),
             UpdatedAt: NormalizeTimestamp(RawTheme.UpdatedAt)
         };
@@ -1345,10 +1372,13 @@
     }
 
     function GetDerivedNytSolutionText(Palette) {
+        const Pole = GetThemeRelativeLuminance(Palette.NytSolution) < 0.38
+            ? "#FFFFFF"
+            : "#000000";
         return MixThemeColors(
             Palette.NytSolution,
-            GetThemeContrastPole(Palette.NytSolution),
-            0.82
+            Pole,
+            0.65
         );
     }
 
@@ -1600,10 +1630,20 @@
         if (Theme.BoardMatchesBackground) {
             Palette.LbBoard = Palette.LbBackground;
         }
+        if (Theme.LbcBackgroundMatchesLbBackground) {
+            Palette.LbcBackground = Palette.LbBackground;
+        }
+        if (Theme.LbcTextMatchesLbForeground) {
+            Palette.LbcText = Palette.LbForeground;
+        }
 
         const MutedText = GetDerivedLbcMutedText(Palette);
         const LbcAccent = GetDerivedLbcAccent(Palette);
         const NytSolutionText = GetDerivedNytSolutionText(Palette);
+        const ControlColorScheme =
+            GetThemeRelativeLuminance(Palette.LbcBackground) < 0.38
+                ? "dark"
+                : "light";
         const ApplyNative = Boolean(Theme.ApplyNative);
 
         const Variables = {
@@ -1624,6 +1664,7 @@
             "--lb-cubed-lbc-muted": MutedText,
             "--lb-cubed-lbc-border": Palette.LbcBorder,
             "--lb-cubed-lbc-accent": LbcAccent,
+            "--lb-cubed-control-color-scheme": ControlColorScheme,
             "--lb-cubed-nyt-solution": Palette.NytSolution,
             "--lb-cubed-nyt-solution-text": NytSolutionText,
             "--lb-cubed-new-highlight": Palette.NewHighlight,
@@ -1672,6 +1713,12 @@
         const Id = `custom-${CreateCloudOpaqueId("theme")}`;
         const Now = new Date().toISOString();
         const BoardMatchesBackground = Boolean(Base.BoardMatchesBackground);
+        const LbcBackgroundMatchesLbBackground = Boolean(
+            Base.LbcBackgroundMatchesLbBackground
+        );
+        const LbcTextMatchesLbForeground = Boolean(
+            Base.LbcTextMatchesLbForeground
+        );
         const Palette = NormalizeThemePalette(
             Base.Palette,
             null,
@@ -1681,12 +1728,20 @@
         if (BoardMatchesBackground) {
             Palette.LbBoard = Palette.LbBackground;
         }
+        if (LbcBackgroundMatchesLbBackground) {
+            Palette.LbcBackground = Palette.LbBackground;
+        }
+        if (LbcTextMatchesLbForeground) {
+            Palette.LbcText = Palette.LbForeground;
+        }
 
         ThemeState.CustomThemes[Id] = {
             Id,
             Name: String(Name || "Custom Theme").trim() || "Custom Theme",
             Palette,
             BoardMatchesBackground,
+            LbcBackgroundMatchesLbBackground,
+            LbcTextMatchesLbForeground,
             Deleted: false,
             UpdatedAt: Now
         };
@@ -1740,6 +1795,18 @@
         if (Key === "LbBackground" && Theme.BoardMatchesBackground) {
             Theme.Palette.LbBoard = Theme.Palette.LbBackground;
         }
+        if (
+            Key === "LbBackground" &&
+            Theme.LbcBackgroundMatchesLbBackground
+        ) {
+            Theme.Palette.LbcBackground = Theme.Palette.LbBackground;
+        }
+        if (
+            Key === "LbForeground" &&
+            Theme.LbcTextMatchesLbForeground
+        ) {
+            Theme.Palette.LbcText = Theme.Palette.LbForeground;
+        }
 
         if (Persist) {
             Theme.UpdatedAt = new Date().toISOString();
@@ -1759,6 +1826,38 @@
         Theme.BoardMatchesBackground = Boolean(Value);
         if (Theme.BoardMatchesBackground) {
             Theme.Palette.LbBoard = Theme.Palette.LbBackground;
+        }
+        Theme.UpdatedAt = new Date().toISOString();
+        SaveThemeState();
+        ApplyTheme();
+        return true;
+    }
+
+    function UpdateActiveCustomThemeLbcBackgroundMatch(Value) {
+        const Theme = GetActiveCustomThemeRecord();
+        if (!Theme) {
+            return false;
+        }
+
+        Theme.LbcBackgroundMatchesLbBackground = Boolean(Value);
+        if (Theme.LbcBackgroundMatchesLbBackground) {
+            Theme.Palette.LbcBackground = Theme.Palette.LbBackground;
+        }
+        Theme.UpdatedAt = new Date().toISOString();
+        SaveThemeState();
+        ApplyTheme();
+        return true;
+    }
+
+    function UpdateActiveCustomThemeLbcTextMatch(Value) {
+        const Theme = GetActiveCustomThemeRecord();
+        if (!Theme) {
+            return false;
+        }
+
+        Theme.LbcTextMatchesLbForeground = Boolean(Value);
+        if (Theme.LbcTextMatchesLbForeground) {
+            Theme.Palette.LbcText = Theme.Palette.LbForeground;
         }
         Theme.UpdatedAt = new Date().toISOString();
         SaveThemeState();
@@ -2473,6 +2572,12 @@
         return Row;
     }
 
+    function ApplyCompactNumberInputWidth(Input, Maximum) {
+        const NumericMaximum = Math.abs(Math.trunc(Number(Maximum) || 0));
+        const DigitCount = Math.max(2, String(NumericMaximum).length);
+        Input.style.width = `calc(${DigitCount}ch + 22px)`;
+    }
+
     function CreateSettingsNumberWithReset(
         LabelText,
         Value,
@@ -2501,6 +2606,7 @@
         Input.step = String(Step);
         Input.value = String(Value);
         Input.dataset.cubedSettingInput = SettingName;
+        ApplyCompactNumberInputWidth(Input, Maximum);
 
         const SuffixText = document.createElement("span");
         SuffixText.className = "lb-cubed-settings-suffix";
@@ -2574,7 +2680,7 @@
         MatchInput.type = "checkbox";
         MatchInput.checked = Boolean(Theme?.BoardMatchesBackground);
         const MatchText = document.createElement("span");
-        MatchText.textContent = "Same as background";
+        MatchText.textContent = "Same as Background";
         MatchLabel.append(MatchInput, MatchText);
 
         const ColorInput = document.createElement("input");
@@ -2590,6 +2696,60 @@
 
         MatchInput.addEventListener("change", () => {
             UpdateActiveCustomThemeBoardMatch(MatchInput.checked);
+            RefreshThemeSettingsSection(Section);
+        });
+
+        Row.append(Label, MatchLabel, ColorInput);
+        return Row;
+    }
+
+    function CreateThemeLinkedColorRow(
+        Section,
+        LabelText,
+        PaletteKey,
+        MatchProperty,
+        MatchTextValue,
+        FallbackValue,
+        UpdateMatch
+    ) {
+        const Theme = GetActiveCustomThemeRecord();
+        const Row = document.createElement("div");
+        Row.className = "lb-cubed-theme-color-row lb-cubed-theme-board-row";
+
+        const Label = document.createElement("span");
+        Label.className = "lb-cubed-settings-label";
+        Label.textContent = LabelText;
+
+        const MatchLabel = document.createElement("label");
+        MatchLabel.className = "lb-cubed-theme-board-match";
+        const MatchInput = document.createElement("input");
+        MatchInput.type = "checkbox";
+        MatchInput.checked = Boolean(Theme?.[MatchProperty]);
+        const MatchText = document.createElement("span");
+        MatchText.textContent = MatchTextValue;
+        MatchLabel.append(MatchInput, MatchText);
+
+        const ColorInput = document.createElement("input");
+        ColorInput.type = "color";
+        ColorInput.value = Theme?.Palette?.[PaletteKey] || FallbackValue;
+        ColorInput.disabled = Boolean(Theme?.[MatchProperty]);
+        ColorInput.addEventListener("input", Event => {
+            UpdateActiveCustomThemePalette(
+                PaletteKey,
+                Event.currentTarget.value,
+                false
+            );
+        });
+        ColorInput.addEventListener("change", Event => {
+            UpdateActiveCustomThemePalette(
+                PaletteKey,
+                Event.currentTarget.value,
+                true
+            );
+        });
+
+        MatchInput.addEventListener("change", () => {
+            UpdateMatch(MatchInput.checked);
             RefreshThemeSettingsSection(Section);
         });
 
@@ -2732,9 +2892,25 @@
             Section,
             "Letter Boxed Cubed",
             [
-                CreateThemeColorRow("Background", "LbcBackground"),
+                CreateThemeLinkedColorRow(
+                    Section,
+                    "Background",
+                    "LbcBackground",
+                    "LbcBackgroundMatchesLbBackground",
+                    "Same as Letter Boxed Background",
+                    "#D88482",
+                    UpdateActiveCustomThemeLbcBackgroundMatch
+                ),
                 CreateThemeColorRow("Heading background", "LbcHeadingBackground"),
-                CreateThemeColorRow("Text", "LbcText"),
+                CreateThemeLinkedColorRow(
+                    Section,
+                    "Text",
+                    "LbcText",
+                    "LbcTextMatchesLbForeground",
+                    "Same as Letter Boxed Foreground",
+                    "#301818",
+                    UpdateActiveCustomThemeLbcTextMatch
+                ),
                 CreateThemeColorRow("Border", "LbcBorder")
             ]
         );
@@ -2899,6 +3075,7 @@
             SpanInput.step = "1";
             SpanInput.value = String(Item.Span);
             SpanInput.title = "Width in twelfths of the LBC dashboard";
+            ApplyCompactNumberInputWidth(SpanInput, 12);
             SpanInput.addEventListener("change", () => {
                 const Value = Number(SpanInput.value);
                 Item.Span = Number.isFinite(Value)
@@ -5859,7 +6036,7 @@
         return CloudCachedPayload;
     }
 
-    function GoogleDriveBridgeRequest(Action, Payload = {}) {
+    function GoogleDriveBridgeRequest(Action, Payload = {}, RetryAttempt = 0) {
         if (
             !GoogleDriveConfig?.Enabled ||
             typeof GM_xmlhttpRequest !== "function"
@@ -5891,7 +6068,43 @@
                             );
                         }
 
-                        const Parsed = JSON.parse(Response.responseText);
+                        const ResponseText = String(
+                            Response.responseText || ""
+                        ).trim();
+                        const LooksLikeHtml = /^<(?:!doctype|html|head|body)\b/i
+                            .test(ResponseText);
+
+                        if (LooksLikeHtml) {
+                            if (RetryAttempt < 1) {
+                                console.warn(
+                                    "[Letter Boxed Cubed] Google Drive bridge returned HTML instead of JSON; retrying the same request once.",
+                                    { Action, Status: Response.status }
+                                );
+                                setTimeout(() => {
+                                    GoogleDriveBridgeRequest(
+                                        Action,
+                                        Payload,
+                                        RetryAttempt + 1
+                                    ).then(Resolve, Reject);
+                                }, 500);
+                                return;
+                            }
+
+                            throw new Error(
+                                "Google Drive bridge returned an HTML page instead of JSON after retry. " +
+                                "This is usually a temporary Apps Script or authorization response; no HTML was imported into LBC data."
+                            );
+                        }
+
+                        let Parsed;
+                        try {
+                            Parsed = JSON.parse(ResponseText);
+                        } catch (ParseError) {
+                            throw new Error(
+                                "Google Drive bridge returned invalid JSON: " +
+                                ParseError.message
+                            );
+                        }
 
                         if (!Parsed || typeof Parsed !== "object") {
                             throw new Error(
@@ -10244,7 +10457,14 @@
 
         const NytLabel = document.createElement("div");
         NytLabel.className = "lb-cubed-nyt-solution-label";
-        NytLabel.textContent = "★ NYT Solution";
+
+        const NytStar = document.createElement("span");
+        NytStar.className = "lb-cubed-nyt-solution-star";
+        NytStar.textContent = "★";
+
+        const NytLabelText = document.createElement("span");
+        NytLabelText.textContent = "NYT Solution";
+        NytLabel.append(NytStar, NytLabelText);
 
         NytWrapper.append(NytLabel, Row);
         return NytWrapper;
@@ -12501,6 +12721,111 @@
 
             /*
                 ================================================================
+                THEME-AWARE NATIVE CONTROLS
+                ================================================================
+            */
+
+            #${PanelId},
+            #${HistoryOverlayId} {
+                color-scheme: var(--lb-cubed-control-color-scheme, light);
+                scrollbar-color:
+                    var(--lb-cubed-lbc-border, #4C2222)
+                    color-mix(
+                        in srgb,
+                        var(--lb-cubed-lbc-heading-bg, #E5A09E) 55%,
+                        var(--lb-cubed-lbc-bg, #D88482)
+                    );
+            }
+
+            html.lb-cubed-native-theme {
+                color-scheme: var(--lb-cubed-control-color-scheme, light);
+                scrollbar-color:
+                    var(--lb-cubed-lb-fg)
+                    var(--lb-cubed-lb-bg);
+            }
+
+            #${PanelId} input[type="checkbox"],
+            #${PanelId} input[type="range"],
+            #${HistoryOverlayId} input[type="checkbox"],
+            #${HistoryOverlayId} input[type="range"] {
+                accent-color: var(--lb-cubed-lbc-border, #4C2222) !important;
+            }
+
+            #${PanelId} input[type="number"],
+            #${HistoryOverlayId} input[type="number"] {
+                box-sizing: border-box;
+                min-width: 0 !important;
+                padding: 2px 2px 2px 4px !important;
+                border: 1px solid var(--lb-cubed-lbc-border, #4C2222) !important;
+                border-radius: 3px !important;
+                background: var(--lb-cubed-lbc-heading-bg, #E5A09E) !important;
+                color: var(--lb-cubed-lbc-text, #301818) !important;
+                font: inherit;
+                font-family: Consolas, "Courier New", monospace;
+                text-align: right !important;
+                color-scheme: var(--lb-cubed-control-color-scheme, light);
+            }
+
+            #${PanelId} input[type="number"]::-webkit-inner-spin-button,
+            #${PanelId} input[type="number"]::-webkit-outer-spin-button,
+            #${HistoryOverlayId} input[type="number"]::-webkit-inner-spin-button,
+            #${HistoryOverlayId} input[type="number"]::-webkit-outer-spin-button {
+                opacity: 1 !important;
+                margin: 0 0 0 0.6ch !important;
+                width: 12px !important;
+                height: 16px !important;
+            }
+
+            #${PanelContentId}::-webkit-scrollbar,
+            #${PanelId} *::-webkit-scrollbar,
+            #${HistoryOverlayId} *::-webkit-scrollbar {
+                width: 8px;
+                height: 8px;
+            }
+
+            #${PanelContentId}::-webkit-scrollbar-track,
+            #${PanelId} *::-webkit-scrollbar-track,
+            #${HistoryOverlayId} *::-webkit-scrollbar-track {
+                background: color-mix(
+                    in srgb,
+                    var(--lb-cubed-lbc-heading-bg, #E5A09E) 55%,
+                    var(--lb-cubed-lbc-bg, #D88482)
+                );
+            }
+
+            #${PanelContentId}::-webkit-scrollbar-thumb,
+            #${PanelId} *::-webkit-scrollbar-thumb,
+            #${HistoryOverlayId} *::-webkit-scrollbar-thumb {
+                background: var(--lb-cubed-lbc-border, #4C2222);
+                border-radius: 4px;
+            }
+
+            #${PanelContentId}::-webkit-scrollbar-button,
+            #${PanelId} *::-webkit-scrollbar-button,
+            #${HistoryOverlayId} *::-webkit-scrollbar-button {
+                color-scheme: var(--lb-cubed-control-color-scheme, light);
+                background-color: var(--lb-cubed-lbc-heading-bg, #E5A09E);
+            }
+
+            #${LayoutGapHandleId}::after,
+            .lb-cubed-page-resize-handle::after,
+            .lb-cubed-resize-handle::after {
+                background: color-mix(
+                    in srgb,
+                    var(--lb-cubed-lbc-border, #4C2222) 62%,
+                    transparent
+                ) !important;
+            }
+
+            #${LayoutGapHandleId}:hover::after,
+            #${LayoutGapHandleId}.lb-cubed-layout-gap-handle-active::after,
+            .lb-cubed-page-resize-handle:hover::after,
+            .lb-cubed-page-resize-handle-active::after {
+                background: var(--lb-cubed-lbc-border, #4C2222) !important;
+            }
+
+            /*
+                ================================================================
                 COLOR THEMES (ISSUE #30) - SEMANTIC THEME MODEL V2
                 ================================================================
             */
@@ -12543,13 +12868,24 @@
             }
 
             html.lb-cubed-native-theme .lb-word-list,
+            html.lb-cubed-native-theme .lb-word-list *,
             html.lb-cubed-native-theme .lb-word-list-length,
             html.lb-cubed-native-theme .lb-par,
             html.lb-cubed-native-theme input,
+            html.lb-cubed-native-theme .lb-text-field-label,
             html.lb-cubed-native-theme .lb-text-field,
             html.lb-cubed-native-theme .lb-text-field * {
                 color: var(--lb-cubed-lb-fg) !important;
+                -webkit-text-fill-color: var(--lb-cubed-lb-fg) !important;
                 caret-color: var(--lb-cubed-lb-fg) !important;
+            }
+
+            html.lb-cubed-native-theme .lb-word-list,
+            html.lb-cubed-native-theme .lb-word-list *,
+            html.lb-cubed-native-theme .lb-word-list-length,
+            html.lb-cubed-native-theme .lb-text-field-label,
+            html.lb-cubed-native-theme .lb-text-field {
+                opacity: 1 !important;
             }
 
             /*
@@ -12588,11 +12924,16 @@
             }
 
             /* NYT's visible caret is a span, not the browser-native caret. */
-            html.lb-cubed-native-theme .lb-text-field__caret {
+            html.lb-cubed-native-theme .lb-text-field__caret,
+            html.lb-cubed-native-theme .lb-text-field__caret::before,
+            html.lb-cubed-native-theme .lb-text-field__caret::after {
                 color: var(--lb-cubed-lb-fg) !important;
                 background: var(--lb-cubed-lb-fg) !important;
                 background-color: var(--lb-cubed-lb-fg) !important;
                 border-color: var(--lb-cubed-lb-fg) !important;
+                border-left-color: var(--lb-cubed-lb-fg) !important;
+                border-right-color: var(--lb-cubed-lb-fg) !important;
+                outline-color: var(--lb-cubed-lb-fg) !important;
             }
 
             /*
@@ -12755,6 +13096,20 @@
             #${PanelId} .lb-cubed-nyt-solution .lb-cubed-twofer-arrow,
             #${PanelId} .lb-cubed-nyt-solution .lb-cubed-twofer-revealed {
                 background-color: inherit !important;
+            }
+
+            #${PanelId} .lb-cubed-nyt-solution-label {
+                display: inline-flex;
+                align-items: center;
+                gap: 3px;
+            }
+
+            #${PanelId} .lb-cubed-nyt-solution-star {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                font-size: calc(1em + 2px);
+                line-height: 1;
             }
 
             #${PanelId} .lb-cubed-twofer-redacted,
