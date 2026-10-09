@@ -9,7 +9,7 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
-assert(source.includes('// @version      1.13.1-beta.19'), 'beta.19 version missing');
+assert(source.includes('// @version      1.13.1-beta.20'), 'beta.20 version missing');
 assert(source.includes('const ExportFormatVersion = 4;'), 'backup schema v4 missing');
 assert(source.includes('LetterBoxedCubed_ThemeState'), 'theme state storage missing');
 assert(source.includes('Name: "NYT Dark"'), 'NYT Dark prebuilt theme missing');
@@ -54,14 +54,20 @@ assert(source.includes('ApplyCompactNumberInputWidth'), 'compact number input si
 assert(source.includes('DigitCount + 1}ch + 22px'), 'compact number inputs lack one-character breathing room');
 assert(source.includes('--lb-cubed-control-color-scheme'), 'theme-aware native control color scheme missing');
 assert(source.includes('scrollbar-color:'), 'theme-aware scrollbar styling missing');
+assert(source.includes('.lb-cubed-settings-panel,'), 'settings scrollbar root styling missing');
+assert(source.includes('var(--lb-cubed-lbc-bg, #D88482);'), 'LBC scrollbar track is not semantic background');
 assert(source.includes('var(--lb-cubed-lbc-text, #301818)'), 'LBC scrollbar still uses stale border/maroon color');
 assert(source.includes('::-webkit-inner-spin-button'), 'always-visible number steppers missing');
 assert(source.includes('0.6ch !important'), 'number input stepper spacing missing');
 assert(source.includes('font-size: calc(1em + 5px)'), 'NYT solution star +5px sizing missing');
 assert(source.includes('const TargetLightness = IsDark'), 'NYT solution hue-preserving tint/shade derivation missing');
+assert(source.includes('Lightness * 0.55'), 'NYT solution shade is still too close to black/white');
+assert(source.includes('.lb-cubed-nyt-solution * {'), 'NYT solution descendants are not forced to the derived shade');
+assert(source.includes('-webkit-text-fill-color: var(--lb-cubed-nyt-solution-text)'), 'NYT solution text-fill override missing');
 assert(source.includes('Google Drive bridge returned HTML instead of JSON'), 'Drive HTML response retry guard missing');
 assert(source.includes('no HTML was imported into LBC data'), 'Drive HTML failure explanation missing');
 assert(source.includes('.lb-text-field__caret::before'), 'caret pseudo-element theming missing');
+assert(source.includes('color: var(--lb-cubed-lb-active) !important;'), 'current word-entry UI is not mapped to active foreground');
 assert(source.includes('-webkit-text-fill-color: var(--lb-cubed-lb-fg)'), 'exact native foreground fill missing');
 assert(source.includes('CreateThemeColorRow("Redacted", "Redacted")'), 'redacted theme control missing');
 assert(!source.includes('["Muted text", "LbcMuted"]'), 'editable muted text control remains');
