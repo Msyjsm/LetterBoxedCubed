@@ -34,15 +34,19 @@ ThemeState v2 never mutates the canvas bitmap. Instead, LBC installs one SVG `fe
 - source white -> theme **Board**;
 - source active coral (`#E8A9A0`) -> theme **Foreground (active)**.
 
-Antialiased and blended pixels transform continuously between those anchors. Because NYT remains free to repaint its normal source canvas underneath the filter, theme changes are live: there is no board-inversion checkbox, bitmap repair, Canvas2D monkeypatch, or Light/Dark reload boundary.
+Antialiased and blended pixels transform continuously between those anchors. Because NYT remains free to repaint its normal source canvas underneath the filter, theme changes are live: there is no board-inversion checkbox, bitmap repair, or Light/Dark reload boundary.
 
-NYT resolves inactive board-letter paint from the game-level `--text` token rather than reliably from the square container. While board theming is active, LBC therefore keeps that renderer-facing source token at native black. Visible DOM text, caret and entry-rule colors are styled explicitly from **Foreground**. This keeps the canvas source palette stable so inactive letters map through the affine matrix to the requested Foreground instead of accidentally becoming Board-colored/invisible.
+Preview diagnostics exposed one unavoidable source-palette collision: NYT paints both the board fill and inactive board-letter glyphs with native white. A color matrix cannot send one identical source RGB value to two different semantic destinations. LBC therefore adds one narrowly-scoped Canvas2D text shim: only single A-Z `fillText`/`strokeText` calls on the Letter Boxed board whose source paint is native white are temporarily normalized to native black. The affine matrix then maps those glyphs to **Foreground**, while the untouched white board fill still maps to **Board**. This is not the old bitmap-repair architecture: there is no pixel walk, `getImageData()` mutation, inversion, repaint polling, or path/node interception.
+
+When a theme is first applied to an already-painted board, LBC issues a short resize-based renderer refresh so NYT repaints through the semantic text shim. Subsequent NYT redraws automatically use the same hook.
 
 ## Native shell details
 
-The surrounding page, toolbar, generated outer `Game-module_gameContainer__*` wrapper and other native UI surfaces use Letter Boxed Background/Foreground directly. LBC themes NYT's real `.lb-text-field-underline` instead of painting a second synthetic line on the input wrapper.
+The surrounding page, toolbar, generated outer `Game-module_gameContainer__*` wrapper and other native UI surfaces use Letter Boxed Background/Foreground directly. LBC themes NYT's real `.lb-text-field-underline` instead of painting a second synthetic line on the input wrapper. NYT's visible insertion cursor is a `.lb-text-field__caret` span rather than the browser-native caret, so that element is explicitly themed to Foreground too.
 
 Transient valid and invalid word messages retain NYT's normal geometry/typography but use **Foreground (active)** as their background and **Board** as their text/icon color. Valid-word praise still uses LBC's source-independent lifecycle/placement proxy; the proxy snapshots praise immediately because NYT can retire its native source before Cubed's history-settling window completes.
+
+Browse History reuses the same themed Completion / Longest Found stat-card treatment as the main LBC dashboard, including heading background, value text, muted labels and borders.
 
 Preview-only beta version text continues to adapt its contrast to the Letter Boxed Background.
 
@@ -56,4 +60,4 @@ ThemeState v1 custom themes migrate automatically. Old `InvertBoard` is interpre
 
 ## Preview acceptance checklist
 
-For the first v2 Preview pass, verify live NYT Light <-> NYT Dark switching without a reload; independent Background/Board behavior in a Light-derived custom theme; Board tracking while Same as background is checked; neutral and active GB colors during typing and after submission; the native word-entry underline; the generated outer game-container background; valid/invalid message colors; NYT-solution contrast/star color; and custom Redacted color.
+Verify live NYT Light <-> NYT Dark switching without a reload; independent Background/Board behavior in a Light-derived custom theme; Board tracking while Same as background is checked; neutral and active GB colors during typing and after submission; the native word-entry underline and visible caret; the generated outer game-container background; valid/invalid message colors; NYT-solution contrast/star color; custom Redacted color; and Browse History Completion / Longest Found cards matching their main-dashboard counterparts.
