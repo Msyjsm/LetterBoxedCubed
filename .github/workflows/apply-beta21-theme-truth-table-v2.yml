@@ -17,6 +17,19 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Repair helper matching
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('tools/apply_beta21_theme_truth_table.py')
+          s = p.read_text(encoding='utf-8')
+          old = 'source = require_replace(source, old_is_white, new_is_white, "board paint helpers")'
+          new = 'source = replace_function(source, "IsNativeBoardWhite", "InstallBoardTextSourceHook", new_is_white, "board paint helpers")'
+          if old not in s:
+              raise SystemExit('board paint helper replacement line missing')
+          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+          PY
+
       - name: Apply beta.21 patch
         run: python tools/apply_beta21_theme_truth_table.py
 
