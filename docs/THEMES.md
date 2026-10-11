@@ -2,70 +2,141 @@
 
 LBC ships with two immutable presets, **NYT Light** and **NYT Dark**, plus portable custom themes. Custom definitions and the active selection live in the versioned `LetterBoxedCubed_ThemeState` record and sync independently of word/history data.
 
-## ThemeState v2 semantic palette
+## ThemeState v2 and the beta.21 three-color model
 
-ThemeState v2 describes what a color *means* rather than exposing implementation-specific CSS colors.
+ThemeState remains at v2 for backup/cloud compatibility, but beta.21 deliberately simplifies the user-facing Letter Boxed palette. Custom themes expose only three directly editable Letter Boxed colors:
 
-### Letter Boxed
+- **Primary (background)** - the Letter Boxed page/game-shell background.
+- **Secondary (board)** - the interior board/node fill anchor.
+- **Tertiary (active / used)** - active/used node and connector accent.
 
-- **Background** - page/game shell surrounding the board.
-- **Board** - the white/dark filled region inside the GB square and node interiors.
-- **Same as Background** - when enabled, Board tracks Background live and its picker is disabled.
-- **Foreground** - neutral text, lines, borders, board letters, square outline and node outlines.
-- **Foreground (active)** - current/submitted paths, active/used board details and the current word-entry UI.
+Letter Boxed **Text / Outline** is derived automatically from Primary. LBC computes Primary's relative luminance and chooses black for a light Primary or white for a dark Primary. That same derived light/dark decision drives board state disambiguation and the error-toast palette.
 
-NYT Light intentionally keeps its white Board separate from the pink web Background. NYT Dark intentionally ties Board to its `#121212` Background. Custom themes inherit that relationship from the preset/theme they are duplicated from.
+The older stored `LbForeground` and `BoardMatchesBackground` fields remain readable for migration and sync compatibility, but they are no longer independent Letter Boxed controls in the beta.21 theme editor. New custom themes always treat Primary, Secondary and Tertiary as independent colors.
 
-### Letter Boxed Cubed
+The built-in presets are calibrated as follows:
 
-Custom themes expose **Background**, **Heading background**, **Text** and **Border**. Background has a **Same as Letter Boxed Background** relationship and Text has **Same as Letter Boxed Foreground**; both relationships are enabled in the two built-in presets and are inherited by custom themes duplicated from them. When a relationship is enabled, the dependent picker is disabled and follows its Letter Boxed source live. Existing beta custom themes that predate these flags infer the relationship only when the two stored colors already match, so intentionally independent colors are not overwritten.
+| Preset | Primary | Secondary | Tertiary | Derived Text / Outline |
+| --- | --- | --- | --- | --- |
+| NYT Light | `#E3A5A3` | `#FFFFFF` | native coral `#E8A9A0` | black |
+| NYT Dark | `#121212` | `#121212` | `#DA5D57` | white |
 
-Muted text is derived by mixing Text toward Background. Secondary accent surfaces are derived by shifting Background toward whichever black/white pole provides contrast.
+## Letter Boxed state truth table
 
-### Highlights
+The board is stateful, so the three palette colors do not map one-to-one to every visible element. Beta.21 follows the native NYT Light/Dark semantics below.
 
-Custom themes expose **NYT solution**, **New item** and **Redacted**. NYT-solution text is a hue-preserving darker shade of a light solution color or lighter tint of a dark solution color rather than being washed toward generic black/white. Beta.20 keeps that shade/tint visibly related to the selected background instead of driving it almost to black/white, and forces the derived color onto all visible NYT-solution descendants so generic Twofer rules cannot override it. Its `★` uses the same derived color and is rendered 5px larger than the neighboring label while remaining vertically centered. Redacted blocks use one opaque color for background, text, border and selection so spoilers remain unreadable. Success/error indicators are fixed green/red rather than theme-editable.
+| Element | Light semantic | Dark semantic |
+| --- | --- | --- |
+| Text Input | derived black | derived white |
+| LB Background | Primary | Primary |
+| GB Board Background | Secondary | Secondary |
+| GB Board Outline | derived black | derived white |
+| GB Letters - unused | white | white |
+| GB Node Outline - unused | derived black | derived white |
+| GB Node Background - unused | Secondary | Secondary |
+| GB Letters - active | derived black, bold | Tertiary |
+| GB Node Outline - active | Tertiary | Tertiary |
+| GB Node Background - active | Secondary | Secondary |
+| GB Letters - used | derived black, unbold | Tertiary |
+| GB Node Outline - used | derived black | Tertiary |
+| GB Node Background - used | Tertiary | Tertiary |
+| Letter connectors | Tertiary | Tertiary |
+| Success toast foreground | black | black |
+| Success toast background | white | white |
+| Error toast foreground | white | Primary |
+| Error toast background | black | derived Text Input |
+
+On mobile, NYT exposes one additional board state: **Current Letter / Last Entered**. Its node remains the most recently entered letter both before and after word submission. In a light theme its outline is Tertiary and its fill is black. In a dark theme its outline is Tertiary and its fill is white.
+
+The error-toast dark-mode rule intentionally differs from NYT's stock gray error surface: beta.21 uses the derived Text Input color as the background and Primary as the foreground. With the stock dark preset, that means white on black.
+
+## Letter Boxed Cubed colors
+
+The LBC side of a custom theme still exposes **Background**, **Heading background**, **Text** and **Border**. LBC Background can be linked with **Same as Letter Boxed Background**. LBC Text can be linked with **Same as Letter Boxed Text**; Letter Boxed Text means the black/white value derived from Primary, not another editable LB swatch.
+
+Both links are enabled in the built-in presets and are inherited when a custom theme is duplicated from them. When linked, the dependent LBC picker follows the Letter Boxed semantic source live. Muted LBC text is derived by mixing LBC Text toward LBC Background, and secondary LBC accent surfaces are derived from LBC Background and its contrast pole.
+
+The Hints `None found yet.` empty-state text is normal LBC Text, not muted text.
+
+## Highlights and NYT Solution
+
+Custom themes expose **NYT solution**, **New item** and **Redacted**. NYT-solution heading text is a hue-preserving darker shade of a light solution color or lighter tint of a dark solution color. The `★` uses that same derived heading color and is 5px larger than the neighboring heading text while remaining vertically centered.
+
+The NYT Solution color applies only to the solution card itself and its heading/star. The actual First Word / Second Word row inside the card uses exactly the same Twofer word styling and redaction rules as every other Twofer. An unrevealed solution word therefore remains opaque/redacted rather than inheriting the solution-card foreground. Redacted elements also explicitly set `-webkit-text-fill-color` so an inherited browser text-fill rule cannot accidentally reveal them.
 
 ## Semantic affine board transform
 
-The visible web Letter Boxed board is a single canvas. Earlier betas tried to create dark mode by inverting the completed bitmap, normalizing canvas text calls, and occasionally walking the whole pixel buffer. That approach caused source-color races, double inversion during live theme changes, forced reloads, and expensive synchronous `getImageData()` work on slower hardware.
+The visible Letter Boxed board is a single canvas. LBC does not mutate its bitmap. Instead, it applies one SVG `feColorMatrix` compositor whose three source anchors are the colors NYT's native Light renderer already paints:
 
-ThemeState v2 never mutates the canvas bitmap. Instead, LBC installs one SVG `feColorMatrix` compositor filter and updates its matrix whenever a native/custom theme changes. The matrix is solved as an affine RGB transformation anchored to three known colors in NYT's native Light renderer:
+- source black -> derived **Text / Outline**;
+- source white -> **Secondary**;
+- source active coral (`#E8A9A0`) -> **Tertiary**.
 
-- source black -> theme **Foreground**;
-- source white -> theme **Board**;
-- source active coral (`#E8A9A0`) -> theme **Foreground (active)**.
+This maps board fill, outlines, node fills and connectors continuously without per-pixel reads or bitmap repair. Light, Dark and custom themes all run through this same compositor in beta.21, including NYT Light itself. That removes the old special case where switching back to Light could expose stale source state left by a previously active theme.
 
-Antialiased and blended pixels transform continuously between those anchors. Because NYT remains free to repaint its normal source canvas underneath the filter, theme changes are live: there is no board-inversion checkbox, bitmap repair, or Light/Dark reload boundary.
+### Source-color collisions
 
-Preview diagnostics exposed one unavoidable source-palette collision: NYT paints both the board fill and inactive board-letter glyphs with native white. A color matrix cannot send one identical source RGB value to two different semantic destinations. LBC therefore adds one narrowly-scoped Canvas2D text shim: only single A-Z `fillText`/`strokeText` calls on the Letter Boxed board whose source paint is native white are temporarily normalized to native black. The affine matrix then maps those glyphs to **Foreground**, while the untouched white board fill still maps to **Board**. This is not the old bitmap-repair architecture: there is no pixel walk, `getImageData()` mutation, inversion, repaint polling, or path/node interception.
+The native source renderer reuses the same RGB values for elements that have different dark-mode semantics. Beta.21 resolves only those collisions and leaves all other canvas painting untouched.
 
-When a theme is first applied to an already-painted board, LBC issues a short resize-based renderer refresh so NYT repaints through the semantic text shim. Subsequent NYT redraws automatically use the same hook.
+For dark themes, a narrowly scoped Canvas2D text shim intercepts only single A-Z board `fillText` / `strokeText` calls. Native-white unused glyphs are normalized to the black source anchor so they remain derived white after the matrix, while native-black active/used glyphs are normalized to the coral source anchor so they become Tertiary.
 
-## Native shell and control details
+Used nodes require one additional dark-mode distinction: NYT paints their fill with native coral but their outline with native black, while the target dark truth table wants both surfaces Tertiary. A scoped `stroke()` shim detects that exact coral-fill + black-outline paint pair and temporarily promotes only that outline to the coral source anchor. The mobile Current/Last node already arrives as coral outline + black fill, so the matrix naturally yields Tertiary outline + derived-white fill without another special case.
 
-The surrounding page, toolbar, generated outer `Game-module_gameContainer__*` wrapper and other native UI surfaces use Letter Boxed Background/Foreground directly. The current word-entry label/text/rule/caret now use **Foreground (active)** so they visually match the active GB path rather than the neutral DOM foreground. LBC themes NYT's real `.lb-text-field-underline` instead of painting a second synthetic line on the input wrapper. NYT's visible insertion cursor is a `.lb-text-field__caret` span rather than the browser-native caret, so that element and its pseudo-elements are explicitly themed as well. Native text fill, opacity, filter and blend treatment are normalized so semantic colors are not altered by NYT's own presentation rules.
+These shims are state-color disambiguators, not the old bitmap-repair architecture: there is no `getImageData()` pixel walk, inversion pass, or post-render bitmap mutation.
 
-LBC's sliders, checkboxes, number-input steppers, scrollbars and draggable resize/gap handles are theme-aware. The control `color-scheme` follows the current LBC background brightness, while accent/track/thumb/handle colors come from semantic LBC palette values. The page scrollbar uses Letter Boxed Background/Foreground. LBC, Settings and History now set `scrollbar-color` directly on their actual scrolling roots as well as Chromium's WebKit scrollbar pseudo-elements, using LBC Background for the track and LBC Text for thumb/buttons; this prevents the old per-scroller maroon declaration from winning. Number inputs share one compact presentation: right-aligned values, always-visible steppers, a small value-to-stepper gap, widths derived from the control's maximum digit count, and one extra character of left-side breathing room at that maximum width.
+## Live theme switching
 
-Transient valid and invalid word messages retain NYT's normal geometry/typography but use **Foreground (active)** as their background and **Board** as their text/icon color. Valid-word praise still uses LBC's source-independent lifecycle/placement proxy; the proxy snapshots praise immediately because NYT can retire its native source before Cubed's history-settling window completes.
+Every theme application updates the semantic CSS variables and the affine matrix, then queues a short resize-based renderer refresh. NYT redraws its canvas through the same semantic hooks, so switching Light -> Dark -> custom -> Light in the middle of a puzzle is intended to preserve the current unused/active/used states rather than requiring a page reload.
 
-Browse History reuses the same themed Completion / Longest Found stat-card treatment as the main LBC dashboard, including heading background, value text, muted labels and borders.
+Because board behavior ultimately depends on NYT's live canvas renderer, mid-puzzle switching is part of the required acceptance testing rather than something static tests alone can prove.
 
-Preview-only beta version text continues to adapt its contrast to the Letter Boxed Background.
+## Native shell, input and controls
+
+The surrounding page, toolbar, generated `Game-module_gameContainer__*` wrapper and other native Letter Boxed surfaces use Primary plus the derived Text / Outline color. The word-entry label, typed word, underline and visible caret use derived Text Input - black for light themes, white for dark themes - rather than Tertiary.
+
+LBC themes NYT's real `.lb-text-field-underline`; it does not paint a duplicate synthetic line. NYT's visible insertion cursor is a `.lb-text-field__caret` span, so that element and its pseudo-elements are explicitly themed as well. Native opacity, filters, text shadows and blend treatment are normalized where necessary so the selected semantic color is not silently altered by NYT presentation CSS.
+
+LBC's sliders, checkboxes, number-input steppers, scrollbars and draggable resize/gap handles are theme-aware. The page scrollbar uses Letter Boxed Primary / derived Text. LBC, Settings and History scrollbars use LBC Background for the track and LBC Text for thumb/buttons. Number inputs use right-aligned values, always-visible steppers, compact maximum-digit sizing and one extra character of left-side breathing room.
+
+## Toasts and congrats modal
+
+Success and error feedback use separate semantic palettes rather than sharing the board accent. Success is always black on white. Light-mode errors are white on black. Dark-mode errors use derived Text Input for their background and Primary for their foreground.
+
+Valid-word praise still uses LBC's source-independent lifecycle/placement proxy so the captured NYT praise survives even if NYT removes its native source element before LBC's history-settling window finishes.
+
+The congratulations modal remains NYT's white modal surface. In dark themes, `button[data-testid="modal-close"]` is explicitly kept transparent with a black close icon so the generic dark-page button treatment cannot produce black-on-black.
+
+## Browse History and other LBC surfaces
+
+Browse History reuses the same themed Completion / Longest Found stat-card treatment as the live LBC dashboard, including heading background, value text, muted labels and borders. Preview-only beta version text continues to adapt its contrast to the Letter Boxed Primary background.
 
 ## Google Drive response safety
 
-The Apps Script bridge is expected to return JSON. If Google/Apps Script transiently returns an HTML page instead (for example an authorization/error/interstitial response beginning with `<!DOCTYPE html>`), LBC detects that before parsing or merging any data. It retries the same request once after a short delay; Write retries retain the same idempotency `WriteId`. If the bridge still returns HTML, sync stops with a descriptive error. The HTML response is never imported into the LBC storage snapshot or written into the synced data payload.
+The Apps Script bridge is expected to return JSON. If Google/Apps Script transiently returns an HTML page instead - for example an authorization/error/interstitial response beginning with `<!DOCTYPE html>` - LBC detects that before parsing or merging any data. It retries the same request once after a short delay; Write retries retain the same idempotency `WriteId`. If the bridge still returns HTML, sync stops with a descriptive error. The HTML response is never imported into the LBC storage snapshot or written into the synced data payload.
 
 ## Preview board diagnostics
 
-Preview builds expose two board-specific diagnostics in the Debug Pane. **Copy Board Source Snapshot** reads the unfiltered source bitmap once and reports the most common RGBA values together with the active theme variables, renderer-facing `--text` values, SVG matrix and computed canvas filter. **Start Board Canvas Trace** temporarily records `fillText`/`strokeText` calls made specifically to the Letter Boxed board canvas; after starting it, type or delete at least one board letter to force NYT to repaint, then use **Stop + Copy Board Trace**. These tools are preview-only and do not alter the production userscript.
+Preview builds expose board diagnostics in the Debug Pane. **Copy Board Source Snapshot** reads the unfiltered source bitmap once and reports common source RGBA values together with the active theme variables, renderer-facing values, SVG matrix and computed canvas filter. **Start Board Canvas Trace** / **Stop + Copy Board Trace** records board Canvas2D text draws after typing/deleting a letter. **Copy Full Debug Bundle** includes the board diagnostics alongside layout/runtime state.
+
+These are diagnostic reads only; they do not alter the production userscript or mutate the board bitmap.
 
 ## Migration
 
-ThemeState v1 custom themes migrate automatically. Old `InvertBoard` is interpreted only during migration: Dark-derived themes become `BoardMatchesBackground=true`, while other themes remain independent. Old palette keys are mapped into the semantic v2 fields; obsolete editable muted/accent/success/error values are discarded in favor of derived/fixed behavior. Existing theme IDs and per-theme timestamps/tombstones are retained for merge-safe Drive sync.
+ThemeState v2 is retained so existing synced beta themes do not require a storage-schema fork. v1 palette keys continue to normalize into the v2 record shape. Older `BoardMatchesBackground` / `InvertBoard` information is still understood while reading legacy data, but the beta.21 editor no longer exposes a Board/Background linkage and new custom themes use independent Primary and Secondary values.
 
-## Preview acceptance checklist
+Existing theme IDs, timestamps and tombstones remain intact for merge-safe Drive sync. Existing custom LBC Background/Text link flags are retained. The user-facing LBC text-link label is now **Same as Letter Boxed Text** because that source color is derived from Primary.
 
-Verify live NYT Light <-> NYT Dark switching without a reload; independent Background/Board behavior in a Light-derived custom theme; Board tracking while Same as Background is checked; LBC Background/Text semantic links; neutral and active GB colors during typing and after submission; current word-entry UI matching Foreground (active); theme-aware page/LBC/Settings scrollbars; compact number inputs; the generated outer game-container background; valid/invalid message colors; NYT-solution hue-related tint/shade and larger star; custom Redacted color; Browse History Completion / Longest Found cards matching their main-dashboard counterparts; and a transient HTML Drive response failing safely rather than being treated as backup JSON.
+## Beta.21 acceptance checklist
+
+The static regression suite checks the semantic machinery, but visual acceptance requires exercising the actual NYT renderer. In Preview, verify at minimum:
+
+1. On a fresh puzzle, all unused GB letters/node/board colors match the truth table before any typing.
+2. Type through several letters and compare active letter, active node, connector and Text Input states.
+3. Submit at least one word and compare used letter/node states against still-unused and currently-active nodes.
+4. Without reloading, switch **NYT Light -> NYT Dark -> a custom theme -> NYT Light** while the puzzle already contains both used and active state, and repeat the switch more than once.
+5. On mobile, verify the Current Letter / Last Entered node before and after submitting a word.
+6. Verify success and error toasts separately in Light and Dark.
+7. Verify an unrevealed NYT Solution remains redacted while only its card/heading use the solution highlight.
+8. Verify `None found yet.` uses LBC Text.
+9. Open the congratulations modal in Dark and confirm its close X remains black on the white modal.
+10. Recheck LBC/Settings/History scrollbars and compact number inputs, then verify a transient HTML Drive response still fails safely rather than entering backup data.
