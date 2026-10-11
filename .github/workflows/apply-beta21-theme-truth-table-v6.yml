@@ -1,0 +1,38 @@
+name: Apply beta.21 semantic theme patch
+
+on:
+  push:
+    branches:
+      - perf/drive-sync-event-driven
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply beta.21 patch
+        run: python tools/apply_beta21_theme_truth_table.py
+
+      - name: Validate
+        run: |
+          node --check LetterBoxedCubed.user.js
+          node --check tools/preview_runtime.js
+          node tests/merge-tests.js
+          node tests/cloud-sync-tests.js
+          node tests/final-polish-tests.js
+
+      - name: Commit and clean patch machinery
+        run: |
+          git config user.name "Nathan Burgdorff + Ari (ChatGPT)"
+          git config user.email "6709230+Msyjsm@users.noreply.github.com"
+          git rm -f .github/workflows/apply-beta21-theme-truth-table.yml .github/workflows/apply-beta21-theme-truth-table-v2.yml .github/workflows/apply-beta21-theme-truth-table-v3.yml .github/workflows/apply-beta21-theme-truth-table-v4.yml .github/workflows/apply-beta21-theme-truth-table-v5.yml .github/workflows/apply-beta21-theme-truth-table-v6.yml tools/apply_beta21_theme_truth_table.py
+          git add LetterBoxedCubed.user.js tests/final-polish-tests.js
+          git commit -m "Implement LB semantic theme truth table"
+          git push origin HEAD:perf/drive-sync-event-driven
