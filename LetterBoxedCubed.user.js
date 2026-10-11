@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed
 // @namespace    https://nathanburgdorff.com/userscripts/
-// @version      1.13.1-beta.20
+// @version      1.13.1-beta.21
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -166,17 +166,17 @@
         [DefaultThemeId]: {
             Id: DefaultThemeId,
             Name: "NYT Light",
-            /* Native web Light already supplies this exact presentation. */
-            ApplyNative: false,
+            /* Use the same semantic compositor as every other theme. */
+            ApplyNative: true,
             BoardMatchesBackground: false,
             LbcBackgroundMatchesLbBackground: true,
             LbcTextMatchesLbForeground: true,
             Palette: {
-                LbBackground: "#FAA6A4",
+                LbBackground: "#E3A5A3",
                 LbBoard: "#FFFFFF",
                 LbForeground: "#000000",
                 LbActive: NativeBoardActiveSourceColor,
-                LbcBackground: "#FAA6A4",
+                LbcBackground: "#E3A5A3",
                 LbcHeadingBackground: "#E5A09E",
                 LbcText: "#000000",
                 LbcBorder: "#4C2222",
@@ -189,7 +189,7 @@
             Id: NytDarkThemeId,
             Name: "NYT Dark",
             ApplyNative: true,
-            BoardMatchesBackground: true,
+            BoardMatchesBackground: false,
             LbcBackgroundMatchesLbBackground: true,
             LbcTextMatchesLbForeground: true,
             Palette: {
@@ -370,6 +370,7 @@
     let BoardTextSourceHookInstalled = false;
     let NativeBoardFillText = null;
     let NativeBoardStrokeText = null;
+    let NativeBoardStroke = null;
 
     let GameObserver = null;
     let LayoutObserver = null;
@@ -1355,6 +1356,21 @@
             : "#000000";
     }
 
+    function GetLbThemeSemantics(Palette) {
+        const IsDark = GetThemeRelativeLuminance(Palette.LbBackground) < 0.38;
+        const TextInput = GetThemeContrastPole(Palette.LbBackground);
+
+        return {
+            IsDark,
+            TextInput,
+            BoardOutline: TextInput,
+            SuccessToastBackground: "#FFFFFF",
+            SuccessToastForeground: "#000000",
+            ErrorToastBackground: IsDark ? TextInput : "#000000",
+            ErrorToastForeground: IsDark ? Palette.LbBackground : "#FFFFFF"
+        };
+    }
+
     function GetDerivedLbcMutedText(Palette) {
         return MixThemeColors(
             Palette.LbcText,
@@ -1533,12 +1549,15 @@
         );
     }
 
-    function IsNativeBoardWhite(Value) {
-        const Text = String(Value || "")
+    function NormalizeNativeBoardPaint(Value) {
+        return String(Value || "")
             .trim()
             .toLowerCase()
             .replace(/\s+/g, "");
+    }
 
+    function IsNativeBoardWhite(Value) {
+        const Text = NormalizeNativeBoardPaint(Value);
         return (
             Text === "#fff" ||
             Text === "#ffffff" ||
@@ -1548,6 +1567,25 @@
         );
     }
 
+    function IsNativeBoardBlack(Value) {
+        const Text = NormalizeNativeBoardPaint(Value);
+        return (
+            Text === "#000" ||
+            Text === "#000000" ||
+            Text === "black" ||
+            Text === "rgb(0,0,0)" ||
+            Text === "rgba(0,0,0,1)"
+        );
+    }
+
+    function IsNativeBoardActive(Value) {
+        const Text = NormalizeNativeBoardPaint(Value);
+        return (
+            Text === NativeBoardActiveSourceColor.toLowerCase() ||
+            Text === "rgb(232,169,160)" ||
+            Text === "rgba(232,169,160,1)"
+        );
+    }
     function InstallBoardTextSourceHook() {
         if (BoardTextSourceHookInstalled) {
             return;
@@ -1560,76 +1598,92 @@
 
         NativeBoardFillText = Prototype.fillText;
         NativeBoardStrokeText = Prototype.strokeText;
+        NativeBoardStroke = Prototype.stroke;
 
-        const IsThemedBoardLetterDraw = (Context, Text) =>
-            document.documentElement?.classList.contains(
-                "lb-cubed-board-themed"
-            ) &&
-            IsLetterBoxedBoardCanvas(Context?.canvas) &&
+        const IsThemedBoardContext = Context =>
+            document.documentElement?.classList.contains("lb-cubed-board-themed") &&
+            IsLetterBoxedBoardCanvas(Context?.canvas);
+
+        const IsDarkBoardContext = Context =>
+            IsThemedBoardContext(Context) &&
+            document.documentElement?.classList.contains("lb-cubed-theme-dark");
+
+        const IsBoardLetter = (Context, Text) =>
+            IsThemedBoardContext(Context) &&
             /^[A-Z]$/.test(String(Text || "").trim());
 
-        /*
-            Board diagnostics proved that NYT uses the SAME native white for
-            two different semantic jobs: the board fill and inactive letter
-            glyphs. An RGB matrix cannot map one source color to both Board and
-            Foreground. Keep the affine transform for the bitmap as a whole,
-            but normalize only white single-letter text draws to native black.
-            The matrix then maps those glyphs to Foreground while leaving the
-            white board fill available to map to Board. This is intentionally
-            tiny and draw-semantic: no getImageData(), pixel walks, inversion,
-            repaint polling, or mutation of path/node rendering.
-        */
+        const GetDarkLetterSource = Paint => {
+            if (IsNativeBoardWhite(Paint)) {
+                return "#000000";
+            }
+            if (IsNativeBoardBlack(Paint)) {
+                return NativeBoardActiveSourceColor;
+            }
+            return null;
+        };
+
         if (typeof NativeBoardFillText === "function") {
             Prototype.fillText = function (Text, ...Arguments) {
-                if (
-                    IsThemedBoardLetterDraw(this, Text) &&
-                    IsNativeBoardWhite(this.fillStyle)
-                ) {
-                    const Previous = this.fillStyle;
-                    this.fillStyle = "#000000";
-                    try {
-                        return NativeBoardFillText.call(
-                            this,
-                            Text,
-                            ...Arguments
-                        );
-                    } finally {
-                        this.fillStyle = Previous;
-                    }
+                const Replacement =
+                    IsDarkBoardContext(this) && IsBoardLetter(this, Text)
+                        ? GetDarkLetterSource(this.fillStyle)
+                        : null;
+                if (!Replacement) {
+                    return NativeBoardFillText.call(this, Text, ...Arguments);
                 }
 
-                return NativeBoardFillText.call(
-                    this,
-                    Text,
-                    ...Arguments
-                );
+                const Previous = this.fillStyle;
+                this.fillStyle = Replacement;
+                try {
+                    return NativeBoardFillText.call(this, Text, ...Arguments);
+                } finally {
+                    this.fillStyle = Previous;
+                }
             };
         }
 
         if (typeof NativeBoardStrokeText === "function") {
             Prototype.strokeText = function (Text, ...Arguments) {
+                const Replacement =
+                    IsDarkBoardContext(this) && IsBoardLetter(this, Text)
+                        ? GetDarkLetterSource(this.strokeStyle)
+                        : null;
+                if (!Replacement) {
+                    return NativeBoardStrokeText.call(this, Text, ...Arguments);
+                }
+
+                const Previous = this.strokeStyle;
+                this.strokeStyle = Replacement;
+                try {
+                    return NativeBoardStrokeText.call(this, Text, ...Arguments);
+                } finally {
+                    this.strokeStyle = Previous;
+                }
+            };
+        }
+
+        /*
+            Used nodes are native active-fill + native-black outline. Dark mode
+            wants both surfaces Tertiary. Promote only that exact outline paint.
+            The mobile current/last node is active-outline + black-fill already,
+            so it naturally becomes Tertiary-outline + derived-white-fill.
+        */
+        if (typeof NativeBoardStroke === "function") {
+            Prototype.stroke = function (...Arguments) {
                 if (
-                    IsThemedBoardLetterDraw(this, Text) &&
-                    IsNativeBoardWhite(this.strokeStyle)
+                    IsDarkBoardContext(this) &&
+                    IsNativeBoardBlack(this.strokeStyle) &&
+                    IsNativeBoardActive(this.fillStyle)
                 ) {
                     const Previous = this.strokeStyle;
-                    this.strokeStyle = "#000000";
+                    this.strokeStyle = NativeBoardActiveSourceColor;
                     try {
-                        return NativeBoardStrokeText.call(
-                            this,
-                            Text,
-                            ...Arguments
-                        );
+                        return NativeBoardStroke.call(this, ...Arguments);
                     } finally {
                         this.strokeStyle = Previous;
                     }
                 }
-
-                return NativeBoardStrokeText.call(
-                    this,
-                    Text,
-                    ...Arguments
-                );
+                return NativeBoardStroke.call(this, ...Arguments);
             };
         }
 
@@ -1671,17 +1725,16 @@
         const Palette = NormalizeThemePalette(
             Theme.Palette,
             PrebuiltThemes[DefaultThemeId].Palette,
-            Boolean(Theme.BoardMatchesBackground)
+            false
         );
         const Root = document.documentElement;
-
         if (!Root) {
             return;
         }
 
-        if (Theme.BoardMatchesBackground) {
-            Palette.LbBoard = Palette.LbBackground;
-        }
+        const LbSemantics = GetLbThemeSemantics(Palette);
+        Palette.LbForeground = LbSemantics.TextInput;
+
         if (Theme.LbcBackgroundMatchesLbBackground) {
             Palette.LbcBackground = Palette.LbBackground;
         }
@@ -1696,14 +1749,19 @@
             GetThemeRelativeLuminance(Palette.LbcBackground) < 0.38
                 ? "dark"
                 : "light";
-        const ApplyNative = Boolean(Theme.ApplyNative);
 
         const Variables = {
+            "--lb-cubed-lb-primary": Palette.LbBackground,
+            "--lb-cubed-lb-secondary": Palette.LbBoard,
+            "--lb-cubed-lb-tertiary": Palette.LbActive,
             "--lb-cubed-lb-bg": Palette.LbBackground,
             "--lb-cubed-lb-board": Palette.LbBoard,
             "--lb-cubed-lb-fg": Palette.LbForeground,
             "--lb-cubed-lb-active": Palette.LbActive,
-            /* Compatibility aliases used by preview/toast code. */
+            "--lb-cubed-success-toast-bg": LbSemantics.SuccessToastBackground,
+            "--lb-cubed-success-toast-fg": LbSemantics.SuccessToastForeground,
+            "--lb-cubed-error-toast-bg": LbSemantics.ErrorToastBackground,
+            "--lb-cubed-error-toast-fg": LbSemantics.ErrorToastForeground,
             "--lb-cubed-lb-page-bg": Palette.LbBackground,
             "--lb-cubed-lb-text": Palette.LbForeground,
             "--lb-cubed-lb-surface": Palette.LbBackground,
@@ -1729,14 +1787,13 @@
             Root.style.setProperty(Name, Value);
         }
 
-        Root.classList.toggle("lb-cubed-native-theme", ApplyNative);
-        Root.classList.toggle("lb-cubed-board-themed", ApplyNative);
+        Root.classList.add("lb-cubed-native-theme", "lb-cubed-board-themed");
+        Root.classList.toggle("lb-cubed-theme-dark", LbSemantics.IsDark);
         Root.dataset.lbcTheme = Theme.Id || DefaultThemeId;
+        Root.dataset.lbcThemeMode = LbSemantics.IsDark ? "dark" : "light";
 
-        if (ApplyNative) {
-            ApplyBoardThemeMatrix(Palette);
-            QueueBoardThemeRendererRefresh();
-        }
+        ApplyBoardThemeMatrix(Palette);
+        QueueBoardThemeRendererRefresh();
     }
 
     function SetActiveTheme(ThemeId) {
@@ -1761,47 +1818,41 @@
     }
 
     function CreateCustomThemeFromActive(Name = "Custom Theme") {
-        const Base = GetActiveThemeDefinition();
-        const Id = `custom-${CreateCloudOpaqueId("theme")}`;
-        const Now = new Date().toISOString();
-        const BoardMatchesBackground = Boolean(Base.BoardMatchesBackground);
-        const LbcBackgroundMatchesLbBackground = Boolean(
-            Base.LbcBackgroundMatchesLbBackground
-        );
-        const LbcTextMatchesLbForeground = Boolean(
-            Base.LbcTextMatchesLbForeground
-        );
-        const Palette = NormalizeThemePalette(
-            Base.Palette,
-            null,
-            BoardMatchesBackground
-        );
+    const Base = GetActiveThemeDefinition();
+    const Id = `custom-${CreateCloudOpaqueId("theme")}`;
+    const Now = new Date().toISOString();
+    const BoardMatchesBackground = false;
+    const LbcBackgroundMatchesLbBackground = Boolean(
+        Base.LbcBackgroundMatchesLbBackground
+    );
+    const LbcTextMatchesLbForeground = Boolean(
+        Base.LbcTextMatchesLbForeground
+    );
+    const Palette = NormalizeThemePalette(Base.Palette, null, false);
+    Palette.LbForeground = GetThemeContrastPole(Palette.LbBackground);
 
-        if (BoardMatchesBackground) {
-            Palette.LbBoard = Palette.LbBackground;
-        }
-        if (LbcBackgroundMatchesLbBackground) {
-            Palette.LbcBackground = Palette.LbBackground;
-        }
-        if (LbcTextMatchesLbForeground) {
-            Palette.LbcText = Palette.LbForeground;
-        }
-
-        ThemeState.CustomThemes[Id] = {
-            Id,
-            Name: String(Name || "Custom Theme").trim() || "Custom Theme",
-            Palette,
-            BoardMatchesBackground,
-            LbcBackgroundMatchesLbBackground,
-            LbcTextMatchesLbForeground,
-            Deleted: false,
-            UpdatedAt: Now
-        };
-        ThemeState.ActiveTheme = { Id, UpdatedAt: Now };
-        SaveThemeState();
-        ApplyTheme();
-        return Id;
+    if (LbcBackgroundMatchesLbBackground) {
+        Palette.LbcBackground = Palette.LbBackground;
     }
+    if (LbcTextMatchesLbForeground) {
+        Palette.LbcText = Palette.LbForeground;
+    }
+
+    ThemeState.CustomThemes[Id] = {
+        Id,
+        Name: String(Name || "Custom Theme").trim() || "Custom Theme",
+        Palette,
+        BoardMatchesBackground,
+        LbcBackgroundMatchesLbBackground,
+        LbcTextMatchesLbForeground,
+        Deleted: false,
+        UpdatedAt: Now
+    };
+    ThemeState.ActiveTheme = { Id, UpdatedAt: Now };
+    SaveThemeState();
+    ApplyTheme();
+    return Id;
+}
 
     function RenameActiveCustomTheme(Name) {
         const Theme = GetActiveCustomThemeRecord();
@@ -1834,40 +1885,31 @@
     }
 
     function UpdateActiveCustomThemePalette(Key, Value, Persist = true) {
-        const Theme = GetActiveCustomThemeRecord();
-        if (!Theme || !Object.prototype.hasOwnProperty.call(Theme.Palette, Key)) {
-            return false;
-        }
+    const Theme = GetActiveCustomThemeRecord();
+    if (!Theme || !Object.prototype.hasOwnProperty.call(Theme.Palette, Key)) {
+        return false;
+    }
 
-        Theme.Palette[Key] = NormalizeThemeColor(
-            Value,
-            Theme.Palette[Key]
+    Theme.Palette[Key] = NormalizeThemeColor(Value, Theme.Palette[Key]);
+    if (Key === "LbBackground") {
+        Theme.Palette.LbForeground = GetThemeContrastPole(
+            Theme.Palette.LbBackground
         );
-
-        if (Key === "LbBackground" && Theme.BoardMatchesBackground) {
-            Theme.Palette.LbBoard = Theme.Palette.LbBackground;
-        }
-        if (
-            Key === "LbBackground" &&
-            Theme.LbcBackgroundMatchesLbBackground
-        ) {
+        if (Theme.LbcBackgroundMatchesLbBackground) {
             Theme.Palette.LbcBackground = Theme.Palette.LbBackground;
         }
-        if (
-            Key === "LbForeground" &&
-            Theme.LbcTextMatchesLbForeground
-        ) {
+        if (Theme.LbcTextMatchesLbForeground) {
             Theme.Palette.LbcText = Theme.Palette.LbForeground;
         }
-
-        if (Persist) {
-            Theme.UpdatedAt = new Date().toISOString();
-            SaveThemeState();
-        }
-
-        ApplyTheme();
-        return true;
     }
+
+    if (Persist) {
+        Theme.UpdatedAt = new Date().toISOString();
+        SaveThemeState();
+    }
+    ApplyTheme();
+    return true;
+}
 
     function UpdateActiveCustomThemeBoardMatch(Value) {
         const Theme = GetActiveCustomThemeRecord();
@@ -1902,24 +1944,23 @@
     }
 
     function UpdateActiveCustomThemeLbcTextMatch(Value) {
-        const Theme = GetActiveCustomThemeRecord();
-        if (!Theme) {
-            return false;
-        }
-
-        Theme.LbcTextMatchesLbForeground = Boolean(Value);
-        if (Theme.LbcTextMatchesLbForeground) {
-            Theme.Palette.LbcText = Theme.Palette.LbForeground;
-        }
-        Theme.UpdatedAt = new Date().toISOString();
-        SaveThemeState();
-        ApplyTheme();
-        return true;
+    const Theme = GetActiveCustomThemeRecord();
+    if (!Theme) {
+        return false;
     }
 
-    // -------------------------------------------------------------------------
-    // Portable GUI state
-    // -------------------------------------------------------------------------
+    Theme.LbcTextMatchesLbForeground = Boolean(Value);
+    Theme.Palette.LbForeground = GetThemeContrastPole(
+        Theme.Palette.LbBackground
+    );
+    if (Theme.LbcTextMatchesLbForeground) {
+        Theme.Palette.LbcText = Theme.Palette.LbForeground;
+    }
+    Theme.UpdatedAt = new Date().toISOString();
+    SaveThemeState();
+    ApplyTheme();
+    return true;
+}
 
     function CreateEmptyGuiState() {
         return {
@@ -2717,44 +2758,6 @@
         return Row;
     }
 
-    function CreateThemeBoardColorRow(Section) {
-        const Theme = GetActiveCustomThemeRecord();
-        const Row = document.createElement("div");
-        Row.className = "lb-cubed-theme-color-row lb-cubed-theme-board-row";
-
-        const Label = document.createElement("span");
-        Label.className = "lb-cubed-settings-label";
-        Label.textContent = "Board";
-
-        const MatchLabel = document.createElement("label");
-        MatchLabel.className = "lb-cubed-theme-board-match";
-        const MatchInput = document.createElement("input");
-        MatchInput.type = "checkbox";
-        MatchInput.checked = Boolean(Theme?.BoardMatchesBackground);
-        const MatchText = document.createElement("span");
-        MatchText.textContent = "Same as Background";
-        MatchLabel.append(MatchInput, MatchText);
-
-        const ColorInput = document.createElement("input");
-        ColorInput.type = "color";
-        ColorInput.value = Theme?.Palette?.LbBoard || "#FFFFFF";
-        ColorInput.disabled = Boolean(Theme?.BoardMatchesBackground);
-        ColorInput.addEventListener("input", Event => {
-            UpdateActiveCustomThemePalette("LbBoard", Event.currentTarget.value, false);
-        });
-        ColorInput.addEventListener("change", Event => {
-            UpdateActiveCustomThemePalette("LbBoard", Event.currentTarget.value, true);
-        });
-
-        MatchInput.addEventListener("change", () => {
-            UpdateActiveCustomThemeBoardMatch(MatchInput.checked);
-            RefreshThemeSettingsSection(Section);
-        });
-
-        Row.append(Label, MatchLabel, ColorInput);
-        return Row;
-    }
-
     function CreateThemeLinkedColorRow(
         Section,
         LabelText,
@@ -2933,10 +2936,9 @@
             Section,
             "Letter Boxed",
             [
-                CreateThemeColorRow("Background", "LbBackground"),
-                CreateThemeBoardColorRow(Section),
-                CreateThemeColorRow("Foreground", "LbForeground"),
-                CreateThemeColorRow("Foreground (active)", "LbActive")
+                CreateThemeColorRow("Primary (background)", "LbBackground"),
+                CreateThemeColorRow("Secondary (board)", "LbBoard"),
+                CreateThemeColorRow("Tertiary (active / used)", "LbActive")
             ]
         );
 
@@ -2959,7 +2961,7 @@
                     "Text",
                     "LbcText",
                     "LbcTextMatchesLbForeground",
-                    "Same as Letter Boxed Foreground",
+                    "Same as Letter Boxed Text",
                     "#301818",
                     UpdateActiveCustomThemeLbcTextMatch
                 ),
@@ -2980,8 +2982,9 @@
         const Note = document.createElement("div");
         Note.className = "lb-cubed-theme-note";
         Note.textContent =
-            "Muted text and secondary accents are derived automatically. " +
-            "Success/error indicators remain fixed green/red.";
+            "Letter Boxed text, outlines, node states, connectors and toast colors " +
+            "are derived from Primary / Secondary / Tertiary. LBC muted text and " +
+            "secondary accents are derived automatically.";
         Section.appendChild(Note);
     }
 
@@ -11217,13 +11220,22 @@
                 transition: none !important;
             }
 
-            /*
-                Theme transient validation/praise as one semantic LB surface:
-                Foreground (active) is the toast body; Board is its readable
-                foreground. Keep NYT's native toast geometry/typography.
-                Invalid messages live in the text-field wrapper; valid praise
-                uses Cubed's lifecycle proxy.
-            */
+            /* Success = black on white. Error = white on black in a light
+               theme; dark themes use Text Input as background and Primary as text. */
+            html.lb-cubed-native-theme .lb-cubed-valid-feedback-proxy {
+                background-color: var(--lb-cubed-success-toast-bg) !important;
+                color: var(--lb-cubed-success-toast-fg) !important;
+                border-color: var(--lb-cubed-success-toast-bg) !important;
+                text-shadow: none !important;
+            }
+
+            html.lb-cubed-native-theme .lb-cubed-valid-feedback-proxy * {
+                color: var(--lb-cubed-success-toast-fg) !important;
+                -webkit-text-fill-color: var(--lb-cubed-success-toast-fg) !important;
+                fill: currentColor !important;
+                text-shadow: none !important;
+            }
+
             html.lb-cubed-native-theme .lb-game-container.${LayoutClass}
             > .lb-word-container
             > .lb-text-field-wrapper
@@ -11231,11 +11243,10 @@
             html.lb-cubed-native-theme .lb-game-container.${LayoutClass}
             > .lb-word-container
             > .lb-text-field-wrapper
-            > .lb-par:not(.no-words),
-            html.lb-cubed-native-theme .lb-cubed-valid-feedback-proxy {
-                background-color: var(--lb-cubed-lb-active) !important;
-                color: var(--lb-cubed-lb-board) !important;
-                border-color: var(--lb-cubed-lb-active) !important;
+            > .lb-par:not(.no-words) {
+                background-color: var(--lb-cubed-error-toast-bg) !important;
+                color: var(--lb-cubed-error-toast-fg) !important;
+                border-color: var(--lb-cubed-error-toast-bg) !important;
                 text-shadow: none !important;
             }
 
@@ -11246,9 +11257,9 @@
             html.lb-cubed-native-theme .lb-game-container.${LayoutClass}
             > .lb-word-container
             > .lb-text-field-wrapper
-            > .lb-par:not(.no-words) *,
-            html.lb-cubed-native-theme .lb-cubed-valid-feedback-proxy * {
-                color: var(--lb-cubed-lb-board) !important;
+            > .lb-par:not(.no-words) * {
+                color: var(--lb-cubed-error-toast-fg) !important;
+                -webkit-text-fill-color: var(--lb-cubed-error-toast-fg) !important;
                 fill: currentColor !important;
                 text-shadow: none !important;
             }
@@ -12442,13 +12453,7 @@
                 border: 1px solid rgba(78, 34, 34, 0.18);
             }
 
-            /*
-                NYT's published solution.
-
-                Every visible descendant inherits the same requested yellow
-                background. A still-redacted solution word remains black,
-                because spoiler protection outranks decoration.
-            */
+            /* NYT solution decoration: card + heading only. */
             .lb-cubed-nyt-solution {
                 padding: 4px;
                 background-color: rgb(218, 203, 119);
@@ -12459,20 +12464,9 @@
             .lb-cubed-nyt-solution-label {
                 margin: 0 0 3px 1px;
                 color: rgb(71, 57, 8);
-                background-color: inherit !important;
                 font-size: 10px;
                 font-weight: 700;
                 line-height: 1.2;
-            }
-
-            .lb-cubed-nyt-solution .lb-cubed-twofer-row,
-            .lb-cubed-nyt-solution .lb-cubed-twofer-arrow,
-            .lb-cubed-nyt-solution .lb-cubed-twofer-revealed {
-                background-color: inherit !important;
-            }
-
-            .lb-cubed-nyt-solution .lb-cubed-twofer-redacted {
-                background: #000 !important;
             }
 
             /*
@@ -12995,6 +12989,21 @@
                 border-color: var(--lb-cubed-lb-fg) !important;
             }
 
+            html.lb-cubed-theme-dark button[data-testid="modal-close"] {
+                background: transparent !important;
+                background-color: transparent !important;
+                color: #000000 !important;
+                -webkit-text-fill-color: #000000 !important;
+                border-color: transparent !important;
+            }
+
+            html.lb-cubed-theme-dark button[data-testid="modal-close"] .pz-icon,
+            html.lb-cubed-theme-dark button[data-testid="modal-close"] .pz-icon::before,
+            html.lb-cubed-theme-dark button[data-testid="modal-close"] .pz-icon::after {
+                color: #000000 !important;
+                -webkit-text-fill-color: #000000 !important;
+            }
+
             html.lb-cubed-native-theme .lb-word-list,
             html.lb-cubed-native-theme .lb-word-list *,
             html.lb-cubed-native-theme .lb-word-list-length,
@@ -13041,31 +13050,6 @@
                 box-shadow: none !important;
             }
 
-            /* Current word entry belongs to the same active semantic lane as the GB path. */
-            html.lb-cubed-native-theme .lb-text-field-label,
-            html.lb-cubed-native-theme .lb-text-field,
-            html.lb-cubed-native-theme .lb-text-field *,
-            html.lb-cubed-native-theme .lb-text-field-underline,
-            html.lb-cubed-native-theme .lb-text-field__caret,
-            html.lb-cubed-native-theme .lb-text-field__caret::before,
-            html.lb-cubed-native-theme .lb-text-field__caret::after {
-                color: var(--lb-cubed-lb-active) !important;
-                -webkit-text-fill-color: var(--lb-cubed-lb-active) !important;
-                caret-color: var(--lb-cubed-lb-active) !important;
-            }
-
-            html.lb-cubed-native-theme .lb-text-field-underline,
-            html.lb-cubed-native-theme .lb-text-field__caret,
-            html.lb-cubed-native-theme .lb-text-field__caret::before,
-            html.lb-cubed-native-theme .lb-text-field__caret::after {
-                background: var(--lb-cubed-lb-active) !important;
-                background-color: var(--lb-cubed-lb-active) !important;
-                border-color: var(--lb-cubed-lb-active) !important;
-                border-left-color: var(--lb-cubed-lb-active) !important;
-                border-right-color: var(--lb-cubed-lb-active) !important;
-                outline-color: var(--lb-cubed-lb-active) !important;
-            }
-
             html.lb-cubed-native-theme .lb-text-field-underline {
                 color: var(--lb-cubed-lb-fg) !important;
                 background: var(--lb-cubed-lb-fg) !important;
@@ -13097,8 +13081,8 @@
             /*
                 Keep NYT drawing its normal Light source palette into the canvas.
                 The SVG affine filter above the bitmap maps source black ->
-                Foreground, source white -> Board, and source active coral ->
-                Foreground (active). Because the bitmap itself is never mutated,
+                derived Text/Outline, source white -> Secondary, and source active
+                coral -> Tertiary. Because the bitmap itself is never mutated,
                 themes can switch live without inversion/reload races.
             */
             html.lb-cubed-board-themed .lb-square-container {
@@ -13183,6 +13167,7 @@
             #${PanelId} .lb-cubed-stat-value,
             #${HistoryOverlayId} .lb-cubed-stat-value,
             #${PanelId} .lb-cubed-twofer-solution-text,
+            #${PanelId} .lb-cubed-potential-word-empty,
             #${PanelId} .lb-cubed-length-value,
             #${PanelId} .lb-cubed-invalid-word,
             #${PanelId} .lb-cubed-line-speed-value,
@@ -13199,6 +13184,7 @@
             #${PanelId} .lb-cubed-potential-word,
             #${PanelId} .lb-cubed-potential-word-progress,
             #${PanelId} .lb-cubed-twofer-disclaimer,
+            #${PanelId} .lb-cubed-twofer-arrow,
             #${PanelId} .lb-cubed-twofer-group-title,
             #${PanelId} .lb-cubed-length-label,
             #${PanelId} .lb-cubed-empty,
@@ -13235,34 +13221,8 @@
                 background: var(--lb-cubed-danger) !important;
             }
 
-            #${PanelId} .lb-cubed-nyt-solution,
-            #${HistoryOverlayId} .lb-cubed-history-custom-word {
-                background-color: var(--lb-cubed-nyt-solution) !important;
-                color: var(--lb-cubed-nyt-solution-text) !important;
-            }
-
-            #${PanelId} .lb-cubed-nyt-solution,
-            #${PanelId} .lb-cubed-nyt-solution-label,
-            #${PanelId} .lb-cubed-nyt-solution .lb-cubed-twofer-row,
-            #${PanelId} .lb-cubed-nyt-solution .lb-cubed-twofer-arrow,
-            #${PanelId} .lb-cubed-nyt-solution .lb-cubed-twofer-revealed,
-            #${HistoryOverlayId} .lb-cubed-history-custom-word {
-                color: var(--lb-cubed-nyt-solution-text) !important;
-            }
-
-            #${PanelId} .lb-cubed-nyt-solution .lb-cubed-twofer-row,
-            #${PanelId} .lb-cubed-nyt-solution .lb-cubed-twofer-arrow,
-            #${PanelId} .lb-cubed-nyt-solution .lb-cubed-twofer-revealed {
-                background-color: inherit !important;
-            }
-
-            #${PanelId} .lb-cubed-nyt-solution,
-            #${PanelId} .lb-cubed-nyt-solution * {
-                color: var(--lb-cubed-nyt-solution-text) !important;
-                -webkit-text-fill-color: var(--lb-cubed-nyt-solution-text) !important;
-            }
-
             #${PanelId} .lb-cubed-nyt-solution {
+                background-color: var(--lb-cubed-nyt-solution) !important;
                 border-color: color-mix(
                     in srgb,
                     var(--lb-cubed-nyt-solution-text) 52%,
@@ -13270,12 +13230,14 @@
                 ) !important;
             }
 
-            #${PanelId} .lb-cubed-nyt-solution .lb-cubed-twofer-revealed {
-                border-color: color-mix(
-                    in srgb,
-                    var(--lb-cubed-nyt-solution-text) 38%,
-                    transparent
-                ) !important;
+            #${PanelId} .lb-cubed-nyt-solution-label {
+                color: var(--lb-cubed-nyt-solution-text) !important;
+                -webkit-text-fill-color: var(--lb-cubed-nyt-solution-text) !important;
+            }
+
+            #${HistoryOverlayId} .lb-cubed-history-custom-word {
+                background-color: var(--lb-cubed-nyt-solution) !important;
+                color: var(--lb-cubed-nyt-solution-text) !important;
             }
 
             #${PanelId} .lb-cubed-nyt-solution-label {
@@ -13300,6 +13262,7 @@
                 background: var(--lb-cubed-redacted) !important;
                 background-color: var(--lb-cubed-redacted) !important;
                 color: var(--lb-cubed-redacted) !important;
+                -webkit-text-fill-color: var(--lb-cubed-redacted) !important;
                 border-color: var(--lb-cubed-redacted) !important;
                 text-shadow: none !important;
             }
