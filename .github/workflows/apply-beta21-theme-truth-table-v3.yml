@@ -1,0 +1,105 @@
+name: Apply beta.21 theme truth table v3
+
+on:
+  push:
+    branches:
+      - perf/drive-sync-event-driven
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Repair beta.21 patch helper
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('tools/apply_beta21_theme_truth_table.py')
+          s = p.read_text(encoding='utf-8')
+
+          old_modal = '''source = replace_once(
+              source,
+              modal_anchor,
+              modal_override + modal_anchor,
+              "dark win-modal close button",
+          )'''
+          new_modal = '''modal_index = source.find(modal_anchor)
+          if modal_index < 0:
+              raise RuntimeError("dark win-modal close button: anchor not found")
+          source = source[:modal_index] + modal_override + source[modal_index:]'''
+          if old_modal in s:
+              s = s.replace(old_modal, new_modal, 1)
+
+          old_board = '''source = replace_between(
+              source,
+              board_row_start,
+              board_row_end,
+              ''' + "'''    function CreateThemeLinkedColorRow('''" + ''',
+              "obsolete board-link control",
+          )'''
+          new_board = '''source = replace_between(
+              source,
+              board_row_start,
+              board_row_end,
+              "",
+              "obsolete board-link control",
+          )'''
+          if old_board not in s:
+              raise SystemExit('board-row helper block not found')
+          s = s.replace(old_board, new_board, 1)
+
+          old_active = '''source = replace_between(
+              source,
+              active_entry_start,
+              active_entry_end,
+              ''' + "'''            html.lb-cubed-native-theme .lb-text-field-underline {'''" + ''',
+              "text-input active-color regression",
+          )'''
+          new_active = '''source = replace_between(
+              source,
+              active_entry_start,
+              active_entry_end,
+              "",
+              "text-input active-color regression",
+          )'''
+          if old_active not in s:
+              raise SystemExit('active-entry helper block not found')
+          s = s.replace(old_active, new_active, 1)
+
+          duplicate_tail = '''
+
+            #${PanelId} .lb-cubed-nyt-solution-label {
+                display: inline-flex;'''
+          if duplicate_tail not in s:
+              raise SystemExit('NYT solution duplicated end marker not found')
+          s = s.replace(duplicate_tail, '', 1)
+
+          p.write_text(s, encoding='utf-8')
+          PY
+
+      - name: Apply beta.21 semantic theme fixes
+        run: python tools/apply_beta21_theme_truth_table.py
+
+      - name: Validate source and regressions
+        run: |
+          node --check LetterBoxedCubed.user.js
+          node --check tools/preview_runtime.js
+          node tests/merge-tests.js
+          node tests/cloud-sync-tests.js
+          node tests/final-polish-tests.js
+
+      - name: Commit beta.21 and remove patch machinery
+        run: |
+          git config user.name "Nathan Burgdorff + Ari (ChatGPT)"
+          git config user.email "6709230+Msyjsm@users.noreply.github.com"
+          git rm -f .github/workflows/apply-beta21-theme-truth-table.yml .github/workflows/apply-beta21-theme-truth-table-v2.yml .github/workflows/apply-beta21-theme-truth-table-v3.yml tools/apply_beta21_theme_truth_table.py
+          git add LetterBoxedCubed.user.js tests/final-polish-tests.js
+          git commit -m "Implement LB semantic theme truth table"
+          git push origin HEAD:perf/drive-sync-event-driven
