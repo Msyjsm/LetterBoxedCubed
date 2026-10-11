@@ -1,4 +1,4 @@
-name: Apply beta.21 theme truth table v2
+name: Apply beta.21 semantic theme patch
 
 on:
   push:
@@ -17,31 +17,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Repair patch-helper modal insertion
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          p = Path('tools/apply_beta21_theme_truth_table.py')
-          s = p.read_text(encoding='utf-8')
-          old = '''source = replace_once(
-              source,
-              modal_anchor,
-              modal_override + modal_anchor,
-              "dark win-modal close button",
-          )'''
-          new = '''modal_index = source.find(modal_anchor)
-          if modal_index < 0:
-              raise RuntimeError("dark win-modal close button: anchor not found")
-          source = source[:modal_index] + modal_override + source[modal_index:]'''
-          if old not in s:
-              raise SystemExit('modal helper block not found')
-          p.write_text(s.replace(old, new, 1), encoding='utf-8')
-          PY
-
-      - name: Apply beta.21 semantic theme fixes
+      - name: Apply beta.21 patch
         run: python tools/apply_beta21_theme_truth_table.py
 
-      - name: Validate source and regressions
+      - name: Validate
         run: |
           node --check LetterBoxedCubed.user.js
           node --check tools/preview_runtime.js
@@ -49,11 +28,11 @@ jobs:
           node tests/cloud-sync-tests.js
           node tests/final-polish-tests.js
 
-      - name: Commit beta.21 and remove patch machinery
+      - name: Commit and clean patch machinery
         run: |
           git config user.name "Nathan Burgdorff + Ari (ChatGPT)"
           git config user.email "6709230+Msyjsm@users.noreply.github.com"
-          git rm -f .github/workflows/apply-beta21-theme-truth-table.yml .github/workflows/apply-beta21-theme-truth-table-v2.yml tools/apply_beta21_theme_truth_table.py
+          git rm -f .github/workflows/apply-beta21-theme-truth-table.yml .github/workflows/apply-beta21-theme-truth-table-v2.yml .github/workflows/apply-beta21-theme-truth-table-v3.yml .github/workflows/apply-beta21-theme-truth-table-v4.yml .github/workflows/apply-beta21-theme-truth-table-v5.yml .github/workflows/apply-beta21-theme-truth-table-v6.yml tools/apply_beta21_theme_truth_table.py
           git add LetterBoxedCubed.user.js tests/final-polish-tests.js
           git commit -m "Implement LB semantic theme truth table"
           git push origin HEAD:perf/drive-sync-event-driven
