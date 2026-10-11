@@ -23,11 +23,132 @@ jobs:
           from pathlib import Path
           p = Path('tools/apply_beta21_theme_truth_table.py')
           s = p.read_text(encoding='utf-8')
+
           old = 'source = require_replace(source, old_is_white, new_is_white, "board paint helpers")'
           new = 'source = replace_function(source, "IsNativeBoardWhite", "InstallBoardTextSourceHook", new_is_white, "board paint helpers")'
           if old not in s:
               raise SystemExit('board paint helper replacement line missing')
-          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+          s = s.replace(old, new, 1)
+
+          start = s.find('# Custom themes no longer carry an active board/background tie into new copies.')
+          end = s.find('# Simplify the Letter Boxed theme editor to the three user-controlled colors.', start)
+          if start < 0 or end < 0:
+              raise SystemExit('custom-theme helper section not found')
+
+          replacement = r'''# Custom themes always use three independent Letter Boxed colors.
+          new_custom = ''' + "'''" + r'''    function CreateCustomThemeFromActive(Name = "Custom Theme") {
+              const Base = GetActiveThemeDefinition();
+              const Id = `custom-${CreateCloudOpaqueId("theme")}`;
+              const Now = new Date().toISOString();
+              const BoardMatchesBackground = false;
+              const LbcBackgroundMatchesLbBackground = Boolean(
+                  Base.LbcBackgroundMatchesLbBackground
+              );
+              const LbcTextMatchesLbForeground = Boolean(
+                  Base.LbcTextMatchesLbForeground
+              );
+              const Palette = NormalizeThemePalette(Base.Palette, null, false);
+              Palette.LbForeground = GetThemeContrastPole(Palette.LbBackground);
+
+              if (LbcBackgroundMatchesLbBackground) {
+                  Palette.LbcBackground = Palette.LbBackground;
+              }
+              if (LbcTextMatchesLbForeground) {
+                  Palette.LbcText = Palette.LbForeground;
+              }
+
+              ThemeState.CustomThemes[Id] = {
+                  Id,
+                  Name: String(Name || "Custom Theme").trim() || "Custom Theme",
+                  Palette,
+                  BoardMatchesBackground,
+                  LbcBackgroundMatchesLbBackground,
+                  LbcTextMatchesLbForeground,
+                  Deleted: false,
+                  UpdatedAt: Now
+              };
+              ThemeState.ActiveTheme = { Id, UpdatedAt: Now };
+              SaveThemeState();
+              ApplyTheme();
+              return Id;
+          }
+
+          ''' + "'''" + r'''
+          source = replace_function(
+              source,
+              "CreateCustomThemeFromActive",
+              "RenameActiveCustomTheme",
+              new_custom,
+              "custom-theme creation",
+          )
+
+          new_palette_update = ''' + "'''" + r'''    function UpdateActiveCustomThemePalette(Key, Value, Persist = true) {
+              const Theme = GetActiveCustomThemeRecord();
+              if (!Theme || !Object.prototype.hasOwnProperty.call(Theme.Palette, Key)) {
+                  return false;
+              }
+
+              Theme.Palette[Key] = NormalizeThemeColor(Value, Theme.Palette[Key]);
+              if (Key === "LbBackground") {
+                  Theme.Palette.LbForeground = GetThemeContrastPole(
+                      Theme.Palette.LbBackground
+                  );
+                  if (Theme.LbcBackgroundMatchesLbBackground) {
+                      Theme.Palette.LbcBackground = Theme.Palette.LbBackground;
+                  }
+                  if (Theme.LbcTextMatchesLbForeground) {
+                      Theme.Palette.LbcText = Theme.Palette.LbForeground;
+                  }
+              }
+
+              if (Persist) {
+                  Theme.UpdatedAt = new Date().toISOString();
+                  SaveThemeState();
+              }
+              ApplyTheme();
+              return true;
+          }
+
+          ''' + "'''" + r'''
+          source = replace_function(
+              source,
+              "UpdateActiveCustomThemePalette",
+              "UpdateActiveCustomThemeBoardMatch",
+              new_palette_update,
+              "custom Primary updates",
+          )
+
+          new_lbc_text_match = ''' + "'''" + r'''    function UpdateActiveCustomThemeLbcTextMatch(Value) {
+              const Theme = GetActiveCustomThemeRecord();
+              if (!Theme) {
+                  return false;
+              }
+
+              Theme.LbcTextMatchesLbForeground = Boolean(Value);
+              Theme.Palette.LbForeground = GetThemeContrastPole(
+                  Theme.Palette.LbBackground
+              );
+              if (Theme.LbcTextMatchesLbForeground) {
+                  Theme.Palette.LbcText = Theme.Palette.LbForeground;
+              }
+              Theme.UpdatedAt = new Date().toISOString();
+              SaveThemeState();
+              ApplyTheme();
+              return true;
+          }
+
+          ''' + "'''" + r'''
+          source = replace_function(
+              source,
+              "UpdateActiveCustomThemeLbcTextMatch",
+              "CreateEmptyGuiState",
+              new_lbc_text_match,
+              "LBC linked Text derivation",
+          )
+
+          '''
+          s = s[:start] + replacement + s[end:]
+          p.write_text(s, encoding='utf-8')
           PY
 
       - name: Apply beta.21 patch
