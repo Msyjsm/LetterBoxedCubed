@@ -35,7 +35,7 @@ Background luminance alone selects the semantic **Light** or **Dark** mapping co
 | Success toast foreground | Foreground | Background |
 | Success toast background | Highlight | Foreground |
 | Error toast foreground | Highlight | Background |
-| Error toast background | Foreground | Foreground |
+| Error toast background | Foreground | Highlight |
 
 The built-in presets therefore begin as:
 
@@ -48,9 +48,9 @@ These are preset values only. The state rules above never contain special-case t
 
 The built-in **NYT Light** preset deliberately does not theme NYT's native Letter Boxed UI at all. LBC removes its board canvas hooks/filter and native-page theme class, allowing NYT to render its own Light presentation directly. This avoids needless compositor/hook work and gives us an authoritative visual baseline.
 
-Duplicating NYT Light creates a normal custom theme with the same initial Background / Foreground / Highlight values. That custom copy **does** use LBC's theming pipeline, so an untouched Light-derived custom theme is an important parity test: it should be visually indistinguishable from native NYT Light.
+When NYT Light is active, LBC samples NYT's live computed Background and Foreground after removing any previous custom-theme overrides. This keeps LBC's linked panel colors calibrated to the actual current NYT page rather than an old hardcoded salmon value. Duplicating NYT Light copies those sampled live colors into the new custom theme; Highlight remains the preset's white board anchor. The resulting custom copy **does** use LBC's theming pipeline, so an untouched Light-derived custom theme remains a parity test: it should be visually indistinguishable from native NYT Light.
 
-Switching from a themed board back to built-in NYT Light restores the original Canvas2D methods and requests one NYT resize repaint so pixels drawn through the previous theme shim cannot linger.
+Switching from a Dark semantic board to Light (or vice versa) changes how NYT's source canvas paints have to be interpreted. A synthetic `resize` event alone does not reliably repaint that canvas, so beta.23 gives the square container a one-frame 1px width nudge and restores its exact previous inline width immediately afterward. That real geometry change wakes NYT's ResizeObserver and forces the board to repaint under the new semantic source mapping instead of leaving letters missing until the next keystroke. Switching from a themed Dark board back to built-in NYT Light also restores the original Canvas2D methods before the repaint.
 
 ## Semantic canvas transform
 
@@ -69,16 +69,18 @@ The mobile current/last-letter node naturally falls out of the same mapping: nat
 
 ## Toasts
 
-Success and error feedback now share one LBC-owned toast presentation path. Native NYT feedback nodes are used only as lifecycle/text sources and are hidden while a proxy is visible. Both proxy types use the same placement function, so their position follows the same history-line rule rather than success and error occupying unrelated slots.
+Success and error feedback share one LBC-owned toast presentation path. Native NYT feedback nodes are used only as lifecycle/text sources and are hidden while a proxy is visible. Both proxy types use the same placement function, so their position follows the same history-line rule rather than success and error occupying unrelated slots.
 
-The entire proxy fades as one unit through opacity. Child text, pseudo-elements, and NYT's native message animations are suppressed on the proxy, preventing the previous white-corner flashes and text-only fades.
+The entire proxy fades as one unit through opacity. Child text, pseudo-elements, and NYT's native message animations are suppressed on the proxy, preventing the previous white-corner flashes and text-only fades. Beta.23 adds explicit `6px 10px` toast padding so the proxy no longer collapses tightly around its letters.
+
+If a success appears while an error toast is still visible, or an error appears while a success is still visible, the older proxy is removed immediately rather than cross-fading two messages. The newer toast owns the shared slot at once.
 
 Toast colors come only from the Letter Boxed triad:
 
 - Light success: Foreground on Highlight.
 - Light error: Highlight on Foreground.
 - Dark success: Background on Foreground.
-- Dark error: Background on Foreground.
+- Dark error: Background on Highlight.
 
 No success/error target color is independently hardcoded.
 
@@ -103,9 +105,10 @@ ThemeState remains version 2 for compatibility with the current beta sync format
 Test the following without reloading between theme changes where possible:
 
 1. Built-in NYT Light visually matches NYT with LBC's native theming disabled.
-2. Duplicate NYT Light into a custom theme without changing any colors; the board/page should remain visually identical.
+2. Duplicate NYT Light into a custom theme without changing any colors; the page, board, and linked LBC colors should remain visually identical.
 3. Switch native Light -> custom Light -> NYT Dark -> custom Dark -> native Light mid-puzzle.
-4. At each switch inspect unused, active, used, and current/last-letter node states plus connector lines.
-5. Verify a success and an error toast in both Light and Dark semantic modes: whole rectangle/text fade together, no corner flash, correct triad colors, and identical placement rules.
-6. Verify Hints empty text, NYT Solution redaction, and the win-modal close X remain correct.
-7. Verify a transient HTML Google Drive response still fails safely rather than being treated as backup JSON.
+4. At each switch inspect unused, active, used, and current/last-letter node states plus connector lines; no letter should disappear while waiting for new input.
+5. Verify a success and an error toast in both Light and Dark semantic modes: whole rectangle/text fade together, `6px 10px` breathing room, no corner flash, correct triad colors, and identical placement rules.
+6. Trigger opposite toast types in quick succession and verify the older toast disappears immediately when the newer one arrives.
+7. Verify Hints empty text, NYT Solution redaction, and the win-modal close X remain correct.
+8. Verify a transient HTML Google Drive response still fails safely rather than being treated as backup JSON.
