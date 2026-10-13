@@ -33,6 +33,6 @@ jobs:
           git config user.name "Nathan Burgdorff + Ari (ChatGPT)"
           git config user.email "6709230+Msyjsm@users.noreply.github.com"
           git rm -f .github/workflows/apply-beta22-triad-theme-toasts.yml tools/apply_beta22_triad_theme_toasts.py
-          git add LetterBoxedCubed.user.js
+          git add LetterBoxedCubed.user.js tests/final-polish-tests.js
           git commit -m "Implement triad theme mapping and unified toast fades"
           git push origin HEAD:perf/drive-sync-event-driven
