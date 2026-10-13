@@ -1,0 +1,38 @@
+name: Apply beta.22 triad theme and toast patch
+
+on:
+  push:
+    branches:
+      - perf/drive-sync-event-driven
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply beta.22 patch
+        run: python tools/apply_beta22_triad_theme_toasts.py
+
+      - name: Validate
+        run: |
+          node --check LetterBoxedCubed.user.js
+          node --check tools/preview_runtime.js
+          node tests/merge-tests.js
+          node tests/cloud-sync-tests.js
+          node tests/final-polish-tests.js
+
+      - name: Commit and clean patch machinery
+        run: |
+          git config user.name "Nathan Burgdorff + Ari (ChatGPT)"
+          git config user.email "6709230+Msyjsm@users.noreply.github.com"
+          git rm -f .github/workflows/apply-beta22-triad-theme-toasts.yml tools/apply_beta22_triad_theme_toasts.py
+          git add LetterBoxedCubed.user.js
+          git commit -m "Implement triad theme mapping and unified toast fades"
+          git push origin HEAD:perf/drive-sync-event-driven
