@@ -6,7 +6,7 @@ const source = fs.readFileSync(path.join(root, 'LetterBoxedCubed.user.js'), 'utf
 const preview = fs.readFileSync(path.join(root, 'tools', 'preview_runtime.js'), 'utf8');
 function assert(condition, message) { if (!condition) throw new Error(message); }
 
-assert(source.includes('// @version      1.13.1-beta.22'), 'beta.22 version missing');
+assert(source.includes('// @version      1.13.1-beta.23'), 'beta.23 version missing');
 assert(source.includes('const ExportFormatVersion = 4;'), 'backup schema v4 missing');
 assert(source.includes('const ThemeStateVersion = 2;'), 'ThemeState v2 compatibility missing');
 assert(source.includes('MergeThemeStates'), 'theme merge missing');
@@ -40,7 +40,7 @@ assert(source.includes('--lb-cubed-error-toast-bg'), 'error toast vars missing')
 assert(source.includes('SuccessToastForeground: IsDark ? Background : Foreground'), 'success foreground triad mapping missing');
 assert(source.includes('SuccessToastBackground: IsDark ? Foreground : Highlight'), 'success background triad mapping missing');
 assert(source.includes('ErrorToastForeground: IsDark ? Background : Highlight'), 'error foreground triad mapping missing');
-assert(source.includes('ErrorToastBackground: Foreground'), 'error background triad mapping missing');
+assert(source.includes('ErrorToastBackground: IsDark ? Highlight : Foreground'), 'error background triad mapping missing');
 assert(source.includes('BuildBoardThemeAffineMatrix'), 'board affine matrix missing');
 assert(source.includes('LbSemantics.BoardBackground'), 'board semantic background mapping missing');
 assert(source.includes('LbSemantics.Connector'), 'connector semantic mapping missing');
@@ -69,4 +69,11 @@ assert(source.includes('ValidFeedbackProxyMinimumVisibleMs = 600'), 'valid toast
 assert(source.includes('InternalPanelLayoutBreakpoints = ['), 'responsive breakpoints missing');
 for (const breakpoint of ['340', '390', '520', '650', '860', '1180']) assert(source.includes(breakpoint), `breakpoint missing ${breakpoint}`);
 for (const label of ['Copy Board Source Snapshot','Start Board Canvas Trace','Stop + Copy Board Trace','Copy Full Debug Bundle']) assert(preview.includes(label), `preview diagnostic missing ${label}`);
-console.log('PASS: beta.22 triad theme + toast static checks');
+assert(source.includes('function CaptureNativeLightTriad(Palette)'), 'native Light live calibration missing');
+assert(source.includes('Palette = CaptureNativeLightTriad(Palette);'), 'custom Light capture missing');
+assert(source.includes('const ThemeModeChanged ='), 'theme mode transition detection missing');
+assert(source.includes('const NudgedWidth = `${Rect.width + 1}px`;'), 'real board resize nudge missing');
+assert(source.includes('function ActivateToastType(Kind)'), 'cross-type toast arbitration missing');
+assert(source.includes('RemoveToastProxyImmediately(Previous)'), 'older toast immediate kill missing');
+assert(source.includes('padding: 6px 10px !important;'), 'toast padding missing');
+console.log('PASS: beta.23 theme refresh + toast static checks');
