@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed [PREVIEW]
 // @namespace    https://nathanburgdorff.com/userscripts/preview/
-// @version      1.13.1-beta.22.260
+// @version      1.13.1-beta.23.261
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -2785,6 +2785,9 @@
     let ErrorFeedbackPlacementTimer = null;
     let ErrorFeedbackRemovalTimer = null;
     let RenderedErrorFeedbackText = "";
+    let ActiveErrorFeedbackSource = null;
+    let ActiveErrorFeedbackText = "";
+    let ActiveToastType = null;
     const ValidFeedbackSettlePollMs = 30;
     const ValidFeedbackSettleMaximumMs = 400;
     const ValidFeedbackProxyMinimumVisibleMs = 600;
@@ -3749,6 +3752,74 @@
             : "#000000";
     }
 
+    function ParseComputedThemeColor(Value) {
+        const Text = String(Value || "").trim();
+        if (!Text || Text === "transparent") {
+            return null;
+        }
+
+        if (/^#[0-9a-f]{6}$/i.test(Text)) {
+            return NormalizeThemeColor(Text, null);
+        }
+
+        const Match = Text.match(
+            /^rgba?\(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)(?:\s*,\s*([0-9.]+))?\s*\)$/i
+        );
+        if (!Match) {
+            return null;
+        }
+
+        const Alpha = Match[4] === undefined ? 1 : Number(Match[4]);
+        if (!Number.isFinite(Alpha) || Alpha <= 0.01) {
+            return null;
+        }
+
+        return ThemeRgbToHex([
+            Number(Match[1]),
+            Number(Match[2]),
+            Number(Match[3])
+        ]);
+    }
+
+    function CaptureNativeLightTriad(Palette) {
+        const Captured = { ...Palette };
+
+        /*
+            NYT Light intentionally bypasses Cubed's native theming. When it is
+            used as the source for a custom theme, sample NYT's live computed
+            Background / Foreground instead of relying on a stale calibration.
+            This makes "duplicate NYT Light" a visual no-op even if NYT tweaks
+            its native salmon later.
+        */
+        let BackgroundNode = document.querySelector(
+            ".lb-game-container"
+        );
+        while (BackgroundNode && BackgroundNode instanceof Element) {
+            const Background = ParseComputedThemeColor(
+                getComputedStyle(BackgroundNode).backgroundColor
+            );
+            if (Background) {
+                Captured.LbBackground = Background;
+                break;
+            }
+            BackgroundNode = BackgroundNode.parentElement;
+        }
+
+        const TextNode =
+            document.querySelector(".lb-text-field") ||
+            document.querySelector(".lb-text-field-label");
+        if (TextNode) {
+            const Foreground = ParseComputedThemeColor(
+                getComputedStyle(TextNode).color
+            );
+            if (Foreground) {
+                Captured.LbForeground = Foreground;
+            }
+        }
+
+        return Captured;
+    }
+
     function GetLbThemeSemantics(Palette) {
         const IsDark = GetThemeRelativeLuminance(Palette.LbBackground) < 0.38;
         const Background = Palette.LbBackground;
@@ -3784,7 +3855,7 @@
             SuccessToastForeground: IsDark ? Background : Foreground,
             SuccessToastBackground: IsDark ? Foreground : Highlight,
             ErrorToastForeground: IsDark ? Background : Highlight,
-            ErrorToastBackground: Foreground
+            ErrorToastBackground: IsDark ? Highlight : Foreground
         };
     }
 
@@ -4139,28 +4210,70 @@
     }
 
     function QueueBoardThemeRendererRefresh(Force = false) {
+        const Root = document.documentElement;
+        const SquareContainer = document.querySelector(
+            ".lb-game-container .lb-square-container"
+        );
         if (
-            (!Force && !document.documentElement?.classList.contains(
-                "lb-cubed-board-themed"
-            )) ||
-            !document.querySelector(
-                ".lb-game-container .lb-square-container canvas"
-            )
+            (!Force && !Root?.classList.contains("lb-cubed-board-themed")) ||
+            !SquareContainer
         ) {
             return;
         }
 
-        /*
-            NYT redraws the board on resize. The forced path is used only when
-            leaving a themed board for native NYT Light so source paints altered
-            by the Dark shim are repainted once with the restored native methods.
-        */
-        requestAnimationFrame(() => {
+        const DispatchResize = () =>
             window.dispatchEvent(new Event("resize"));
-            setTimeout(
-                () => window.dispatchEvent(new Event("resize")),
-                80
-            );
+        const Rect = SquareContainer.getBoundingClientRect();
+
+        /*
+            A synthetic window resize alone does not currently make NYT repaint
+            the canvas when its measured box is unchanged. That left source
+            pixels produced under the previous Light/Dark paint shim in place
+            until the next keystroke. Give the square a one-frame 1px width
+            nudge so NYT's ResizeObserver sees a real geometry change, then
+            restore every inline width property exactly as it was.
+        */
+        if (!Number.isFinite(Rect.width) || Rect.width <= 0) {
+            DispatchResize();
+            setTimeout(DispatchResize, 80);
+            return;
+        }
+
+        const Properties = ["width", "min-width", "max-width"];
+        const Saved = Properties.map(Property => ({
+            Property,
+            Value: SquareContainer.style.getPropertyValue(Property),
+            Priority: SquareContainer.style.getPropertyPriority(Property)
+        }));
+        const NudgedWidth = `${Rect.width + 1}px`;
+
+        requestAnimationFrame(() => {
+            for (const { Property } of Saved) {
+                SquareContainer.style.setProperty(
+                    Property,
+                    NudgedWidth,
+                    "important"
+                );
+            }
+            void SquareContainer.offsetWidth;
+            DispatchResize();
+
+            requestAnimationFrame(() => {
+                for (const { Property, Value, Priority } of Saved) {
+                    if (Value) {
+                        SquareContainer.style.setProperty(
+                            Property,
+                            Value,
+                            Priority
+                        );
+                    } else {
+                        SquareContainer.style.removeProperty(Property);
+                    }
+                }
+                void SquareContainer.offsetWidth;
+                DispatchResize();
+                setTimeout(DispatchResize, 80);
+            });
         });
     }
 
@@ -4170,7 +4283,7 @@
         }
 
         const Theme = GetActiveThemeDefinition();
-        const Palette = NormalizeThemePalette(
+        let Palette = NormalizeThemePalette(
             Theme.Palette,
             PrebuiltThemes[DefaultThemeId].Palette,
             false
@@ -4178,6 +4291,22 @@
         const Root = document.documentElement;
         if (!Root) {
             return;
+        }
+
+        const ApplyNative = Theme.ApplyNative !== false;
+        const WasBoardThemed = Root.classList.contains("lb-cubed-board-themed");
+        const WasDarkTheme = Root.classList.contains("lb-cubed-theme-dark");
+
+        /* Measure NYT Light only after removing any previous custom overrides. */
+        if (!ApplyNative) {
+            Root.classList.remove(
+                "lb-cubed-native-theme",
+                "lb-cubed-board-themed",
+                "lb-cubed-theme-dark"
+            );
+            if (Theme.Id === DefaultThemeId) {
+                Palette = CaptureNativeLightTriad(Palette);
+            }
         }
 
         const LbSemantics = GetLbThemeSemantics(Palette);
@@ -4235,8 +4364,9 @@
             Root.style.setProperty(Name, Value);
         }
 
-        const WasBoardThemed = Root.classList.contains("lb-cubed-board-themed");
-        const ApplyNative = Theme.ApplyNative !== false;
+        const ThemeModeChanged =
+            WasBoardThemed &&
+            WasDarkTheme !== LbSemantics.IsDark;
 
         Root.classList.toggle("lb-cubed-native-theme", ApplyNative);
         Root.classList.toggle("lb-cubed-board-themed", ApplyNative);
@@ -4247,10 +4377,16 @@
         if (ApplyNative) {
             InstallBoardTextSourceHook();
             ApplyBoardThemeMatrix(Palette, LbSemantics);
-            QueueBoardThemeRendererRefresh();
+
+            const NeedsSourceRepaint =
+                (LbSemantics.IsDark && !WasBoardThemed) ||
+                ThemeModeChanged;
+            if (NeedsSourceRepaint) {
+                QueueBoardThemeRendererRefresh(true);
+            }
         } else {
             UninstallBoardTextSourceHook();
-            if (WasBoardThemed) {
+            if (WasBoardThemed && WasDarkTheme) {
                 QueueBoardThemeRendererRefresh(true);
             }
         }
@@ -4288,7 +4424,10 @@
         const LbcTextMatchesLbForeground = Boolean(
             Base.LbcTextMatchesLbForeground
         );
-        const Palette = NormalizeThemePalette(Base.Palette, null, false);
+        let Palette = NormalizeThemePalette(Base.Palette, null, false);
+        if (Base.Id === DefaultThemeId && Base.ApplyNative === false) {
+            Palette = CaptureNativeLightTriad(Palette);
+        }
 
         if (LbcBackgroundMatchesLbBackground) {
             Palette.LbcBackground = Palette.LbBackground;
@@ -10663,6 +10802,45 @@
         }, ToastFadeMs);
     }
 
+    function RemoveToastProxyImmediately(Kind) {
+        if (Kind === "success") {
+            clearTimeout(ValidFeedbackPlacementTimer);
+            ValidFeedbackPlacementTimer = null;
+            clearTimeout(ValidFeedbackClearTimer);
+            ValidFeedbackClearTimer = null;
+            document.querySelectorAll(".lb-cubed-valid-feedback-proxy")
+                .forEach(Element => Element.remove());
+            RenderedValidFeedbackKey = null;
+            PendingValidFeedbackBaselineChainLength = null;
+            PendingValidFeedbackStartedAt = 0;
+            ValidFeedbackProxyShownAt = 0;
+            return;
+        }
+
+        if (Kind === "error") {
+            clearTimeout(ErrorFeedbackPlacementTimer);
+            ErrorFeedbackPlacementTimer = null;
+            clearTimeout(ErrorFeedbackRemovalTimer);
+            ErrorFeedbackRemovalTimer = null;
+            document.querySelectorAll(".lb-cubed-error-feedback-proxy")
+                .forEach(Element => Element.remove());
+            RenderedErrorFeedbackText = "";
+        }
+    }
+
+    function ActivateToastType(Kind) {
+        if (ActiveToastType === Kind) {
+            return;
+        }
+
+        const Previous = ActiveToastType;
+        ActiveToastType = Kind;
+        if (Previous && Previous !== Kind) {
+            /* A newer toast wins immediately; do not cross-fade two messages. */
+            RemoveToastProxyImmediately(Previous);
+        }
+    }
+
     function GetNativeErrorWordFeedbackSource() {
         const Wrapper = document.querySelector(
             ".lb-game-container .lb-word-container > .lb-text-field-wrapper"
@@ -10686,6 +10864,11 @@
         clearTimeout(ErrorFeedbackRemovalTimer);
         ErrorFeedbackRemovalTimer = null;
         RenderedErrorFeedbackText = "";
+        ActiveErrorFeedbackSource = null;
+        ActiveErrorFeedbackText = "";
+        if (ActiveToastType === "error") {
+            ActiveToastType = null;
+        }
 
         document.querySelectorAll(".lb-cubed-error-feedback-source")
             .forEach(Element => Element.classList.remove(
@@ -10740,9 +10923,22 @@
             return;
         }
 
+        const StartsNewLifecycle =
+            ActiveErrorFeedbackSource !== Source ||
+            ActiveErrorFeedbackText !== MessageText;
+        if (StartsNewLifecycle) {
+            ActiveErrorFeedbackSource = Source;
+            ActiveErrorFeedbackText = MessageText;
+            ActivateToastType("error");
+        }
+
+        Source.classList.add("lb-cubed-error-feedback-source");
+        if (ActiveToastType !== "error") {
+            return;
+        }
+
         clearTimeout(ErrorFeedbackRemovalTimer);
         ErrorFeedbackRemovalTimer = null;
-        Source.classList.add("lb-cubed-error-feedback-source");
 
         let Proxy = GameContainer.querySelector(
             ":scope > .lb-cubed-error-feedback-proxy"
@@ -10827,6 +11023,9 @@
         PendingValidFeedbackBaselineChainLength = null;
         PendingValidFeedbackStartedAt = 0;
         ValidFeedbackProxyShownAt = 0;
+        if (ActiveToastType === "success") {
+            ActiveToastType = null;
+        }
 
         document.querySelectorAll(".lb-cubed-valid-feedback-proxy")
             .forEach(FadeOutToastProxy);
@@ -10990,6 +11189,10 @@
             ActiveValidFeedbackText = MessageText;
         }
 
+        if (ActiveToastType !== "success") {
+            return;
+        }
+
         /*
             Wait until NYT has committed the accepted word to history before
             making Cubed's proxy visible. The native box appears first; the
@@ -11104,6 +11307,7 @@
                 !ActiveValidFeedbackText;
 
             if (StartsNewLifecycle) {
+                ActivateToastType("success");
                 clearTimeout(ValidFeedbackClearTimer);
                 ValidFeedbackClearTimer = null;
                 document.querySelectorAll(".lb-cubed-valid-feedback-proxy")
@@ -13809,6 +14013,11 @@
                 transform: none !important;
                 visibility: visible !important;
                 display: block !important;
+                box-sizing: border-box !important;
+                padding: 6px 10px !important;
+                border-radius: 3px !important;
+                line-height: 1.2 !important;
+                white-space: nowrap !important;
                 opacity: 0 !important;
                 clip-path: none !important;
                 filter: none !important;
