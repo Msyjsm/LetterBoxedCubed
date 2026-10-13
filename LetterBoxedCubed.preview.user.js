@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed [PREVIEW]
 // @namespace    https://nathanburgdorff.com/userscripts/preview/
-// @version      1.13.1-beta.21.256
+// @version      1.13.1-beta.22.258
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -2555,16 +2555,17 @@
         [DefaultThemeId]: {
             Id: DefaultThemeId,
             Name: "NYT Light",
-            /* Use the same semantic compositor as every other theme. */
-            ApplyNative: true,
+            /* Native NYT Light is the zero-override baseline. */
+            ApplyNative: false,
             BoardMatchesBackground: false,
             LbcBackgroundMatchesLbBackground: true,
             LbcTextMatchesLbForeground: true,
             Palette: {
                 LbBackground: "#E3A5A3",
+                /* Core triad: Background / Foreground / Highlight. */
                 LbBoard: "#FFFFFF",
                 LbForeground: "#000000",
-                LbActive: NativeBoardActiveSourceColor,
+                LbActive: "#FFFFFF",
                 LbcBackground: "#E3A5A3",
                 LbcHeadingBackground: "#E5A09E",
                 LbcText: "#000000",
@@ -2781,9 +2782,13 @@
     let PendingValidFeedbackStartedAt = 0;
     let ValidFeedbackClearTimer = null;
     let ValidFeedbackProxyShownAt = 0;
+    let ErrorFeedbackPlacementTimer = null;
+    let ErrorFeedbackRemovalTimer = null;
+    let RenderedErrorFeedbackText = "";
     const ValidFeedbackSettlePollMs = 30;
     const ValidFeedbackSettleMaximumMs = 400;
     const ValidFeedbackProxyMinimumVisibleMs = 600;
+    const ToastFadeMs = 160;
 
     let ScanTimer = null;
     let LayoutTimer = null;
@@ -2799,7 +2804,6 @@
         RecordBootstrapDiagnostic("initialize-start");
         LoadThemeState();
         AddStyles();
-        InstallBoardTextSourceHook();
         ApplyTheme();
 
         const Ready = await WaitForGame();
@@ -3747,16 +3751,40 @@
 
     function GetLbThemeSemantics(Palette) {
         const IsDark = GetThemeRelativeLuminance(Palette.LbBackground) < 0.38;
-        const TextInput = GetThemeContrastPole(Palette.LbBackground);
+        const Background = Palette.LbBackground;
+        const Foreground = Palette.LbForeground;
+        const Highlight = Palette.LbActive;
 
+        /*
+            The user owns exactly three Letter Boxed colors. Background alone
+            chooses the Light/Dark semantic column; no target color is invented
+            here. Every native state is mapped back to Background, Foreground,
+            or Highlight.
+        */
         return {
             IsDark,
-            TextInput,
-            BoardOutline: TextInput,
-            SuccessToastBackground: "#FFFFFF",
-            SuccessToastForeground: "#000000",
-            ErrorToastBackground: IsDark ? TextInput : "#000000",
-            ErrorToastForeground: IsDark ? Palette.LbBackground : "#FFFFFF"
+            Background,
+            Foreground,
+            Highlight,
+            TextInput: Foreground,
+            BoardBackground: IsDark ? Background : Highlight,
+            BoardOutline: Foreground,
+            UnusedLetter: IsDark ? Foreground : Highlight,
+            UnusedNodeOutline: Foreground,
+            UnusedNodeBackground: IsDark ? Background : Highlight,
+            ActiveLetter: IsDark ? Highlight : Foreground,
+            ActiveNodeOutline: IsDark ? Highlight : Background,
+            ActiveNodeBackground: IsDark ? Background : Highlight,
+            UsedLetter: IsDark ? Highlight : Foreground,
+            UsedNodeOutline: IsDark ? Highlight : Foreground,
+            UsedNodeBackground: IsDark ? Highlight : Background,
+            Connector: IsDark ? Highlight : Background,
+            CurrentNodeOutline: IsDark ? Highlight : Background,
+            CurrentNodeBackground: Foreground,
+            SuccessToastForeground: IsDark ? Background : Foreground,
+            SuccessToastBackground: IsDark ? Foreground : Highlight,
+            ErrorToastForeground: IsDark ? Background : Highlight,
+            ErrorToastBackground: Foreground
         };
     }
 
@@ -3910,16 +3938,23 @@
         return Rows;
     }
 
-    function ApplyBoardThemeMatrix(Palette) {
+    function ApplyBoardThemeMatrix(Palette, LbSemantics) {
         const Matrix = EnsureBoardThemeFilter();
         if (!Matrix) {
             return;
         }
 
+        /*
+            Native Light's source palette is black / white / coral. In a Light
+            semantic theme those become Foreground / Highlight / Background.
+            In a Dark semantic theme they become Foreground / Background /
+            Highlight. The Dark-only canvas shim disambiguates the source-paint
+            collisions for letter glyphs and used-node outlines.
+        */
         const Rows = BuildBoardThemeAffineMatrix(
-            Palette.LbBoard,
-            Palette.LbForeground,
-            Palette.LbActive
+            LbSemantics.BoardBackground,
+            LbSemantics.Foreground,
+            LbSemantics.Connector
         );
         Matrix.setAttribute(
             "values",
@@ -4079,11 +4114,35 @@
         BoardTextSourceHookInstalled = true;
     }
 
-    function QueueBoardThemeRendererRefresh() {
+    function UninstallBoardTextSourceHook() {
+        if (!BoardTextSourceHookInstalled) {
+            return;
+        }
+
+        const Prototype = PageWindow.CanvasRenderingContext2D?.prototype;
+        if (Prototype) {
+            if (typeof NativeBoardFillText === "function") {
+                Prototype.fillText = NativeBoardFillText;
+            }
+            if (typeof NativeBoardStrokeText === "function") {
+                Prototype.strokeText = NativeBoardStrokeText;
+            }
+            if (typeof NativeBoardStroke === "function") {
+                Prototype.stroke = NativeBoardStroke;
+            }
+        }
+
+        BoardTextSourceHookInstalled = false;
+        NativeBoardFillText = null;
+        NativeBoardStrokeText = null;
+        NativeBoardStroke = null;
+    }
+
+    function QueueBoardThemeRendererRefresh(Force = false) {
         if (
-            !document.documentElement?.classList.contains(
+            (!Force && !document.documentElement?.classList.contains(
                 "lb-cubed-board-themed"
-            ) ||
+            )) ||
             !document.querySelector(
                 ".lb-game-container .lb-square-container canvas"
             )
@@ -4092,9 +4151,9 @@
         }
 
         /*
-            NYT redraws the board on resize. One short two-frame nudge is enough
-            to route an already-painted canvas through the semantic text hook;
-            unlike the old bitmap repair this does no synchronous pixel work.
+            NYT redraws the board on resize. The forced path is used only when
+            leaving a themed board for native NYT Light so source paints altered
+            by the Dark shim are repainted once with the restored native methods.
         */
         requestAnimationFrame(() => {
             window.dispatchEvent(new Event("resize"));
@@ -4122,7 +4181,6 @@
         }
 
         const LbSemantics = GetLbThemeSemantics(Palette);
-        Palette.LbForeground = LbSemantics.TextInput;
 
         if (Theme.LbcBackgroundMatchesLbBackground) {
             Palette.LbcBackground = Palette.LbBackground;
@@ -4140,22 +4198,23 @@
                 : "light";
 
         const Variables = {
-            "--lb-cubed-lb-primary": Palette.LbBackground,
-            "--lb-cubed-lb-secondary": Palette.LbBoard,
-            "--lb-cubed-lb-tertiary": Palette.LbActive,
-            "--lb-cubed-lb-bg": Palette.LbBackground,
-            "--lb-cubed-lb-board": Palette.LbBoard,
-            "--lb-cubed-lb-fg": Palette.LbForeground,
-            "--lb-cubed-lb-active": Palette.LbActive,
+            "--lb-cubed-lb-primary": LbSemantics.Background,
+            "--lb-cubed-lb-secondary": LbSemantics.Foreground,
+            "--lb-cubed-lb-tertiary": LbSemantics.Highlight,
+            "--lb-cubed-lb-bg": LbSemantics.Background,
+            "--lb-cubed-lb-board": LbSemantics.BoardBackground,
+            "--lb-cubed-lb-fg": LbSemantics.Foreground,
+            "--lb-cubed-lb-highlight": LbSemantics.Highlight,
+            "--lb-cubed-lb-active": LbSemantics.Connector,
             "--lb-cubed-success-toast-bg": LbSemantics.SuccessToastBackground,
             "--lb-cubed-success-toast-fg": LbSemantics.SuccessToastForeground,
             "--lb-cubed-error-toast-bg": LbSemantics.ErrorToastBackground,
             "--lb-cubed-error-toast-fg": LbSemantics.ErrorToastForeground,
-            "--lb-cubed-lb-page-bg": Palette.LbBackground,
-            "--lb-cubed-lb-text": Palette.LbForeground,
-            "--lb-cubed-lb-surface": Palette.LbBackground,
-            "--lb-cubed-lb-border": Palette.LbForeground,
-            "--lb-cubed-lb-accent": Palette.LbActive,
+            "--lb-cubed-lb-page-bg": LbSemantics.Background,
+            "--lb-cubed-lb-text": LbSemantics.Foreground,
+            "--lb-cubed-lb-surface": LbSemantics.Background,
+            "--lb-cubed-lb-border": LbSemantics.Foreground,
+            "--lb-cubed-lb-accent": LbSemantics.Highlight,
             "--lb-cubed-lbc-bg": Palette.LbcBackground,
             "--lb-cubed-lbc-heading-bg": Palette.LbcHeadingBackground,
             "--lb-cubed-lbc-surface": Palette.LbcHeadingBackground,
@@ -4176,13 +4235,25 @@
             Root.style.setProperty(Name, Value);
         }
 
-        Root.classList.add("lb-cubed-native-theme", "lb-cubed-board-themed");
+        const WasBoardThemed = Root.classList.contains("lb-cubed-board-themed");
+        const ApplyNative = Theme.ApplyNative !== false;
+
+        Root.classList.toggle("lb-cubed-native-theme", ApplyNative);
+        Root.classList.toggle("lb-cubed-board-themed", ApplyNative);
         Root.classList.toggle("lb-cubed-theme-dark", LbSemantics.IsDark);
         Root.dataset.lbcTheme = Theme.Id || DefaultThemeId;
         Root.dataset.lbcThemeMode = LbSemantics.IsDark ? "dark" : "light";
 
-        ApplyBoardThemeMatrix(Palette);
-        QueueBoardThemeRendererRefresh();
+        if (ApplyNative) {
+            InstallBoardTextSourceHook();
+            ApplyBoardThemeMatrix(Palette, LbSemantics);
+            QueueBoardThemeRendererRefresh();
+        } else {
+            UninstallBoardTextSourceHook();
+            if (WasBoardThemed) {
+                QueueBoardThemeRendererRefresh(true);
+            }
+        }
     }
 
     function SetActiveTheme(ThemeId) {
@@ -4207,41 +4278,40 @@
     }
 
     function CreateCustomThemeFromActive(Name = "Custom Theme") {
-    const Base = GetActiveThemeDefinition();
-    const Id = `custom-${CreateCloudOpaqueId("theme")}`;
-    const Now = new Date().toISOString();
-    const BoardMatchesBackground = false;
-    const LbcBackgroundMatchesLbBackground = Boolean(
-        Base.LbcBackgroundMatchesLbBackground
-    );
-    const LbcTextMatchesLbForeground = Boolean(
-        Base.LbcTextMatchesLbForeground
-    );
-    const Palette = NormalizeThemePalette(Base.Palette, null, false);
-    Palette.LbForeground = GetThemeContrastPole(Palette.LbBackground);
+        const Base = GetActiveThemeDefinition();
+        const Id = `custom-${CreateCloudOpaqueId("theme")}`;
+        const Now = new Date().toISOString();
+        const BoardMatchesBackground = false;
+        const LbcBackgroundMatchesLbBackground = Boolean(
+            Base.LbcBackgroundMatchesLbBackground
+        );
+        const LbcTextMatchesLbForeground = Boolean(
+            Base.LbcTextMatchesLbForeground
+        );
+        const Palette = NormalizeThemePalette(Base.Palette, null, false);
 
-    if (LbcBackgroundMatchesLbBackground) {
-        Palette.LbcBackground = Palette.LbBackground;
-    }
-    if (LbcTextMatchesLbForeground) {
-        Palette.LbcText = Palette.LbForeground;
-    }
+        if (LbcBackgroundMatchesLbBackground) {
+            Palette.LbcBackground = Palette.LbBackground;
+        }
+        if (LbcTextMatchesLbForeground) {
+            Palette.LbcText = Palette.LbForeground;
+        }
 
-    ThemeState.CustomThemes[Id] = {
-        Id,
-        Name: String(Name || "Custom Theme").trim() || "Custom Theme",
-        Palette,
-        BoardMatchesBackground,
-        LbcBackgroundMatchesLbBackground,
-        LbcTextMatchesLbForeground,
-        Deleted: false,
-        UpdatedAt: Now
-    };
-    ThemeState.ActiveTheme = { Id, UpdatedAt: Now };
-    SaveThemeState();
-    ApplyTheme();
-    return Id;
-}
+        ThemeState.CustomThemes[Id] = {
+            Id,
+            Name: String(Name || "Custom Theme").trim() || "Custom Theme",
+            Palette,
+            BoardMatchesBackground,
+            LbcBackgroundMatchesLbBackground,
+            LbcTextMatchesLbForeground,
+            Deleted: false,
+            UpdatedAt: Now
+        };
+        ThemeState.ActiveTheme = { Id, UpdatedAt: Now };
+        SaveThemeState();
+        ApplyTheme();
+        return Id;
+    }
 
     function RenameActiveCustomTheme(Name) {
         const Theme = GetActiveCustomThemeRecord();
@@ -4274,31 +4344,33 @@
     }
 
     function UpdateActiveCustomThemePalette(Key, Value, Persist = true) {
-    const Theme = GetActiveCustomThemeRecord();
-    if (!Theme || !Object.prototype.hasOwnProperty.call(Theme.Palette, Key)) {
-        return false;
-    }
+        const Theme = GetActiveCustomThemeRecord();
+        if (!Theme || !Object.prototype.hasOwnProperty.call(Theme.Palette, Key)) {
+            return false;
+        }
 
-    Theme.Palette[Key] = NormalizeThemeColor(Value, Theme.Palette[Key]);
-    if (Key === "LbBackground") {
-        Theme.Palette.LbForeground = GetThemeContrastPole(
-            Theme.Palette.LbBackground
-        );
-        if (Theme.LbcBackgroundMatchesLbBackground) {
+        Theme.Palette[Key] = NormalizeThemeColor(Value, Theme.Palette[Key]);
+
+        if (
+            Key === "LbBackground" &&
+            Theme.LbcBackgroundMatchesLbBackground
+        ) {
             Theme.Palette.LbcBackground = Theme.Palette.LbBackground;
         }
-        if (Theme.LbcTextMatchesLbForeground) {
+        if (
+            Key === "LbForeground" &&
+            Theme.LbcTextMatchesLbForeground
+        ) {
             Theme.Palette.LbcText = Theme.Palette.LbForeground;
         }
-    }
 
-    if (Persist) {
-        Theme.UpdatedAt = new Date().toISOString();
-        SaveThemeState();
+        if (Persist) {
+            Theme.UpdatedAt = new Date().toISOString();
+            SaveThemeState();
+        }
+        ApplyTheme();
+        return true;
     }
-    ApplyTheme();
-    return true;
-}
 
     function UpdateActiveCustomThemeBoardMatch(Value) {
         const Theme = GetActiveCustomThemeRecord();
@@ -4333,23 +4405,20 @@
     }
 
     function UpdateActiveCustomThemeLbcTextMatch(Value) {
-    const Theme = GetActiveCustomThemeRecord();
-    if (!Theme) {
-        return false;
-    }
+        const Theme = GetActiveCustomThemeRecord();
+        if (!Theme) {
+            return false;
+        }
 
-    Theme.LbcTextMatchesLbForeground = Boolean(Value);
-    Theme.Palette.LbForeground = GetThemeContrastPole(
-        Theme.Palette.LbBackground
-    );
-    if (Theme.LbcTextMatchesLbForeground) {
-        Theme.Palette.LbcText = Theme.Palette.LbForeground;
+        Theme.LbcTextMatchesLbForeground = Boolean(Value);
+        if (Theme.LbcTextMatchesLbForeground) {
+            Theme.Palette.LbcText = Theme.Palette.LbForeground;
+        }
+        Theme.UpdatedAt = new Date().toISOString();
+        SaveThemeState();
+        ApplyTheme();
+        return true;
     }
-    Theme.UpdatedAt = new Date().toISOString();
-    SaveThemeState();
-    ApplyTheme();
-    return true;
-}
 
     function CreateEmptyGuiState() {
         return {
@@ -5315,8 +5384,8 @@
             const Note = document.createElement("div");
             Note.className = "lb-cubed-theme-note";
             Note.textContent = GetActiveThemeDefinition().Id === NytDarkThemeId
-                ? "NYT mobile dark-mode colors adapted to the web game. Duplicate this theme to tune individual colors."
-                : "Prebuilt themes are read-only. Use New from current to make an editable copy.";
+                ? "NYT mobile dark-mode colors adapted to the web game. Duplicate this theme to tune Background, Foreground, and Highlight."
+                : "Native NYT Light is left unthemed. Duplicate it to create a custom theme with the same initial appearance.";
             Section.appendChild(Note);
             return;
         }
@@ -5325,9 +5394,9 @@
             Section,
             "Letter Boxed",
             [
-                CreateThemeColorRow("Primary (background)", "LbBackground"),
-                CreateThemeColorRow("Secondary (board)", "LbBoard"),
-                CreateThemeColorRow("Tertiary (active / used)", "LbActive")
+                CreateThemeColorRow("Background", "LbBackground"),
+                CreateThemeColorRow("Foreground", "LbForeground"),
+                CreateThemeColorRow("Highlight", "LbActive")
             ]
         );
 
@@ -5371,9 +5440,9 @@
         const Note = document.createElement("div");
         Note.className = "lb-cubed-theme-note";
         Note.textContent =
-            "Letter Boxed text, outlines, node states, connectors and toast colors " +
-            "are derived from Primary / Secondary / Tertiary. LBC muted text and " +
-            "secondary accents are derived automatically.";
+            "Background brightness selects the Light or Dark mapping column. " +
+            "Every Letter Boxed board state and toast then uses only Background, " +
+            "Foreground, or Highlight; no extra native colors are synthesized.";
         Section.appendChild(Note);
     }
 
@@ -10437,6 +10506,7 @@
                     footprint changes, so GB makes room for the par when needed.
                 */
                 NormalizeWordAreaFeedbackLayout();
+                QueueErrorWordFeedbackPlacement();
                 ScanGameState();
             }, 30);
         });
@@ -10496,6 +10566,7 @@
         LastParTrackHeight = ParTrackHeight;
 
         QueueValidWordFeedbackPlacement();
+        QueueErrorWordFeedbackPlacement();
     }
 
     function CountRenderedHistoryLines(ListContainer) {
@@ -10580,6 +10651,138 @@
             : ValidFeedbackParMarginFallback;
     }
 
+    function FadeOutToastProxy(Element) {
+        if (!Element) {
+            return;
+        }
+        Element.classList.remove("lb-cubed-toast-visible");
+        setTimeout(() => {
+            if (!Element.classList.contains("lb-cubed-toast-visible")) {
+                Element.remove();
+            }
+        }, ToastFadeMs);
+    }
+
+    function GetNativeErrorWordFeedbackSource() {
+        const Wrapper = document.querySelector(
+            ".lb-game-container .lb-word-container > .lb-text-field-wrapper"
+        );
+        if (!Wrapper) {
+            return null;
+        }
+
+        const Candidates = [
+            ...Wrapper.querySelectorAll(":scope > .lb-message-box"),
+            ...Wrapper.querySelectorAll(":scope > .lb-par:not(.no-words)")
+        ];
+
+        return Candidates.find(Element =>
+            !Element.classList.contains("lb-cubed-error-feedback-proxy") &&
+            String(Element.textContent || "").trim()
+        ) || null;
+    }
+
+    function ClearErrorWordFeedbackProxy() {
+        clearTimeout(ErrorFeedbackRemovalTimer);
+        ErrorFeedbackRemovalTimer = null;
+        RenderedErrorFeedbackText = "";
+
+        document.querySelectorAll(".lb-cubed-error-feedback-source")
+            .forEach(Element => Element.classList.remove(
+                "lb-cubed-error-feedback-source"
+            ));
+
+        const Proxy = document.querySelector(
+            ".lb-cubed-error-feedback-proxy"
+        );
+        if (!Proxy) {
+            return;
+        }
+
+        Proxy.classList.remove("lb-cubed-toast-visible");
+        ErrorFeedbackRemovalTimer = setTimeout(() => {
+            ErrorFeedbackRemovalTimer = null;
+            if (!Proxy.classList.contains("lb-cubed-toast-visible")) {
+                Proxy.remove();
+            }
+        }, ToastFadeMs);
+    }
+
+    function UpdateErrorWordFeedbackPlacement() {
+        ErrorFeedbackPlacementTimer = null;
+
+        const GameContainer = document.querySelector(".lb-game-container");
+        const WordContainer = GameContainer?.querySelector(
+            ":scope > .lb-word-container"
+        );
+        const TextFieldWrapper = WordContainer?.querySelector(
+            ":scope > .lb-text-field-wrapper"
+        );
+        const ListContainer = WordContainer?.querySelector(
+            ":scope > .lb-list-container"
+        );
+        const SquareContainer = GameContainer?.querySelector(
+            ":scope > .lb-square-container"
+        );
+        const Source = GetNativeErrorWordFeedbackSource();
+        const MessageText = String(Source?.textContent || "").trim();
+
+        if (
+            !GameContainer ||
+            !WordContainer ||
+            !TextFieldWrapper ||
+            !ListContainer ||
+            !SquareContainer ||
+            !Source ||
+            !MessageText
+        ) {
+            ClearErrorWordFeedbackProxy();
+            return;
+        }
+
+        clearTimeout(ErrorFeedbackRemovalTimer);
+        ErrorFeedbackRemovalTimer = null;
+        Source.classList.add("lb-cubed-error-feedback-source");
+
+        let Proxy = GameContainer.querySelector(
+            ":scope > .lb-cubed-error-feedback-proxy"
+        );
+        if (!Proxy) {
+            Proxy = document.createElement("div");
+            Proxy.className =
+                "lb-message-box error-message lb-cubed-toast-proxy lb-cubed-error-feedback-proxy";
+            GameContainer.appendChild(Proxy);
+        }
+
+        if (RenderedErrorFeedbackText !== MessageText) {
+            Proxy.textContent = MessageText;
+            RenderedErrorFeedbackText = MessageText;
+        }
+
+        PositionValidWordFeedbackProxy(
+            Proxy,
+            GameContainer,
+            WordContainer,
+            TextFieldWrapper,
+            ListContainer,
+            SquareContainer
+        );
+
+        requestAnimationFrame(() => {
+            if (Proxy.isConnected) {
+                Proxy.classList.add("lb-cubed-toast-visible");
+            }
+        });
+    }
+
+    function QueueErrorWordFeedbackPlacement() {
+        clearTimeout(ErrorFeedbackPlacementTimer);
+        ErrorFeedbackPlacementTimer = setTimeout(
+            UpdateErrorWordFeedbackPlacement,
+            0
+        );
+    }
+
     function GetNativeValidWordFeedbackSource() {
         const GameContainer = document.querySelector(
             ".lb-game-container"
@@ -10626,7 +10829,7 @@
         ValidFeedbackProxyShownAt = 0;
 
         document.querySelectorAll(".lb-cubed-valid-feedback-proxy")
-            .forEach(Element => Element.remove());
+            .forEach(FadeOutToastProxy);
 
         if (Source) {
             Source.classList.remove(
@@ -10832,7 +11035,7 @@
 
             Proxy = document.createElement("div");
             Proxy.className =
-                "lb-message-box success-message lb-cubed-valid-feedback-proxy";
+                "lb-message-box success-message lb-cubed-toast-proxy lb-cubed-valid-feedback-proxy";
 
             /*
                 Do not inherit NYT's lb-message-box/success-message classes on
@@ -10844,6 +11047,11 @@
             */
             Proxy.textContent = MessageText;
             GameContainer.appendChild(Proxy);
+            requestAnimationFrame(() => {
+                if (Proxy.isConnected) {
+                    Proxy.classList.add("lb-cubed-toast-visible");
+                }
+            });
             RenderedValidFeedbackKey = FeedbackKey;
             ValidFeedbackProxyShownAt = performance.now();
         } else if (!ValidFeedbackProxyShownAt) {
@@ -13575,7 +13783,8 @@
             .lb-game-container.${LayoutClass}
             > .lb-word-container
             > .lb-message-box:not(.error-message),
-            .lb-cubed-valid-feedback-relocated-source {
+            .lb-cubed-valid-feedback-relocated-source,
+            .lb-cubed-error-feedback-source {
                 visibility: hidden !important;
                 opacity: 0 !important;
                 clip-path: inset(100%) !important;
@@ -13592,7 +13801,7 @@
                 neutralized, because Cubed's captured lifecycle outlives NYT's
                 native node in dark mode.
             */
-            .lb-cubed-valid-feedback-proxy {
+            .lb-cubed-toast-proxy {
                 position: absolute !important;
                 right: auto !important;
                 bottom: auto !important;
@@ -13600,57 +13809,61 @@
                 transform: none !important;
                 visibility: visible !important;
                 display: block !important;
-                opacity: 1 !important;
+                opacity: 0 !important;
                 clip-path: none !important;
                 filter: none !important;
                 z-index: 60 !important;
                 pointer-events: none !important;
                 animation: none !important;
-                transition: none !important;
+                transition: opacity ${ToastFadeMs}ms ease !important;
+                text-shadow: none !important;
             }
 
-            /* Success = black on white. Error = white on black in a light
-               theme; dark themes use Text Input as background and Primary as text. */
-            html.lb-cubed-native-theme .lb-cubed-valid-feedback-proxy {
+            .lb-cubed-toast-proxy.lb-cubed-toast-visible {
+                opacity: 1 !important;
+            }
+
+            .lb-cubed-valid-feedback-proxy {
+                background: var(--lb-cubed-success-toast-bg) !important;
                 background-color: var(--lb-cubed-success-toast-bg) !important;
                 color: var(--lb-cubed-success-toast-fg) !important;
                 border-color: var(--lb-cubed-success-toast-bg) !important;
-                text-shadow: none !important;
             }
 
-            html.lb-cubed-native-theme .lb-cubed-valid-feedback-proxy * {
-                color: var(--lb-cubed-success-toast-fg) !important;
-                -webkit-text-fill-color: var(--lb-cubed-success-toast-fg) !important;
-                fill: currentColor !important;
-                text-shadow: none !important;
-            }
-
-            html.lb-cubed-native-theme .lb-game-container.${LayoutClass}
-            > .lb-word-container
-            > .lb-text-field-wrapper
-            > .lb-message-box,
-            html.lb-cubed-native-theme .lb-game-container.${LayoutClass}
-            > .lb-word-container
-            > .lb-text-field-wrapper
-            > .lb-par:not(.no-words) {
+            .lb-cubed-error-feedback-proxy {
+                background: var(--lb-cubed-error-toast-bg) !important;
                 background-color: var(--lb-cubed-error-toast-bg) !important;
                 color: var(--lb-cubed-error-toast-fg) !important;
                 border-color: var(--lb-cubed-error-toast-bg) !important;
+            }
+
+            .lb-cubed-valid-feedback-proxy *,
+            .lb-cubed-error-feedback-proxy * {
+                opacity: 1 !important;
+                animation: none !important;
+                transition: none !important;
                 text-shadow: none !important;
             }
 
-            html.lb-cubed-native-theme .lb-game-container.${LayoutClass}
-            > .lb-word-container
-            > .lb-text-field-wrapper
-            > .lb-message-box *,
-            html.lb-cubed-native-theme .lb-game-container.${LayoutClass}
-            > .lb-word-container
-            > .lb-text-field-wrapper
-            > .lb-par:not(.no-words) * {
+            .lb-cubed-valid-feedback-proxy * {
+                color: var(--lb-cubed-success-toast-fg) !important;
+                -webkit-text-fill-color: var(--lb-cubed-success-toast-fg) !important;
+                fill: currentColor !important;
+            }
+
+            .lb-cubed-error-feedback-proxy * {
                 color: var(--lb-cubed-error-toast-fg) !important;
                 -webkit-text-fill-color: var(--lb-cubed-error-toast-fg) !important;
                 fill: currentColor !important;
-                text-shadow: none !important;
+            }
+
+            .lb-cubed-valid-feedback-proxy::before,
+            .lb-cubed-valid-feedback-proxy::after,
+            .lb-cubed-error-feedback-proxy::before,
+            .lb-cubed-error-feedback-proxy::after {
+                background: transparent !important;
+                box-shadow: none !important;
+                animation: none !important;
             }
 
             .lb-game-container.${LayoutClass}
@@ -15370,7 +15583,6 @@
             html.lb-cubed-native-theme .lb-text-field,
             html.lb-cubed-native-theme .lb-text-field-wrapper,
             html.lb-cubed-native-theme .lb-word-list-container,
-            html.lb-cubed-native-theme .lb-message-box,
             html.lb-cubed-native-theme button:not([id^="lb-cubed"]),
             html.lb-cubed-native-theme [role="button"]:not([class*="lb-cubed"]) {
                 background-color: var(--lb-cubed-lb-bg) !important;
@@ -15381,16 +15593,16 @@
             html.lb-cubed-theme-dark button[data-testid="modal-close"] {
                 background: transparent !important;
                 background-color: transparent !important;
-                color: #000000 !important;
-                -webkit-text-fill-color: #000000 !important;
+                color: var(--lb-cubed-lb-bg) !important;
+                -webkit-text-fill-color: var(--lb-cubed-lb-bg) !important;
                 border-color: transparent !important;
             }
 
             html.lb-cubed-theme-dark button[data-testid="modal-close"] .pz-icon,
             html.lb-cubed-theme-dark button[data-testid="modal-close"] .pz-icon::before,
             html.lb-cubed-theme-dark button[data-testid="modal-close"] .pz-icon::after {
-                color: #000000 !important;
-                -webkit-text-fill-color: #000000 !important;
+                color: var(--lb-cubed-lb-bg) !important;
+                -webkit-text-fill-color: var(--lb-cubed-lb-bg) !important;
             }
 
             html.lb-cubed-native-theme .lb-word-list,
