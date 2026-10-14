@@ -1,0 +1,54 @@
+name: Fix beta.25 layout section
+
+on:
+  push:
+    branches: [perf/drive-sync-event-driven]
+    paths: [.github/workflows/fix-beta25-layout-section.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: perf/drive-sync-event-driven
+      - name: Fix layout section constructor
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('LetterBoxedCubed.user.js')
+          s = p.read_text()
+          old = '''    function CreatePanelLayoutSettingsGroup() {\n        const Group = document.createElement("div");\n        Section.className = "lb-cubed-settings-subgroup lb-cubed-layout-settings";\n        RefreshPanelLayoutSettingsSection(Section);\n        return Group;\n    }'''
+          new = '''    function CreatePanelLayoutSettingsSection() {\n        const Section = document.createElement("section");\n        Section.className = "lb-cubed-settings-section lb-cubed-layout-settings";\n        RefreshPanelLayoutSettingsSection(Section);\n        return Section;\n    }'''
+          if old not in s:
+              raise SystemExit('broken layout constructor not found')
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+
+          t = Path('tests/final-polish-tests.js')
+          x = t.read_text()
+          marker = "assert(source.includes('const LayoutSection = CreatePanelLayoutSettingsSection();'), 'top-level Layout section missing');"
+          replacement = marker + "\nassert(source.includes('function CreatePanelLayoutSettingsSection()'), 'Layout section constructor missing');"
+          if marker not in x:
+              raise SystemExit('layout test marker not found')
+          t.write_text(x.replace(marker, replacement, 1))
+          PY
+      - name: Validate
+        run: |
+          node --check LetterBoxedCubed.user.js
+          node tests/merge-tests.js
+          node tests/cloud-sync-tests.js
+          node tests/final-polish-tests.js
+      - name: Commit fix
+        shell: bash
+        run: |
+          git config user.name "Nathan Burgdorff + Ari (ChatGPT)"
+          git config user.email "6709230+Msyjsm@users.noreply.github.com"
+          git rm .github/workflows/fix-beta25-layout-section.yml
+          git add LetterBoxedCubed.user.js tests/final-polish-tests.js
+          git commit -m "Fix top-level layout settings constructor"
+          git push origin HEAD:perf/drive-sync-event-driven
