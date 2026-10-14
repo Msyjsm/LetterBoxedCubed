@@ -6,7 +6,7 @@ const source = fs.readFileSync(path.join(root, 'LetterBoxedCubed.user.js'), 'utf
 const preview = fs.readFileSync(path.join(root, 'tools', 'preview_runtime.js'), 'utf8');
 function assert(condition, message) { if (!condition) throw new Error(message); }
 
-assert(source.includes('// @version      1.13.1-beta.24'), 'beta.24 version missing');
+assert(source.includes('// @version      1.13.1-beta.25'), 'beta.25 version missing');
 assert(source.includes('const ExportFormatVersion = 4;'), 'backup schema v4 missing');
 assert(source.includes('const ThemeStateVersion = 2;'), 'ThemeState v2 compatibility missing');
 assert(source.includes('MergeThemeStates'), 'theme merge missing');
@@ -27,8 +27,14 @@ assert(source.includes('CreateThemeColorRow("Background", "LbBackground")'), 'Ba
 assert(source.includes('CreateThemeColorRow("Foreground", "LbForeground")'), 'Foreground editor missing');
 assert(source.includes('CreateThemeColorRow("Highlight", "LbActive")'), 'Highlight editor missing');
 assert(!source.includes('CreateThemeBoardColorRow('), 'obsolete board-link UI remains');
-assert(source.includes('Same as Letter Boxed Background'), 'LBC background link missing');
-assert(source.includes('Same as Letter Boxed Text'), 'LBC text link missing');
+assert((source.match(/Use Letter Boxed color/g) || []).length >= 3, 'unified LBC color-link labels missing');
+assert(source.includes('LbcHighlightMatchesLbHighlight'), 'LBC Highlight link state missing');
+assert(source.includes('UpdateActiveCustomThemeLbcHighlightMatch'), 'LBC Highlight link action missing');
+assert(source.includes('CreateThemeColorRow("New word highlight", "NewHighlight")'), 'New word highlight label missing');
+assert(source.includes('CreateThemeColorRow("Headings", "LbcHeadingBackground")'), 'Headings label missing');
+assert(!source.includes('\n            "Highlights",\n'), 'obsolete Highlights subgroup remains');
+assert(source.includes('const LayoutSection = CreatePanelLayoutSettingsSection();'), 'top-level Layout section missing');
+assert(source.includes('AnimationSection,\n            ThemeSection,\n            LayoutSection,\n            DisplaySection,\n            SyncSection'), 'settings section order is wrong');
 assert(!source.includes('Palette.LbForeground = GetThemeContrastPole(Palette.LbBackground)'), 'Foreground is still derived from Background');
 assert(source.includes('Root.classList.toggle("lb-cubed-native-theme", ApplyNative)'), 'native-theme opt-in missing');
 assert(source.includes('Root.classList.toggle("lb-cubed-board-themed", ApplyNative)'), 'board-theme opt-in missing');
@@ -81,4 +87,4 @@ assert(source.includes('const NudgedWidth = `${Rect.width + 1}px`;'), 'real boar
 assert(source.includes('function ActivateToastType(Kind)'), 'cross-type toast arbitration missing');
 assert(source.includes('RemoveToastProxyImmediately(Previous)'), 'older toast immediate kill missing');
 assert(source.includes('padding: 6px 10px !important;'), 'toast padding missing');
-console.log('PASS: beta.24 cross-mode letter repair + theme/toast static checks');
+console.log('PASS: beta.25 settings cleanup + cross-mode/theme/toast static checks');

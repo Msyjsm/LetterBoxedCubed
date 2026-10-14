@@ -86,7 +86,7 @@ No success/error target color is independently hardcoded.
 
 ## Letter Boxed Cubed panel colors
 
-The LBC panel still has its own configurable Background, Heading background, Text, and Border because its information-density and control surfaces are distinct from the native game. LBC Background can remain linked to Letter Boxed Background, and LBC Text can remain linked to Letter Boxed Foreground. Muted text and secondary control accents are derived from the LBC panel palette.
+The LBC panel has its own configurable Background, Foreground, Highlight, and Headings colors because its information-density and control surfaces are distinct from the native game. Background, Foreground, and Highlight can each optionally use the corresponding Letter Boxed color via a unified "Use Letter Boxed color" checkbox. Muted text and secondary control accents are derived from the LBC panel palette.
 
 Highlights remain separate LBC concepts: NYT solution, New item, and Redacted. NYT-solution coloring is confined to the NYT Solution container/heading; the actual first/second-word cells retain ordinary Twofer revealed/redacted styling so the official answer cannot leak through. Redacted blocks use one opaque color for background, text, border, selection, and WebKit text fill.
 
