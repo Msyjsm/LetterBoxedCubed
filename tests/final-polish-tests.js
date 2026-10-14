@@ -6,7 +6,7 @@ const source = fs.readFileSync(path.join(root, 'LetterBoxedCubed.user.js'), 'utf
 const preview = fs.readFileSync(path.join(root, 'tools', 'preview_runtime.js'), 'utf8');
 function assert(condition, message) { if (!condition) throw new Error(message); }
 
-assert(source.includes('// @version      1.13.1-beta.23'), 'beta.23 version missing');
+assert(source.includes('// @version      1.13.1-beta.24'), 'beta.24 version missing');
 assert(source.includes('const ExportFormatVersion = 4;'), 'backup schema v4 missing');
 assert(source.includes('const ThemeStateVersion = 2;'), 'ThemeState v2 compatibility missing');
 assert(source.includes('MergeThemeStates'), 'theme merge missing');
@@ -72,8 +72,13 @@ for (const label of ['Copy Board Source Snapshot','Start Board Canvas Trace','St
 assert(source.includes('function CaptureNativeLightTriad(Palette)'), 'native Light live calibration missing');
 assert(source.includes('Palette = CaptureNativeLightTriad(Palette);'), 'custom Light capture missing');
 assert(source.includes('const ThemeModeChanged ='), 'theme mode transition detection missing');
+assert(source.includes('function RepairBoardLetterSourceForThemeModeSwitch(WasDark, IsDark)'), 'cross-mode letter source repair missing');
+assert(source.includes('const EdgeX = Math.floor(Width * 0.15);'), 'letter-only perimeter guard missing');
+assert(source.includes('Context.getImageData(0, 0, Width, Height)'), 'letter source pixel read missing');
+assert(source.includes('Context.putImageData(Image, 0, 0);'), 'letter source pixel write missing');
+assert(source.includes('RepairBoardLetterSourceForThemeModeSwitch(\n                WasDarkTheme,'), 'theme transition does not invoke letter repair');
 assert(source.includes('const NudgedWidth = `${Rect.width + 1}px`;'), 'real board resize nudge missing');
 assert(source.includes('function ActivateToastType(Kind)'), 'cross-type toast arbitration missing');
 assert(source.includes('RemoveToastProxyImmediately(Previous)'), 'older toast immediate kill missing');
 assert(source.includes('padding: 6px 10px !important;'), 'toast padding missing');
-console.log('PASS: beta.23 theme refresh + toast static checks');
+console.log('PASS: beta.24 cross-mode letter repair + theme/toast static checks');

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed
 // @namespace    https://nathanburgdorff.com/userscripts/
-// @version      1.13.1-beta.23
+// @version      1.13.1-beta.24
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -1820,6 +1820,115 @@
         NativeBoardStroke = null;
     }
 
+    function RepairBoardLetterSourceForThemeModeSwitch(WasDark, IsDark) {
+        if (WasDark === IsDark) {
+            return false;
+        }
+
+        const Canvas = document.querySelector(
+            ".lb-game-container .lb-square-container canvas"
+        );
+        if (!Canvas || !Canvas.width || !Canvas.height) {
+            return false;
+        }
+
+        const Context = Canvas.getContext("2d");
+        if (!Context) {
+            return false;
+        }
+
+        /*
+            The trace in beta.23 proved that NYT does not redraw the canvas at
+            all for our synthetic resize invalidation. Its next genuine game
+            update redraws correctly, but until then the bitmap still contains
+            the previous semantic mode's source glyph colors.
+
+            Repair only the four outer letter-label bands. They contain the 12
+            side letters but stop before the board square, so node/connector
+            paints remain untouched. This is a one-time O(canvas pixels) pass
+            only when crossing the Light/Dark semantic threshold; same-mode
+            theme switches still stay filter-only.
+        */
+        const Width = Canvas.width;
+        const Height = Canvas.height;
+        const EdgeX = Math.floor(Width * 0.15);
+        const EdgeY = Math.floor(Height * 0.15);
+        let Image;
+        try {
+            Image = Context.getImageData(0, 0, Width, Height);
+        } catch (Error) {
+            console.debug(
+                "[Letter Boxed Cubed] Could not repair board letter source pixels.",
+                Error
+            );
+            return false;
+        }
+
+        const Pixels = Image.data;
+        const Active = ThemeHexToRgb(NativeBoardActiveSourceColor);
+        let ChangedPixels = 0;
+
+        const IsNearBlack = (Red, Green, Blue) =>
+            Math.max(Red, Green, Blue) <= 20;
+        const IsNearWhite = (Red, Green, Blue) =>
+            Math.min(Red, Green, Blue) >= 235;
+        const IsNearActive = (Red, Green, Blue) =>
+            Math.abs(Red - Active[0]) <= 24 &&
+            Math.abs(Green - Active[1]) <= 24 &&
+            Math.abs(Blue - Active[2]) <= 24;
+
+        for (let Y = 0; Y < Height; Y++) {
+            const InOuterY = Y < EdgeY || Y >= Height - EdgeY;
+            for (let X = 0; X < Width; X++) {
+                if (!InOuterY && X >= EdgeX && X < Width - EdgeX) {
+                    continue;
+                }
+
+                const Offset = (Y * Width + X) * 4;
+                if (Pixels[Offset + 3] <= 4) {
+                    continue;
+                }
+
+                const Red = Pixels[Offset];
+                const Green = Pixels[Offset + 1];
+                const Blue = Pixels[Offset + 2];
+
+                if (!WasDark && IsDark) {
+                    if (IsNearWhite(Red, Green, Blue)) {
+                        Pixels[Offset] = 0;
+                        Pixels[Offset + 1] = 0;
+                        Pixels[Offset + 2] = 0;
+                        ChangedPixels++;
+                    } else if (IsNearBlack(Red, Green, Blue)) {
+                        Pixels[Offset] = Active[0];
+                        Pixels[Offset + 1] = Active[1];
+                        Pixels[Offset + 2] = Active[2];
+                        ChangedPixels++;
+                    }
+                } else if (WasDark && !IsDark) {
+                    if (IsNearActive(Red, Green, Blue)) {
+                        Pixels[Offset] = 0;
+                        Pixels[Offset + 1] = 0;
+                        Pixels[Offset + 2] = 0;
+                        ChangedPixels++;
+                    } else if (IsNearBlack(Red, Green, Blue)) {
+                        Pixels[Offset] = 255;
+                        Pixels[Offset + 1] = 255;
+                        Pixels[Offset + 2] = 255;
+                        ChangedPixels++;
+                    }
+                }
+            }
+        }
+
+        if (!ChangedPixels) {
+            return false;
+        }
+
+        Context.putImageData(Image, 0, 0);
+        return true;
+    }
+
     function QueueBoardThemeRendererRefresh(Force = false) {
         const Root = document.documentElement;
         const SquareContainer = document.querySelector(
@@ -1976,8 +2085,15 @@
         }
 
         const ThemeModeChanged =
-            WasBoardThemed &&
-            WasDarkTheme !== LbSemantics.IsDark;
+            WasDarkTheme !== LbSemantics.IsDark &&
+            (WasBoardThemed || ApplyNative);
+
+        if (ThemeModeChanged) {
+            RepairBoardLetterSourceForThemeModeSwitch(
+                WasDarkTheme,
+                LbSemantics.IsDark
+            );
+        }
 
         Root.classList.toggle("lb-cubed-native-theme", ApplyNative);
         Root.classList.toggle("lb-cubed-board-themed", ApplyNative);

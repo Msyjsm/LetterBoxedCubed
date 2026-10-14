@@ -61,7 +61,7 @@ NYT's source palette has three useful anchors: source black, source white, and s
 - **Light semantic theme:** source black -> Foreground; source white -> Highlight; source coral -> Background.
 - **Dark semantic theme:** source black -> Foreground; source white -> Background; source coral -> Highlight.
 
-Antialiased and blended pixels transform continuously between those anchors. LBC never walks or rewrites the completed bitmap.
+Antialiased and blended pixels transform continuously between those anchors. Normal rendering remains filter-only. The one deliberate exception is a Light/Dark semantic-mode switch: NYT does not repaint the canvas for synthetic resize events, so LBC performs a single bounded source-pixel repair in the four outer letter-label bands before swapping modes. The board square, nodes, and connectors are never touched by that repair, and same-mode theme switches do no bitmap work.
 
 NYT reuses some source paints for semantically different things. In Dark semantic themes, a narrowly-scoped Canvas2D shim disambiguates only those collisions before the matrix runs: white single-letter source glyphs are normalized to the source-black anchor, black active/used single-letter glyphs to the source-coral anchor, and the used-node black outline paired with an active fill is promoted to the source-coral anchor. These are **source-palette identifiers**, not rendered theme colors; their final visible colors still come only from Background / Foreground / Highlight.
 
@@ -106,7 +106,7 @@ Test the following without reloading between theme changes where possible:
 
 1. Built-in NYT Light visually matches NYT with LBC's native theming disabled.
 2. Duplicate NYT Light into a custom theme without changing any colors; the page, board, and linked LBC colors should remain visually identical.
-3. Switch native Light -> custom Light -> NYT Dark -> custom Dark -> native Light mid-puzzle.
+3. Switch native Light -> custom Light -> NYT Dark -> custom Dark -> native Light mid-puzzle without typing or submitting anything between switches; all 12 side letters must remain visible immediately.
 4. At each switch inspect unused, active, used, and current/last-letter node states plus connector lines; no letter should disappear while waiting for new input.
 5. Verify a success and an error toast in both Light and Dark semantic modes: whole rectangle/text fade together, `6px 10px` breathing room, no corner flash, correct triad colors, and identical placement rules.
 6. Trigger opposite toast types in quick succession and verify the older toast disappears immediately when the newer one arrives.
