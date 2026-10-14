@@ -1,0 +1,107 @@
+name: Apply beta.25 settings cleanup
+
+on:
+  push:
+    branches: [perf/drive-sync-event-driven]
+    paths: [.github/workflows/apply-beta25-settings-cleanup.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: perf/drive-sync-event-driven
+      - name: Apply cleanup
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path('LetterBoxedCubed.user.js')
+          s = p.read_text()
+
+          def r(old, new, count=1):
+              global s
+              actual = s.count(old)
+              if actual < count:
+                  raise SystemExit(f'missing replacement ({actual} < {count}): {old[:120]!r}')
+              s = s.replace(old, new, count)
+
+          r('// @version      1.13.1-beta.24', '// @version      1.13.1-beta.25')
+
+          # Preserve existing preset appearances; the new LBC Highlight link is opt-in.
+          r('''            LbcBackgroundMatchesLbBackground: true,\n            LbcTextMatchesLbForeground: true,\n            Palette: {''', '''            LbcBackgroundMatchesLbBackground: true,\n            LbcTextMatchesLbForeground: true,\n            LbcHighlightMatchesLbHighlight: false,\n            Palette: {''', 2)
+
+          r('''        const LbcTextMatchesLbForeground =\n            Object.prototype.hasOwnProperty.call(\n                RawTheme,\n                "LbcTextMatchesLbForeground"\n            )\n                ? Boolean(RawTheme.LbcTextMatchesLbForeground)\n                : Palette.LbcText === Palette.LbForeground;\n\n        if (BoardMatchesBackground) {''', '''        const LbcTextMatchesLbForeground =\n            Object.prototype.hasOwnProperty.call(\n                RawTheme,\n                "LbcTextMatchesLbForeground"\n            )\n                ? Boolean(RawTheme.LbcTextMatchesLbForeground)\n                : Palette.LbcText === Palette.LbForeground;\n        const LbcHighlightMatchesLbHighlight =\n            Object.prototype.hasOwnProperty.call(\n                RawTheme,\n                "LbcHighlightMatchesLbHighlight"\n            )\n                ? Boolean(RawTheme.LbcHighlightMatchesLbHighlight)\n                : Palette.LbcBorder === Palette.LbActive;\n\n        if (BoardMatchesBackground) {''')
+
+          r('''        if (LbcTextMatchesLbForeground) {\n            Palette.LbcText = Palette.LbForeground;\n        }\n\n        return {''', '''        if (LbcTextMatchesLbForeground) {\n            Palette.LbcText = Palette.LbForeground;\n        }\n        if (LbcHighlightMatchesLbHighlight) {\n            Palette.LbcBorder = Palette.LbActive;\n        }\n\n        return {''')
+
+          r('''            LbcBackgroundMatchesLbBackground,\n            LbcTextMatchesLbForeground,\n            Deleted:''', '''            LbcBackgroundMatchesLbBackground,\n            LbcTextMatchesLbForeground,\n            LbcHighlightMatchesLbHighlight,\n            Deleted:''')
+
+          r('''        if (Theme.LbcTextMatchesLbForeground) {\n            Palette.LbcText = Palette.LbForeground;\n        }\n\n        const MutedText''', '''        if (Theme.LbcTextMatchesLbForeground) {\n            Palette.LbcText = Palette.LbForeground;\n        }\n        if (Theme.LbcHighlightMatchesLbHighlight) {\n            Palette.LbcBorder = Palette.LbActive;\n        }\n\n        const MutedText''')
+
+          r('''        const LbcTextMatchesLbForeground = Boolean(\n            Base.LbcTextMatchesLbForeground\n        );\n        let Palette''', '''        const LbcTextMatchesLbForeground = Boolean(\n            Base.LbcTextMatchesLbForeground\n        );\n        const LbcHighlightMatchesLbHighlight = Boolean(\n            Base.LbcHighlightMatchesLbHighlight\n        );\n        let Palette''')
+
+          r('''        if (LbcTextMatchesLbForeground) {\n            Palette.LbcText = Palette.LbForeground;\n        }\n\n        ThemeState.CustomThemes[Id]''', '''        if (LbcTextMatchesLbForeground) {\n            Palette.LbcText = Palette.LbForeground;\n        }\n        if (LbcHighlightMatchesLbHighlight) {\n            Palette.LbcBorder = Palette.LbActive;\n        }\n\n        ThemeState.CustomThemes[Id]''')
+
+          r('''            LbcBackgroundMatchesLbBackground,\n            LbcTextMatchesLbForeground,\n            Deleted: false,''', '''            LbcBackgroundMatchesLbBackground,\n            LbcTextMatchesLbForeground,\n            LbcHighlightMatchesLbHighlight,\n            Deleted: false,''')
+
+          r('''        if (\n            Key === "LbForeground" &&\n            Theme.LbcTextMatchesLbForeground\n        ) {\n            Theme.Palette.LbcText = Theme.Palette.LbForeground;\n        }\n\n        if (Persist) {''', '''        if (\n            Key === "LbForeground" &&\n            Theme.LbcTextMatchesLbForeground\n        ) {\n            Theme.Palette.LbcText = Theme.Palette.LbForeground;\n        }\n        if (\n            Key === "LbActive" &&\n            Theme.LbcHighlightMatchesLbHighlight\n        ) {\n            Theme.Palette.LbcBorder = Theme.Palette.LbActive;\n        }\n\n        if (Persist) {''')
+
+          r('''    function CreateEmptyGuiState() {''', '''    function UpdateActiveCustomThemeLbcHighlightMatch(Value) {\n        const Theme = GetActiveCustomThemeRecord();\n        if (!Theme) {\n            return false;\n        }\n\n        Theme.LbcHighlightMatchesLbHighlight = Boolean(Value);\n        if (Theme.LbcHighlightMatchesLbHighlight) {\n            Theme.Palette.LbcBorder = Theme.Palette.LbActive;\n        }\n        Theme.UpdatedAt = new Date().toISOString();\n        SaveThemeState();\n        ApplyTheme();\n        return true;\n    }\n\n    function CreateEmptyGuiState() {''')
+
+          old_theme_groups = '''        AppendThemeColorGroup(\n            Section,\n            "Letter Boxed Cubed",\n            [\n                CreateThemeLinkedColorRow(\n                    Section,\n                    "Background",\n                    "LbcBackground",\n                    "LbcBackgroundMatchesLbBackground",\n                    "Same as Letter Boxed Background",\n                    "#D88482",\n                    UpdateActiveCustomThemeLbcBackgroundMatch\n                ),\n                CreateThemeColorRow("Heading background", "LbcHeadingBackground"),\n                CreateThemeLinkedColorRow(\n                    Section,\n                    "Text",\n                    "LbcText",\n                    "LbcTextMatchesLbForeground",\n                    "Same as Letter Boxed Text",\n                    "#301818",\n                    UpdateActiveCustomThemeLbcTextMatch\n                ),\n                CreateThemeColorRow("Border", "LbcBorder")\n            ]\n        );\n\n        AppendThemeColorGroup(\n            Section,\n            "Highlights",\n            [\n                CreateThemeColorRow("NYT solution", "NytSolution"),\n                CreateThemeColorRow("New item", "NewHighlight"),\n                CreateThemeColorRow("Redacted", "Redacted")\n            ]\n        );'''
+          new_theme_groups = '''        AppendThemeColorGroup(\n            Section,\n            "Letter Boxed Cubed",\n            [\n                CreateThemeLinkedColorRow(\n                    Section,\n                    "Background",\n                    "LbcBackground",\n                    "LbcBackgroundMatchesLbBackground",\n                    "Use Letter Boxed color",\n                    "#D88482",\n                    UpdateActiveCustomThemeLbcBackgroundMatch\n                ),\n                CreateThemeLinkedColorRow(\n                    Section,\n                    "Foreground",\n                    "LbcText",\n                    "LbcTextMatchesLbForeground",\n                    "Use Letter Boxed color",\n                    "#301818",\n                    UpdateActiveCustomThemeLbcTextMatch\n                ),\n                CreateThemeLinkedColorRow(\n                    Section,\n                    "Highlight",\n                    "LbcBorder",\n                    "LbcHighlightMatchesLbHighlight",\n                    "Use Letter Boxed color",\n                    "#4C2222",\n                    UpdateActiveCustomThemeLbcHighlightMatch\n                ),\n                CreateThemeColorRow("NYT solution", "NytSolution"),\n                CreateThemeColorRow("New word highlight", "NewHighlight"),\n                CreateThemeColorRow("Redacted", "Redacted"),\n                CreateThemeColorRow("Headings", "LbcHeadingBackground")\n            ]\n        );'''
+          r(old_theme_groups, new_theme_groups)
+
+          # Promote Panel layout from a subgroup to its own top-level LAYOUT section.
+          s = s.replace('RefreshPanelLayoutSettingsGroup(Group)', 'RefreshPanelLayoutSettingsSection(Section)')
+          s = s.replace('function RefreshPanelLayoutSettingsGroup(Group) {', 'function RefreshPanelLayoutSettingsSection(Section) {')
+          s = s.replace('        Group.replaceChildren();\n\n        const Heading = document.createElement("div");\n        Heading.className = "lb-cubed-settings-subgroup-title";\n        Heading.textContent = "Panel layout";', '        Section.replaceChildren();\n\n        const Heading = document.createElement("div");\n        Heading.className = "lb-cubed-settings-section-title";\n        Heading.textContent = "Layout";', 1)
+          # All references inside that function now target Section after the global name replacement above.
+          start = s.index('    function RefreshPanelLayoutSettingsSection(Section) {')
+          end = s.index('    function CreateSettingsMenu() {', start)
+          block = s[start:end].replace('Group.', 'Section.').replace('(Group)', '(Section)')
+          block = block.replace('''    function CreatePanelLayoutSettingsGroup() {\n        const Group = document.createElement("div");\n        Group.className = "lb-cubed-settings-subgroup lb-cubed-layout-settings";\n        RefreshPanelLayoutSettingsSection(Section);\n        return Group;\n    }\n\n''', '''    function CreatePanelLayoutSettingsSection() {\n        const Section = document.createElement("section");\n        Section.className = "lb-cubed-settings-section lb-cubed-layout-settings";\n        RefreshPanelLayoutSettingsSection(Section);\n        return Section;\n    }\n\n''')
+          s = s[:start] + block + s[end:]
+
+          r('''        const ThemeSection = CreateThemeSettingsSection();\n\n        const DisplaySection = CreateSettingsSection("Display");''', '''        const ThemeSection = CreateThemeSettingsSection();\n        const LayoutSection = CreatePanelLayoutSettingsSection();\n\n        const DisplaySection = CreateSettingsSection("Display");''')
+          r('''        DisplaySection.appendChild(\n            CreatePanelLayoutSettingsGroup()\n        );\n\n''', '')
+          r('''        Menu.append(\n            AnimationSection,\n            ThemeSection,\n            DisplaySection,\n            SyncSection\n        );''', '''        Menu.append(\n            AnimationSection,\n            ThemeSection,\n            LayoutSection,\n            DisplaySection,\n            SyncSection\n        );''')
+
+          p.write_text(s)
+
+          # Static regression tests.
+          t = Path('tests/final-polish-tests.js')
+          x = t.read_text()
+          x = x.replace("// @version      1.13.1-beta.24", "// @version      1.13.1-beta.25")
+          x = x.replace("'beta.24 version missing'", "'beta.25 version missing'")
+          x = x.replace("assert(source.includes('Same as Letter Boxed Background'), 'LBC background link missing');\nassert(source.includes('Same as Letter Boxed Text'), 'LBC text link missing');", "assert((source.match(/Use Letter Boxed color/g) || []).length >= 3, 'unified LBC color-link labels missing');\nassert(source.includes('LbcHighlightMatchesLbHighlight'), 'LBC Highlight link state missing');\nassert(source.includes('UpdateActiveCustomThemeLbcHighlightMatch'), 'LBC Highlight link action missing');\nassert(source.includes('CreateThemeColorRow(\"New word highlight\", \"NewHighlight\")'), 'New word highlight label missing');\nassert(source.includes('CreateThemeColorRow(\"Headings\", \"LbcHeadingBackground\")'), 'Headings label missing');\nassert(!source.includes('\\n            \"Highlights\",\\n'), 'obsolete Highlights subgroup remains');\nassert(source.includes('const LayoutSection = CreatePanelLayoutSettingsSection();'), 'top-level Layout section missing');\nassert(source.includes('AnimationSection,\\n            ThemeSection,\\n            LayoutSection,\\n            DisplaySection,\\n            SyncSection'), 'settings section order is wrong');")
+          x = x.replace("console.log('PASS: beta.24 cross-mode letter repair + theme/toast static checks');", "console.log('PASS: beta.25 settings cleanup + cross-mode/theme/toast static checks');")
+          t.write_text(x)
+
+          # Keep theme documentation aligned with the UI cleanup.
+          d = Path('docs/THEMES.md')
+          y = d.read_text()
+          y = y.replace('The LBC panel still has its own configurable Background, Heading background, Text, and Border because its information-density and control surfaces are distinct from the native game. LBC Background can remain linked to Letter Boxed Background, and LBC Text can remain linked to Letter Boxed Foreground. Muted text and secondary control accents are derived from the LBC panel palette.', 'The LBC panel has its own configurable Background, Foreground, Highlight, and Headings colors because its information-density and control surfaces are distinct from the native game. Background, Foreground, and Highlight can each optionally use the corresponding Letter Boxed color via a unified "Use Letter Boxed color" checkbox. Muted text and secondary control accents are derived from the LBC panel palette.')
+          d.write_text(y)
+          PY
+      - name: Validate
+        run: |
+          node --check LetterBoxedCubed.user.js
+          node tests/merge-tests.js
+          node tests/cloud-sync-tests.js
+          node tests/final-polish-tests.js
+      - name: Commit cleanup
+        shell: bash
+        run: |
+          git config user.name "Nathan Burgdorff + Ari (ChatGPT)"
+          git config user.email "6709230+Msyjsm@users.noreply.github.com"
+          git rm .github/workflows/apply-beta25-settings-cleanup.yml
+          git add LetterBoxedCubed.user.js tests/final-polish-tests.js docs/THEMES.md
+          git commit -m "Clean up theme and layout settings"
+          git push origin HEAD:perf/drive-sync-event-driven
