@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed [PREVIEW]
 // @namespace    https://nathanburgdorff.com/userscripts/preview/
-// @version      1.13.1-beta.24.266
+// @version      1.13.1-beta.25.267
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -2560,6 +2560,7 @@
             BoardMatchesBackground: false,
             LbcBackgroundMatchesLbBackground: true,
             LbcTextMatchesLbForeground: true,
+            LbcHighlightMatchesLbHighlight: false,
             Palette: {
                 LbBackground: "#E3A5A3",
                 /* Core triad: Background / Foreground / Highlight. */
@@ -2582,6 +2583,7 @@
             BoardMatchesBackground: false,
             LbcBackgroundMatchesLbBackground: true,
             LbcTextMatchesLbForeground: true,
+            LbcHighlightMatchesLbHighlight: false,
             Palette: {
                 /* Calibrated from the supplied NYT Android dark-mode view. */
                 LbBackground: "#121212",
@@ -3555,6 +3557,13 @@
             )
                 ? Boolean(RawTheme.LbcTextMatchesLbForeground)
                 : Palette.LbcText === Palette.LbForeground;
+        const LbcHighlightMatchesLbHighlight =
+            Object.prototype.hasOwnProperty.call(
+                RawTheme,
+                "LbcHighlightMatchesLbHighlight"
+            )
+                ? Boolean(RawTheme.LbcHighlightMatchesLbHighlight)
+                : Palette.LbcBorder === Palette.LbActive;
 
         if (BoardMatchesBackground) {
             Palette.LbBoard = Palette.LbBackground;
@@ -3565,6 +3574,9 @@
         if (LbcTextMatchesLbForeground) {
             Palette.LbcText = Palette.LbForeground;
         }
+        if (LbcHighlightMatchesLbHighlight) {
+            Palette.LbcBorder = Palette.LbActive;
+        }
 
         return {
             Id: ThemeId,
@@ -3573,6 +3585,7 @@
             BoardMatchesBackground,
             LbcBackgroundMatchesLbBackground,
             LbcTextMatchesLbForeground,
+            LbcHighlightMatchesLbHighlight,
             Deleted: Boolean(RawTheme.Deleted),
             UpdatedAt: NormalizeTimestamp(RawTheme.UpdatedAt)
         };
@@ -4426,6 +4439,9 @@
         if (Theme.LbcTextMatchesLbForeground) {
             Palette.LbcText = Palette.LbForeground;
         }
+        if (Theme.LbcHighlightMatchesLbHighlight) {
+            Palette.LbcBorder = Palette.LbActive;
+        }
 
         const MutedText = GetDerivedLbcMutedText(Palette);
         const LbcAccent = GetDerivedLbcAccent(Palette);
@@ -4540,6 +4556,9 @@
         const LbcTextMatchesLbForeground = Boolean(
             Base.LbcTextMatchesLbForeground
         );
+        const LbcHighlightMatchesLbHighlight = Boolean(
+            Base.LbcHighlightMatchesLbHighlight
+        );
         let Palette = NormalizeThemePalette(Base.Palette, null, false);
         if (Base.Id === DefaultThemeId && Base.ApplyNative === false) {
             Palette = CaptureNativeLightTriad(Palette);
@@ -4551,6 +4570,9 @@
         if (LbcTextMatchesLbForeground) {
             Palette.LbcText = Palette.LbForeground;
         }
+        if (LbcHighlightMatchesLbHighlight) {
+            Palette.LbcBorder = Palette.LbActive;
+        }
 
         ThemeState.CustomThemes[Id] = {
             Id,
@@ -4559,6 +4581,7 @@
             BoardMatchesBackground,
             LbcBackgroundMatchesLbBackground,
             LbcTextMatchesLbForeground,
+            LbcHighlightMatchesLbHighlight,
             Deleted: false,
             UpdatedAt: Now
         };
@@ -4618,6 +4641,12 @@
         ) {
             Theme.Palette.LbcText = Theme.Palette.LbForeground;
         }
+        if (
+            Key === "LbActive" &&
+            Theme.LbcHighlightMatchesLbHighlight
+        ) {
+            Theme.Palette.LbcBorder = Theme.Palette.LbActive;
+        }
 
         if (Persist) {
             Theme.UpdatedAt = new Date().toISOString();
@@ -4668,6 +4697,22 @@
         Theme.LbcTextMatchesLbForeground = Boolean(Value);
         if (Theme.LbcTextMatchesLbForeground) {
             Theme.Palette.LbcText = Theme.Palette.LbForeground;
+        }
+        Theme.UpdatedAt = new Date().toISOString();
+        SaveThemeState();
+        ApplyTheme();
+        return true;
+    }
+
+    function UpdateActiveCustomThemeLbcHighlightMatch(Value) {
+        const Theme = GetActiveCustomThemeRecord();
+        if (!Theme) {
+            return false;
+        }
+
+        Theme.LbcHighlightMatchesLbHighlight = Boolean(Value);
+        if (Theme.LbcHighlightMatchesLbHighlight) {
+            Theme.Palette.LbcBorder = Theme.Palette.LbActive;
         }
         Theme.UpdatedAt = new Date().toISOString();
         SaveThemeState();
@@ -5664,31 +5709,32 @@
                     "Background",
                     "LbcBackground",
                     "LbcBackgroundMatchesLbBackground",
-                    "Same as Letter Boxed Background",
+                    "Use Letter Boxed color",
                     "#D88482",
                     UpdateActiveCustomThemeLbcBackgroundMatch
                 ),
-                CreateThemeColorRow("Heading background", "LbcHeadingBackground"),
                 CreateThemeLinkedColorRow(
                     Section,
-                    "Text",
+                    "Foreground",
                     "LbcText",
                     "LbcTextMatchesLbForeground",
-                    "Same as Letter Boxed Text",
+                    "Use Letter Boxed color",
                     "#301818",
                     UpdateActiveCustomThemeLbcTextMatch
                 ),
-                CreateThemeColorRow("Border", "LbcBorder")
-            ]
-        );
-
-        AppendThemeColorGroup(
-            Section,
-            "Highlights",
-            [
+                CreateThemeLinkedColorRow(
+                    Section,
+                    "Highlight",
+                    "LbcBorder",
+                    "LbcHighlightMatchesLbHighlight",
+                    "Use Letter Boxed color",
+                    "#4C2222",
+                    UpdateActiveCustomThemeLbcHighlightMatch
+                ),
                 CreateThemeColorRow("NYT solution", "NytSolution"),
-                CreateThemeColorRow("New item", "NewHighlight"),
-                CreateThemeColorRow("Redacted", "Redacted")
+                CreateThemeColorRow("New word highlight", "NewHighlight"),
+                CreateThemeColorRow("Redacted", "Redacted"),
+                CreateThemeColorRow("Headings", "LbcHeadingBackground")
             ]
         );
 
@@ -5708,12 +5754,12 @@
         return Section;
     }
 
-    function RefreshPanelLayoutSettingsGroup(Group) {
-        Group.replaceChildren();
+    function RefreshPanelLayoutSettingsSection(Section) {
+        Section.replaceChildren();
 
         const Heading = document.createElement("div");
-        Heading.className = "lb-cubed-settings-subgroup-title";
-        Heading.textContent = "Panel layout";
+        Heading.className = "lb-cubed-settings-section-title";
+        Heading.textContent = "Layout";
 
         const ModeRow = document.createElement("label");
         ModeRow.className = "lb-cubed-layout-select-row";
@@ -5753,14 +5799,14 @@
             InternalPanelLayoutStage = null;
             SetGuiSetting("PanelLayoutStyle", PanelLayoutStyle);
             UpdatePanelLayout();
-            RefreshPanelLayoutSettingsGroup(Group);
+            RefreshPanelLayoutSettingsSection(Section);
         });
         ModeRow.append(ModeLabel, ModeSelect);
 
-        Group.append(Heading, ModeRow);
+        Section.append(Heading, ModeRow);
 
         if (PanelLayoutStyle === "automatic") {
-            Group.appendChild(
+            Section.appendChild(
                 CreateSettingsNumberWithReset(
                     "Breakpoint hysteresis",
                     Math.round(PanelLayoutHysteresisPx),
@@ -5787,7 +5833,7 @@
             Note.textContent =
                 "Uses the original 340/390/520/650/860/1180px layouts. " +
                 "Hysteresis only delays the reverse transition so resizing does not flap at a boundary.";
-            Group.appendChild(Note);
+            Section.appendChild(Note);
             return;
         }
 
@@ -5805,12 +5851,12 @@
                 GetInitialInternalPanelLayoutStage(Width)
             );
             SaveCustomPanelLayoutPreference();
-            RefreshPanelLayoutSettingsGroup(Group);
+            RefreshPanelLayoutSettingsSection(Section);
         });
         ButtonRow.appendChild(CopyAutomatic);
-        Group.appendChild(ButtonRow);
+        Section.appendChild(ButtonRow);
 
-        Group.appendChild(
+        Section.appendChild(
             CreateSettingsCheckbox(
                 "Keep Completion + Longest side-by-side",
                 CustomPanelLayout.StatsSideBySide,
@@ -5825,7 +5871,7 @@
         HeaderRow.className = "lb-cubed-layout-item-row lb-cubed-layout-item-header";
         HeaderRow.innerHTML =
             '<span>Section</span><span>Span /12</span><span>First row</span>';
-        Group.appendChild(HeaderRow);
+        Section.appendChild(HeaderRow);
 
         for (const Definition of CustomPanelLayoutSections) {
             const Item = CustomPanelLayout.Items[Definition.Id];
@@ -5851,7 +5897,7 @@
                     : Item.Span;
                 SpanInput.value = String(Item.Span);
                 SaveCustomPanelLayoutPreference();
-                RefreshPanelLayoutSettingsGroup(Group);
+                RefreshPanelLayoutSettingsSection(Section);
             });
 
             const PinLabel = document.createElement("label");
@@ -5862,14 +5908,14 @@
             PinInput.addEventListener("change", () => {
                 Item.PinFirstRow = PinInput.checked;
                 SaveCustomPanelLayoutPreference();
-                RefreshPanelLayoutSettingsGroup(Group);
+                RefreshPanelLayoutSettingsSection(Section);
             });
             const PinText = document.createElement("span");
             PinText.textContent = "Pin";
             PinLabel.append(PinInput, PinText);
 
             Row.append(Label, SpanInput, PinLabel);
-            Group.appendChild(Row);
+            Section.appendChild(Row);
         }
 
         const PinnedTotal = CustomPanelLayoutSections
@@ -5887,13 +5933,13 @@
         Note.textContent = PinnedTotal > 12
             ? `Pinned spans total ${PinnedTotal}/12. The first row will compress later pinned sections to fit safely.`
             : "Pinned sections always occupy row 1 in the order shown. Unpinned sections flow below them using their chosen 1-12 column spans.";
-        Group.appendChild(Note);
+        Section.appendChild(Note);
     }
 
     function CreatePanelLayoutSettingsGroup() {
         const Group = document.createElement("div");
-        Group.className = "lb-cubed-settings-subgroup lb-cubed-layout-settings";
-        RefreshPanelLayoutSettingsGroup(Group);
+        Section.className = "lb-cubed-settings-subgroup lb-cubed-layout-settings";
+        RefreshPanelLayoutSettingsSection(Section);
         return Group;
     }
 
@@ -5956,6 +6002,7 @@
         );
 
         const ThemeSection = CreateThemeSettingsSection();
+        const LayoutSection = CreatePanelLayoutSettingsSection();
 
         const DisplaySection = CreateSettingsSection("Display");
         DisplaySection.append(
@@ -6017,10 +6064,6 @@
                 },
                 "Hide NYT's 'Try to solve in X words' par text"
             )
-        );
-
-        DisplaySection.appendChild(
-            CreatePanelLayoutSettingsGroup()
         );
 
         const GapGroup = document.createElement("div");
@@ -6136,6 +6179,7 @@
         Menu.append(
             AnimationSection,
             ThemeSection,
+            LayoutSection,
             DisplaySection,
             SyncSection
         );
