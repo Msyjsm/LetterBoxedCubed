@@ -3547,11 +3547,11 @@
         Section.appendChild(Note);
     }
 
-    function CreatePanelLayoutSettingsGroup() {
-        const Group = document.createElement("div");
-        Section.className = "lb-cubed-settings-subgroup lb-cubed-layout-settings";
+    function CreatePanelLayoutSettingsSection() {
+        const Section = document.createElement("section");
+        Section.className = "lb-cubed-settings-section lb-cubed-layout-settings";
         RefreshPanelLayoutSettingsSection(Section);
-        return Group;
+        return Section;
     }
 
     function CreateSettingsMenu() {

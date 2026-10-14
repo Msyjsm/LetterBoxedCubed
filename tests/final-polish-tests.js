@@ -34,6 +34,7 @@ assert(source.includes('CreateThemeColorRow("New word highlight", "NewHighlight"
 assert(source.includes('CreateThemeColorRow("Headings", "LbcHeadingBackground")'), 'Headings label missing');
 assert(!source.includes('\n            "Highlights",\n'), 'obsolete Highlights subgroup remains');
 assert(source.includes('const LayoutSection = CreatePanelLayoutSettingsSection();'), 'top-level Layout section missing');
+assert(source.includes('function CreatePanelLayoutSettingsSection()'), 'Layout section constructor missing');
 assert(source.includes('AnimationSection,\n            ThemeSection,\n            LayoutSection,\n            DisplaySection,\n            SyncSection'), 'settings section order is wrong');
 assert(!source.includes('Palette.LbForeground = GetThemeContrastPole(Palette.LbBackground)'), 'Foreground is still derived from Background');
 assert(source.includes('Root.classList.toggle("lb-cubed-native-theme", ApplyNative)'), 'native-theme opt-in missing');
