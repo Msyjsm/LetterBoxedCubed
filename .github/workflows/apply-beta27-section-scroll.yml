@@ -1,0 +1,38 @@
+name: Apply beta.27 section scrollers
+
+on:
+  push:
+    branches: [perf/drive-sync-event-driven]
+    paths:
+      - '.github/workflows/apply-beta27-section-scroll.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: perf/drive-sync-event-driven
+          fetch-depth: 0
+
+      - name: Apply beta.27 section-scroller patch
+        run: python tools/apply_beta27_section_scroll.py
+
+      - name: Validate
+        run: |
+          node --check LetterBoxedCubed.user.js
+          node --check tools/preview_runtime.js
+          node tests/merge-tests.js
+          node tests/cloud-sync-tests.js
+          node tests/final-polish-tests.js
+
+      - name: Commit beta.27
+        run: |
+          git config user.name "Nathan Burgdorff + Ari (ChatGPT)"
+          git config user.email "6709230+Msyjsm@users.noreply.github.com"
+          git add LetterBoxedCubed.user.js tests/final-polish-tests.js
+          git commit -m "Give LBC sections independent scroll lanes"
+          git push origin HEAD:perf/drive-sync-event-driven
