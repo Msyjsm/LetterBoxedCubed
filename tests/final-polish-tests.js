@@ -6,7 +6,7 @@ const source = fs.readFileSync(path.join(root, 'LetterBoxedCubed.user.js'), 'utf
 const preview = fs.readFileSync(path.join(root, 'tools', 'preview_runtime.js'), 'utf8');
 function assert(condition, message) { if (!condition) throw new Error(message); }
 
-assert(source.includes('// @version      1.13.1-beta.26'), 'beta.26 version missing');
+assert(source.includes('// @version      1.13.1-beta.27'), 'beta.27 version missing');
 assert(source.includes('const ExportFormatVersion = 4;'), 'backup schema v4 missing');
 assert(source.includes('const ThemeStateVersion = 2;'), 'ThemeState v2 compatibility missing');
 assert(source.includes('MergeThemeStates'), 'theme merge missing');
@@ -107,4 +107,24 @@ assert(!source.includes('\"Header size\"'), 'Header size control still present')
 assert(!source.includes('\"Game title size\"'), 'Game title size control still present');
 assert(!source.includes('\"Footer size\"'), 'Footer size control still present');
 
-console.log('PASS: beta.26 settings/display cleanup + cross-mode/theme/toast static checks');
+
+assert(source.includes('const CollapseTitleSectionMargin ='), 'hidden-title margin collapse state missing');
+assert(source.includes('CompactTitleActive ||\n            HideNytGameTitle'), 'hidden title does not collapse section margin');
+assert(source.includes('ReadPanelSectionScrollStates'), 'subsection scroll snapshot missing');
+assert(source.includes('RestorePanelSectionScrollStates'), 'subsection scroll restore missing');
+assert(source.includes('data-cubed-scroll-key'), 'subsection scroll keys missing');
+assert(source.includes('ConfigureLongestFoundTicker(LongestCard)'), 'Longest Found ticker hookup missing');
+assert(source.includes('SpeedPixelsPerSecond = 16'), 'Longest Found gentle autoscroll missing');
+assert(source.includes('Viewport.addEventListener(\n            "wheel"'), 'Longest Found wheel control missing');
+assert(source.includes('.lb-cubed-longest-ticker {'), 'Longest Found one-line CSS missing');
+assert(source.includes('white-space: nowrap;\n                overflow-wrap: normal;'), 'Longest Found can still wrap');
+assert(source.includes('#${PanelContentId} {\n                display: flex;\n                flex-direction: column;'), 'panel shell is not fixed-header flex layout');
+assert(source.includes('overflow: hidden;\n                background: rgb(216, 132, 130);'), 'outer LBC scroller still active');
+assert(source.includes('.lb-cubed-potential-word-list {\n                display: grid;\n                flex: 1 1 auto;'), 'Hints do not own list scrollers');
+assert(source.includes('.lb-cubed-twofer-body {\n                flex: 1 1 auto;'), 'Twofers body scroller missing');
+assert(source.includes('.lb-cubed-length-grid {\n                display: grid;\n                flex: 1 1 auto;'), 'Words by Length fallback scroller missing');
+assert(source.includes('.lb-cubed-word-grid {\n                display: grid;\n                flex: 1 1 auto;'), 'Found/Unfound scrollers missing');
+assert(source.includes('grid-template-rows: auto repeat(5, minmax(0, 1fr));'), 'narrow responsive section rows are not bounded');
+assert(source.includes('grid-template-rows: minmax(0, 1fr);'), 'wide responsive section row is not bounded');
+
+console.log('PASS: beta.27 section scrollers + ticker + cleanup static checks');

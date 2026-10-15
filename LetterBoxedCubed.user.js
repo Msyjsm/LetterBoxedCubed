@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed
 // @namespace    https://nathanburgdorff.com/userscripts/
-// @version      1.13.1-beta.26
+// @version      1.13.1-beta.27
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -4129,6 +4129,9 @@
         const CompactTitleActive =
             CompactTitleLayout &&
             !HideNytGameTitle;
+        const CollapseTitleSectionMargin =
+            CompactTitleActive ||
+            HideNytGameTitle;
 
         if (Host) {
             Host.classList.toggle(
@@ -4140,7 +4143,7 @@
         if (TitleSection) {
             TitleSection.classList.toggle(
                 "lb-cubed-compact-title-section",
-                CompactTitleActive
+                CollapseTitleSectionMargin
             );
         }
 
@@ -10427,8 +10430,10 @@
                 PanelContent
             );
 
-        const PreviousScrollTop =
-            PanelContent.scrollTop;
+        const PreviousSectionScrollStates =
+            ReadPanelSectionScrollStates(
+                PanelContent
+            );
 
         const FoundDictionaryWords =
             Dictionary
@@ -10539,8 +10544,10 @@
             ApplyCustomPanelLayout(Panel);
         }
 
-        PanelContent.scrollTop =
-            PreviousScrollTop;
+        RestorePanelSectionScrollStates(
+            PanelContent,
+            PreviousSectionScrollStates
+        );
 
         requestAnimationFrame(() => {
             PositionPreviewDebugPane();
@@ -10784,6 +10791,7 @@
             "Longest Found",
             Stats.LongestFoundText
         );
+        ConfigureLongestFoundTicker(LongestCard);
 
         if (Stats.LongestLength > 0) {
             ApplyRecentWordGroupHighlight(
@@ -10793,6 +10801,104 @@
         }
 
         Panel.appendChild(StatGrid);
+    }
+
+    function ConfigureLongestFoundTicker(Card) {
+        const Viewport = Card?.querySelector(
+            ".lb-cubed-stat-value"
+        );
+        if (!Viewport) {
+            return;
+        }
+
+        Viewport.classList.add("lb-cubed-longest-ticker");
+        Viewport.title = Viewport.textContent || "";
+
+        let Paused = false;
+        let Direction = 1;
+        let LastTimestamp = null;
+        let HoldUntil = performance.now() + 900;
+        const SpeedPixelsPerSecond = 16;
+        const EndPauseMs = 900;
+
+        Viewport.addEventListener("pointerenter", () => {
+            Paused = true;
+        });
+        Viewport.addEventListener("pointerleave", () => {
+            Paused = false;
+            LastTimestamp = null;
+        });
+        Viewport.addEventListener(
+            "wheel",
+            Event => {
+                const Maximum = Math.max(
+                    0,
+                    Viewport.scrollWidth - Viewport.clientWidth
+                );
+                if (Maximum <= 1) {
+                    return;
+                }
+
+                const Delta = Event.deltaY !== 0
+                    ? Event.deltaY
+                    : Event.deltaX;
+                Viewport.scrollLeft = Clamp(
+                    Viewport.scrollLeft + Delta,
+                    0,
+                    Maximum
+                );
+                Event.preventDefault();
+            },
+            { passive: false }
+        );
+
+        const Tick = Timestamp => {
+            if (!Viewport.isConnected) {
+                return;
+            }
+
+            const Maximum = Math.max(
+                0,
+                Viewport.scrollWidth - Viewport.clientWidth
+            );
+
+            if (Maximum <= 1) {
+                Viewport.scrollLeft = 0;
+                LastTimestamp = Timestamp;
+                requestAnimationFrame(Tick);
+                return;
+            }
+
+            if (Paused || Timestamp < HoldUntil) {
+                LastTimestamp = Timestamp;
+                requestAnimationFrame(Tick);
+                return;
+            }
+
+            const DeltaMs = LastTimestamp === null
+                ? 0
+                : Math.min(50, Math.max(0, Timestamp - LastTimestamp));
+            LastTimestamp = Timestamp;
+
+            let Next =
+                Viewport.scrollLeft +
+                Direction * SpeedPixelsPerSecond * (DeltaMs / 1000);
+
+            if (Next >= Maximum) {
+                Next = Maximum;
+                Direction = -1;
+                HoldUntil = Timestamp + EndPauseMs;
+            } else if (Next <= 0) {
+                Next = 0;
+                Direction = 1;
+                HoldUntil = Timestamp + EndPauseMs;
+            }
+
+            Viewport.scrollLeft = Next;
+            requestAnimationFrame(Tick);
+        };
+
+        requestAnimationFrame(Tick);
     }
 
     function RenderHints(Panel, PreviousOpenStates, HintStats) {
@@ -10879,6 +10985,7 @@
 
         const List = document.createElement("div");
         List.className = "lb-cubed-potential-word-list";
+        List.dataset.cubedScrollKey = SectionName;
 
         const Position = SectionName === "HintFirstWords"
             ? "First"
@@ -11000,6 +11107,7 @@
 
         const TwoferBody = document.createElement("div");
         TwoferBody.className = "lb-cubed-twofer-body";
+        TwoferBody.dataset.cubedScrollKey = "Twofers";
 
         if (TwofersGrouped) {
             RenderGroupedTwofers(TwoferBody);
@@ -11158,6 +11266,7 @@
 
         const LengthGrid = document.createElement("div");
         LengthGrid.className = "lb-cubed-length-grid";
+        LengthGrid.dataset.cubedScrollKey = "WordsByLength";
 
         const Lengths = Object.keys(Stats.LengthStats)
             .map(Number)
@@ -11234,6 +11343,7 @@
 
         const List = document.createElement("div");
         List.className = "lb-cubed-word-grid";
+        List.dataset.cubedScrollKey = SectionName;
 
         if (Words.length === 0) {
             const Empty = document.createElement("div");
@@ -11271,6 +11381,45 @@
 
         Details.appendChild(List);
         return Details;
+    }
+
+    function ReadPanelSectionScrollStates(Panel) {
+        const States = {};
+
+        for (const Scroller of Panel.querySelectorAll(
+            "[data-cubed-scroll-key]"
+        )) {
+            const Key = Scroller.dataset.cubedScrollKey;
+            if (!Key) {
+                continue;
+            }
+
+            States[Key] = {
+                Top: Scroller.scrollTop,
+                Left: Scroller.scrollLeft
+            };
+        }
+
+        return States;
+    }
+
+    function RestorePanelSectionScrollStates(Panel, States) {
+        if (!States || typeof States !== "object") {
+            return;
+        }
+
+        for (const Scroller of Panel.querySelectorAll(
+            "[data-cubed-scroll-key]"
+        )) {
+            const Key = Scroller.dataset.cubedScrollKey;
+            const State = Key ? States[Key] : null;
+            if (!State) {
+                continue;
+            }
+
+            Scroller.scrollTop = Number(State.Top) || 0;
+            Scroller.scrollLeft = Number(State.Left) || 0;
+        }
     }
 
     function ReadTreeOpenStates(Panel) {
@@ -12012,12 +12161,13 @@
             }
 
             #${PanelContentId} {
+                display: flex;
+                flex-direction: column;
                 width: 100%;
                 height: 100%;
                 min-height: 0;
                 padding: 12px;
-                overflow-x: hidden;
-                overflow-y: auto;
+                overflow: hidden;
                 background: rgb(216, 132, 130);
                 color: rgb(48, 24, 24);
                 border: 1px solid rgba(76, 34, 34, 0.58);
@@ -12125,6 +12275,7 @@
 
             .lb-cubed-header {
                 display: flex;
+                flex: 0 0 auto;
                 justify-content: space-between;
                 align-items: flex-start;
                 gap: 8px;
@@ -12687,7 +12838,14 @@
 
             .lb-cubed-dashboard-grid {
                 display: grid;
+                flex: 1 1 auto;
+                min-height: 0;
+                height: 100%;
+                overflow: hidden;
                 grid-template-columns: minmax(0, 1fr);
+                grid-template-rows:
+                    auto
+                    repeat(5, minmax(0, 1fr));
                 grid-template-areas:
                     "stats"
                     "hints"
@@ -12696,11 +12854,12 @@
                     "found"
                     "unfound";
                 gap: 7px;
-                align-items: start;
+                align-items: stretch;
             }
 
             .lb-cubed-stat-grid {
                 grid-area: stats;
+                align-self: start;
                 display: grid;
                 grid-template-columns: 1fr;
                 gap: 6px;
@@ -12733,6 +12892,26 @@
                 margin: 0;
             }
 
+            .lb-cubed-dashboard-grid > .lb-cubed-tree {
+                min-height: 0;
+                max-height: 100%;
+            }
+
+            .lb-cubed-dashboard-grid > .lb-cubed-tree[open] {
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+            }
+
+            .lb-cubed-dashboard-grid > .lb-cubed-tree:not([open]) {
+                align-self: start;
+            }
+
+            .lb-cubed-dashboard-grid > .lb-cubed-tree > summary,
+            .lb-cubed-potential-word-tree > summary {
+                flex: 0 0 auto;
+            }
+
             .lb-cubed-stat {
                 min-width: 0;
                 padding: 8px 6px;
@@ -12748,6 +12927,21 @@
                 line-height: 1.15;
                 font-weight: 700;
                 overflow-wrap: anywhere;
+            }
+
+            .lb-cubed-longest-ticker {
+                width: 100%;
+                min-width: 0;
+                overflow-x: auto;
+                overflow-y: hidden;
+                white-space: nowrap;
+                overflow-wrap: normal;
+                scrollbar-width: none !important;
+                overscroll-behavior-x: contain;
+            }
+
+            .lb-cubed-longest-ticker::-webkit-scrollbar {
+                display: none;
             }
 
             .lb-cubed-stat-label {
@@ -12800,6 +12994,11 @@
             */
 
             .lb-cubed-hints-body {
+                display: flex;
+                flex: 1 1 auto;
+                flex-direction: column;
+                min-height: 0;
+                overflow: hidden;
                 padding: 5px;
             }
 
@@ -12843,21 +13042,38 @@
 
             .lb-cubed-hint-counter-grid {
                 display: grid;
+                flex: 1 1 auto;
+                min-height: 0;
                 grid-template-columns:
                     repeat(auto-fit, minmax(125px, 1fr));
+                grid-auto-rows: minmax(0, 1fr);
                 gap: 5px;
-                align-items: start;
+                align-items: stretch;
+                overflow: hidden;
             }
 
             .lb-cubed-potential-word-tree {
                 min-width: 0;
+                min-height: 0;
+                max-height: 100%;
+            }
+
+            .lb-cubed-potential-word-tree[open] {
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
             }
 
             .lb-cubed-potential-word-list {
                 display: grid;
+                flex: 1 1 auto;
+                min-height: 0;
                 grid-template-columns: 1fr;
                 gap: 2px;
                 padding: 4px;
+                overflow-x: hidden;
+                overflow-y: auto;
+                overscroll-behavior: contain;
             }
 
             .lb-cubed-potential-word {
@@ -12920,6 +13136,14 @@
             */
             .lb-cubed-twofer-summary {
                 display: list-item;
+            }
+
+            .lb-cubed-twofer-body {
+                flex: 1 1 auto;
+                min-height: 0;
+                overflow-x: hidden;
+                overflow-y: auto;
+                overscroll-behavior: contain;
             }
 
             .lb-cubed-twofer-summary-title {
@@ -13097,9 +13321,14 @@
             */
             .lb-cubed-length-grid {
                 display: grid;
+                flex: 1 1 auto;
+                min-height: 0;
                 grid-template-columns: 1fr;
                 gap: 2px;
                 padding: 4px;
+                overflow-x: hidden;
+                overflow-y: auto;
+                overscroll-behavior: contain;
             }
 
             .lb-cubed-length-stat {
@@ -13136,10 +13365,14 @@
 
             .lb-cubed-word-grid {
                 display: grid;
+                flex: 1 1 auto;
+                min-height: 0;
                 grid-template-columns: 1fr;
                 gap: 2px;
                 padding: 4px;
-                overflow: visible;
+                overflow-x: hidden;
+                overflow-y: auto;
+                overscroll-behavior: contain;
             }
 
             .lb-cubed-word {
@@ -13219,6 +13452,7 @@
             #${PanelId}.lb-cubed-layout-stage-0 .lb-cubed-dashboard-grid,
             #${PanelId}.lb-cubed-layout-stage-1 .lb-cubed-dashboard-grid {
                 grid-template-columns: minmax(0, 1fr);
+                grid-template-rows: auto repeat(5, minmax(0, 1fr));
                 grid-template-areas:
                     "stats"
                     "hints"
@@ -13268,6 +13502,7 @@
             }
 
             #${PanelId}.lb-cubed-layout-stage-2 .lb-cubed-dashboard-grid {
+                grid-template-rows: auto repeat(4, minmax(0, 1fr));
                 grid-template-columns: repeat(2, minmax(0, 1fr));
                 grid-template-areas:
                     "stats stats"
@@ -13278,6 +13513,7 @@
             }
 
             #${PanelId}.lb-cubed-layout-stage-3 .lb-cubed-dashboard-grid {
+                grid-template-rows: auto repeat(3, minmax(0, 1fr));
                 grid-template-columns: repeat(2, minmax(0, 1fr));
                 grid-template-areas:
                     "stats stats"
@@ -13287,6 +13523,7 @@
             }
 
             #${PanelId}.lb-cubed-layout-stage-4 .lb-cubed-dashboard-grid {
+                grid-template-rows: auto repeat(2, minmax(0, 1fr));
                 grid-template-columns: repeat(6, minmax(0, 1fr));
                 grid-template-areas:
                     "stats stats stats stats stats stats"
@@ -13295,6 +13532,7 @@
             }
 
             #${PanelId}.lb-cubed-layout-stage-5 .lb-cubed-dashboard-grid {
+                grid-template-rows: repeat(2, minmax(0, 1fr));
                 grid-template-columns:
                     minmax(250px, 2fr)
                     minmax(135px, 1fr)
@@ -13306,6 +13544,7 @@
             }
 
             #${PanelId}.lb-cubed-layout-stage-6 .lb-cubed-dashboard-grid {
+                grid-template-rows: minmax(0, 1fr);
                 grid-template-columns:
                     minmax(260px, 2fr)
                     minmax(130px, 1fr)
@@ -13333,6 +13572,7 @@
             #${PanelId}.lb-cubed-layout-custom .lb-cubed-dashboard-grid {
                 display: grid;
                 grid-template-columns: repeat(12, minmax(0, 1fr));
+                grid-auto-rows: minmax(0, 1fr);
                 grid-template-areas: none;
             }
 
