@@ -6,7 +6,7 @@ const source = fs.readFileSync(path.join(root, 'LetterBoxedCubed.user.js'), 'utf
 const preview = fs.readFileSync(path.join(root, 'tools', 'preview_runtime.js'), 'utf8');
 function assert(condition, message) { if (!condition) throw new Error(message); }
 
-assert(source.includes('// @version      1.13.1-beta.25'), 'beta.25 version missing');
+assert(source.includes('// @version      1.13.1-beta.26'), 'beta.26 version missing');
 assert(source.includes('const ExportFormatVersion = 4;'), 'backup schema v4 missing');
 assert(source.includes('const ThemeStateVersion = 2;'), 'ThemeState v2 compatibility missing');
 assert(source.includes('MergeThemeStates'), 'theme merge missing');
@@ -88,4 +88,23 @@ assert(source.includes('const NudgedWidth = `${Rect.width + 1}px`;'), 'real boar
 assert(source.includes('function ActivateToastType(Kind)'), 'cross-type toast arbitration missing');
 assert(source.includes('RemoveToastProxyImmediately(Previous)'), 'older toast immediate kill missing');
 assert(source.includes('padding: 6px 10px !important;'), 'toast padding missing');
-console.log('PASS: beta.25 settings cleanup + cross-mode/theme/toast static checks');
+
+assert(source.includes('LbcBackgroundUnlinkedColor'), 'LBC Background unsynced color memory missing');
+assert(source.includes('LbcTextUnlinkedColor'), 'LBC Foreground unsynced color memory missing');
+assert(source.includes('LbcHighlightUnlinkedColor'), 'LBC Highlight unsynced color memory missing');
+assert(source.includes('Background brightness selects the Light or Dark styling context.'), 'LBC section tooltip missing');
+assert(!source.includes('Background brightness selects the Light or Dark mapping column.'), 'obsolete theme explainer remains');
+assert(source.indexOf('CreateThemeColorRow("Headings", "LbcHeadingBackground")') < source.indexOf('CreateThemeColorRow("NYT solution", "NytSolution")'), 'sequential LBC theme row order is wrong');
+assert(source.includes('"Compact game title layout"'), 'compact title label missing');
+for (const label of ['"Header"', '"Game title"', '"Yesterday/Help row"', '"Par"', '"Footer"']) assert(source.includes(label), `Hide subgroup item missing ${label}`);
+assert(source.includes('HideNytHeader'), 'Hide Header preference missing');
+assert(source.includes('HideNytGameTitle'), 'Hide Game title preference missing');
+assert(source.includes('HideNytFooter'), 'Hide Footer preference missing');
+assert(source.includes('CompactTitleLayout &&') && source.includes('!HideNytGameTitle;'), 'compact title hidden-state guard missing');
+assert(source.includes('document.getElementById(NytHeaderResizeHandleId)?.remove();'), 'header grip removal missing');
+assert(source.includes('document.getElementById(NytTitleResizeHandleId)?.remove();'), 'title grip removal missing');
+assert(!source.includes('\"Header size\"'), 'Header size control still present');
+assert(!source.includes('\"Game title size\"'), 'Game title size control still present');
+assert(!source.includes('\"Footer size\"'), 'Footer size control still present');
+
+console.log('PASS: beta.26 settings/display cleanup + cross-mode/theme/toast static checks');
