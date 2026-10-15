@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed [PREVIEW]
 // @namespace    https://nathanburgdorff.com/userscripts/preview/
-// @version      1.13.1-beta.25.273
+// @version      1.13.1-beta.26.274
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -2725,6 +2725,9 @@
     let NytHeaderScale = 1.0;
     let NytTitleScale = 1.0;
     let NytFooterScale = 1.0;
+    let HideNytHeader = false;
+    let HideNytGameTitle = false;
+    let HideNytFooter = false;
     let CompactTitleLayout = false;
     let HideYesterdayHelpRow = false;
 
@@ -2890,9 +2893,9 @@
             NewItemHighlightSeconds,
             AdjustLayoutGap,
             LayoutGapPx,
-            NytHeaderScale,
-            NytTitleScale,
-            NytFooterScale,
+            HideNytHeader,
+            HideNytGameTitle,
+            HideNytFooter,
             CompactTitleLayout,
             HideYesterdayHelpRow,
             TwofersGrouped,
@@ -3565,6 +3568,19 @@
                 ? Boolean(RawTheme.LbcHighlightMatchesLbHighlight)
                 : Palette.LbcBorder === Palette.LbActive;
 
+        const LbcBackgroundUnlinkedColor = NormalizeThemeColor(
+            RawTheme.LbcBackgroundUnlinkedColor,
+            Palette.LbcBackground
+        );
+        const LbcTextUnlinkedColor = NormalizeThemeColor(
+            RawTheme.LbcTextUnlinkedColor,
+            Palette.LbcText
+        );
+        const LbcHighlightUnlinkedColor = NormalizeThemeColor(
+            RawTheme.LbcHighlightUnlinkedColor,
+            Palette.LbcBorder
+        );
+
         if (BoardMatchesBackground) {
             Palette.LbBoard = Palette.LbBackground;
         }
@@ -3586,6 +3602,9 @@
             LbcBackgroundMatchesLbBackground,
             LbcTextMatchesLbForeground,
             LbcHighlightMatchesLbHighlight,
+            LbcBackgroundUnlinkedColor,
+            LbcTextUnlinkedColor,
+            LbcHighlightUnlinkedColor,
             Deleted: Boolean(RawTheme.Deleted),
             UpdatedAt: NormalizeTimestamp(RawTheme.UpdatedAt)
         };
@@ -4564,6 +4583,19 @@
             Palette = CaptureNativeLightTriad(Palette);
         }
 
+        const LbcBackgroundUnlinkedColor = NormalizeThemeColor(
+            Base.LbcBackgroundUnlinkedColor,
+            Palette.LbcBackground
+        );
+        const LbcTextUnlinkedColor = NormalizeThemeColor(
+            Base.LbcTextUnlinkedColor,
+            Palette.LbcText
+        );
+        const LbcHighlightUnlinkedColor = NormalizeThemeColor(
+            Base.LbcHighlightUnlinkedColor,
+            Palette.LbcBorder
+        );
+
         if (LbcBackgroundMatchesLbBackground) {
             Palette.LbcBackground = Palette.LbBackground;
         }
@@ -4582,6 +4614,9 @@
             LbcBackgroundMatchesLbBackground,
             LbcTextMatchesLbForeground,
             LbcHighlightMatchesLbHighlight,
+            LbcBackgroundUnlinkedColor,
+            LbcTextUnlinkedColor,
+            LbcHighlightUnlinkedColor,
             Deleted: false,
             UpdatedAt: Now
         };
@@ -4628,6 +4663,16 @@
         }
 
         Theme.Palette[Key] = NormalizeThemeColor(Value, Theme.Palette[Key]);
+
+        if (Key === "LbcBackground" && !Theme.LbcBackgroundMatchesLbBackground) {
+            Theme.LbcBackgroundUnlinkedColor = Theme.Palette.LbcBackground;
+        }
+        if (Key === "LbcText" && !Theme.LbcTextMatchesLbForeground) {
+            Theme.LbcTextUnlinkedColor = Theme.Palette.LbcText;
+        }
+        if (Key === "LbcBorder" && !Theme.LbcHighlightMatchesLbHighlight) {
+            Theme.LbcHighlightUnlinkedColor = Theme.Palette.LbcBorder;
+        }
 
         if (
             Key === "LbBackground" &&
@@ -4678,10 +4723,17 @@
             return false;
         }
 
-        Theme.LbcBackgroundMatchesLbBackground = Boolean(Value);
-        if (Theme.LbcBackgroundMatchesLbBackground) {
-            Theme.Palette.LbcBackground = Theme.Palette.LbBackground;
+        const Next = Boolean(Value);
+        if (Next && !Theme.LbcBackgroundMatchesLbBackground) {
+            Theme.LbcBackgroundUnlinkedColor = Theme.Palette.LbcBackground;
         }
+        Theme.LbcBackgroundMatchesLbBackground = Next;
+        Theme.Palette.LbcBackground = Next
+            ? Theme.Palette.LbBackground
+            : NormalizeThemeColor(
+                Theme.LbcBackgroundUnlinkedColor,
+                Theme.Palette.LbcBackground
+            );
         Theme.UpdatedAt = new Date().toISOString();
         SaveThemeState();
         ApplyTheme();
@@ -4694,10 +4746,17 @@
             return false;
         }
 
-        Theme.LbcTextMatchesLbForeground = Boolean(Value);
-        if (Theme.LbcTextMatchesLbForeground) {
-            Theme.Palette.LbcText = Theme.Palette.LbForeground;
+        const Next = Boolean(Value);
+        if (Next && !Theme.LbcTextMatchesLbForeground) {
+            Theme.LbcTextUnlinkedColor = Theme.Palette.LbcText;
         }
+        Theme.LbcTextMatchesLbForeground = Next;
+        Theme.Palette.LbcText = Next
+            ? Theme.Palette.LbForeground
+            : NormalizeThemeColor(
+                Theme.LbcTextUnlinkedColor,
+                Theme.Palette.LbcText
+            );
         Theme.UpdatedAt = new Date().toISOString();
         SaveThemeState();
         ApplyTheme();
@@ -4710,10 +4769,17 @@
             return false;
         }
 
-        Theme.LbcHighlightMatchesLbHighlight = Boolean(Value);
-        if (Theme.LbcHighlightMatchesLbHighlight) {
-            Theme.Palette.LbcBorder = Theme.Palette.LbActive;
+        const Next = Boolean(Value);
+        if (Next && !Theme.LbcHighlightMatchesLbHighlight) {
+            Theme.LbcHighlightUnlinkedColor = Theme.Palette.LbcBorder;
         }
+        Theme.LbcHighlightMatchesLbHighlight = Next;
+        Theme.Palette.LbcBorder = Next
+            ? Theme.Palette.LbActive
+            : NormalizeThemeColor(
+                Theme.LbcHighlightUnlinkedColor,
+                Theme.Palette.LbcBorder
+            );
         Theme.UpdatedAt = new Date().toISOString();
         SaveThemeState();
         ApplyTheme();
@@ -5168,6 +5234,16 @@
             MaximumNytPageScale
         );
 
+        HideNytHeader = Boolean(
+            GetGuiSetting("HideNytHeader", NytHeaderScale <= 0.001)
+        );
+        HideNytGameTitle = Boolean(
+            GetGuiSetting("HideNytGameTitle", NytTitleScale <= 0.001)
+        );
+        HideNytFooter = Boolean(
+            GetGuiSetting("HideNytFooter", NytFooterScale <= 0.001)
+        );
+
         CompactTitleLayout = Boolean(
             GetGuiSetting("CompactTitleLayout", false)
         );
@@ -5358,7 +5434,13 @@
         return Section;
     }
 
-    function CreateSettingsCheckbox(LabelText, Checked, OnChange, TitleText = "") {
+    function CreateSettingsCheckbox(
+        LabelText,
+        Checked,
+        OnChange,
+        TitleText = "",
+        Disabled = false
+    ) {
         const Label = document.createElement("label");
         Label.className = "lb-cubed-settings-checkbox";
         if (TitleText) {
@@ -5368,6 +5450,11 @@
         const Input = document.createElement("input");
         Input.type = "checkbox";
         Input.checked = Boolean(Checked);
+        Input.disabled = Boolean(Disabled);
+        Label.classList.toggle(
+            "lb-cubed-settings-checkbox-disabled",
+            Input.disabled
+        );
         Input.addEventListener("change", Event => {
             OnChange(Boolean(Event.currentTarget.checked));
         });
@@ -5570,12 +5657,15 @@
         return Row;
     }
 
-    function AppendThemeColorGroup(Section, Title, Rows) {
+    function AppendThemeColorGroup(Section, Title, Rows, TitleAttribute = "") {
         const Group = document.createElement("div");
         Group.className = "lb-cubed-settings-subgroup lb-cubed-theme-color-group";
         const GroupTitle = document.createElement("div");
         GroupTitle.className = "lb-cubed-settings-subgroup-title";
         GroupTitle.textContent = Title;
+        if (TitleAttribute) {
+            GroupTitle.title = TitleAttribute;
+        }
         Group.appendChild(GroupTitle);
 
         for (const Row of Rows) {
@@ -5731,20 +5821,13 @@
                     "#4C2222",
                     UpdateActiveCustomThemeLbcHighlightMatch
                 ),
+                CreateThemeColorRow("Headings", "LbcHeadingBackground"),
                 CreateThemeColorRow("NYT solution", "NytSolution"),
                 CreateThemeColorRow("New word highlight", "NewHighlight"),
-                CreateThemeColorRow("Redacted", "Redacted"),
-                CreateThemeColorRow("Headings", "LbcHeadingBackground")
-            ]
+                CreateThemeColorRow("Redacted", "Redacted")
+            ],
+            "Background brightness selects the Light or Dark styling context."
         );
-
-        const Note = document.createElement("div");
-        Note.className = "lb-cubed-theme-note";
-        Note.textContent =
-            "Background brightness selects the Light or Dark mapping column. " +
-            "Every Letter Boxed board state and toast then uses only Background, " +
-            "Foreground, or Highlight; no extra native colors are synthesized.";
-        Section.appendChild(Note);
     }
 
     function CreateThemeSettingsSection() {
@@ -6005,48 +6088,56 @@
         const LayoutSection = CreatePanelLayoutSettingsSection();
 
         const DisplaySection = CreateSettingsSection("Display");
-        DisplaySection.append(
-            CreateSettingsNumberWithReset(
-                "Header size",
-                Math.round(NytHeaderScale * 100),
-                0,
-                200,
-                1,
-                "%",
-                100,
-                "NytHeaderScale",
-                Value => {
-                    NytHeaderScale = Clamp(Value / 100, MinimumNytPageScale, MaximumNytPageScale);
-                    SetGuiSetting("NytHeaderScale", NytHeaderScale);
-                    ApplyNytPagePreferences();
-                }
-            ),
-            CreateSettingsNumberWithReset(
-                "Game title size",
-                Math.round(NytTitleScale * 100),
-                0,
-                200,
-                1,
-                "%",
-                100,
-                "NytTitleScale",
-                Value => {
-                    NytTitleScale = Clamp(Value / 100, MinimumNytPageScale, MaximumNytPageScale);
-                    SetGuiSetting("NytTitleScale", NytTitleScale);
-                    ApplyNytPagePreferences();
-                }
-            ),
+
+        const CompactTitleControl = CreateSettingsCheckbox(
+            "Compact game title layout",
+            CompactTitleLayout,
+            Checked => {
+                CompactTitleLayout = Checked;
+                SetGuiSetting("CompactTitleLayout", CompactTitleLayout);
+                ApplyNytPagePreferences();
+            },
+            "",
+            HideNytGameTitle
+        );
+        const CompactTitleInput = CompactTitleControl.querySelector('input[type="checkbox"]');
+        DisplaySection.appendChild(CompactTitleControl);
+
+        const HideGroup = document.createElement("div");
+        HideGroup.className = "lb-cubed-settings-subgroup lb-cubed-hide-settings";
+        const HideHeading = document.createElement("div");
+        HideHeading.className = "lb-cubed-settings-subgroup-title";
+        HideHeading.textContent = "Hide:";
+
+        HideGroup.append(
+            HideHeading,
             CreateSettingsCheckbox(
-                "Compact title layout",
-                CompactTitleLayout,
+                "Header",
+                HideNytHeader,
                 Checked => {
-                    CompactTitleLayout = Checked;
-                    SetGuiSetting("CompactTitleLayout", CompactTitleLayout);
+                    HideNytHeader = Checked;
+                    SetGuiSetting("HideNytHeader", HideNytHeader);
                     ApplyNytPagePreferences();
                 }
             ),
             CreateSettingsCheckbox(
-                "Hide Yesterday/Help row",
+                "Game title",
+                HideNytGameTitle,
+                Checked => {
+                    HideNytGameTitle = Checked;
+                    SetGuiSetting("HideNytGameTitle", HideNytGameTitle);
+                    if (CompactTitleInput) {
+                        CompactTitleInput.disabled = HideNytGameTitle;
+                    }
+                    CompactTitleControl.classList.toggle(
+                        "lb-cubed-settings-checkbox-disabled",
+                        HideNytGameTitle
+                    );
+                    ApplyNytPagePreferences();
+                }
+            ),
+            CreateSettingsCheckbox(
+                "Yesterday/Help row",
                 HideYesterdayHelpRow,
                 Checked => {
                     HideYesterdayHelpRow = Checked;
@@ -6055,7 +6146,7 @@
                 }
             ),
             CreateSettingsCheckbox(
-                "Hide par",
+                "Par",
                 HidePar,
                 Checked => {
                     HidePar = Checked;
@@ -6063,8 +6154,18 @@
                     ApplyHideParPreference();
                 },
                 "Hide NYT's 'Try to solve in X words' par text"
+            ),
+            CreateSettingsCheckbox(
+                "Footer",
+                HideNytFooter,
+                Checked => {
+                    HideNytFooter = Checked;
+                    SetGuiSetting("HideNytFooter", HideNytFooter);
+                    ApplyNytPagePreferences();
+                }
             )
         );
+        DisplaySection.appendChild(HideGroup);
 
         const GapGroup = document.createElement("div");
         GapGroup.className = "lb-cubed-settings-subgroup";
@@ -6104,23 +6205,6 @@
         );
 
         DisplaySection.appendChild(GapGroup);
-        DisplaySection.appendChild(
-            CreateSettingsNumberWithReset(
-                "Footer size",
-                Math.round(NytFooterScale * 100),
-                0,
-                200,
-                1,
-                "%",
-                100,
-                "NytFooterScale",
-                Value => {
-                    NytFooterScale = Clamp(Value / 100, MinimumNytPageScale, MaximumNytPageScale);
-                    SetGuiSetting("NytFooterScale", NytFooterScale);
-                    ApplyNytPagePreferences();
-                }
-            )
-        );
 
         const SyncSection = CreateSettingsSection("Sync");
         const DriveRow = document.createElement("div");
@@ -6250,50 +6334,8 @@
     }
 
     function EnsureNytPageResizeHandles() {
-        const Targets = GetNytPageTargets();
-        const Definitions = [
-            {
-                Kind: "Header",
-                Element: Targets.Header,
-                HandleId: NytHeaderResizeHandleId,
-                SettingName: "NytHeaderScale",
-                Label: "Resize NYT header"
-            },
-            {
-                Kind: "Title",
-                Element: Targets.Title,
-                HandleId: NytTitleResizeHandleId,
-                SettingName: "NytTitleScale",
-                Label: "Resize Letter Boxed title area"
-            }
-        ];
-
-        for (const Definition of Definitions) {
-            if (!Definition.Element) {
-                continue;
-            }
-
-            CaptureNytOriginalHeight(
-                Definition.Kind,
-                Definition.Element
-            );
-
-            if (document.getElementById(Definition.HandleId)) {
-                continue;
-            }
-
-            const Handle = document.createElement("div");
-            Handle.id = Definition.HandleId;
-            Handle.className = "lb-cubed-page-resize-handle";
-            Handle.dataset.cubedTargetKind = Definition.Kind;
-            Handle.dataset.cubedScaleSetting = Definition.SettingName;
-            Handle.setAttribute("role", "separator");
-            Handle.setAttribute("aria-orientation", "horizontal");
-            Handle.setAttribute("aria-label", Definition.Label);
-            Handle.title = `${Definition.Label}; drag vertically, or use Settings for a precise percentage/reset`;
-
-            Definition.Element.insertAdjacentElement("afterend", Handle);
-        }
+        document.getElementById(NytHeaderResizeHandleId)?.remove();
+        document.getElementById(NytTitleResizeHandleId)?.remove();
     }
 
     function GetNytScaleBySettingName(SettingName) {
@@ -6473,17 +6515,21 @@
         document.querySelectorAll(".lb-cubed-original-yesterday-hidden")
             .forEach(Element => Element.classList.remove("lb-cubed-original-yesterday-hidden"));
 
+        const CompactTitleActive =
+            CompactTitleLayout &&
+            !HideNytGameTitle;
+
         if (Host) {
             Host.classList.toggle(
                 "lb-cubed-compact-title-layout",
-                CompactTitleLayout
+                CompactTitleActive
             );
         }
 
         if (TitleSection) {
             TitleSection.classList.toggle(
                 "lb-cubed-compact-title-section",
-                CompactTitleLayout
+                CompactTitleActive
             );
         }
 
@@ -6500,51 +6546,30 @@
         EnsureNytPageResizeHandles();
 
         const Targets = GetNytPageTargets();
-        CaptureNytOriginalHeight("Header", Targets.Header);
-        CaptureNytOriginalHeight("Title", Targets.Title);
-        CaptureNytTitleLeftAnchor(Targets.Title);
+        const Visibility = [
+            [Targets.Header, HideNytHeader],
+            [Targets.Title, HideNytGameTitle],
+            [Targets.Footer, HideNytFooter]
+        ];
 
-        ApplyNytElementScale(Targets.Header, NytHeaderScale);
-        ApplyNytElementScale(Targets.Title, NytTitleScale);
-        ApplyNytElementScale(Targets.Footer, NytFooterScale);
+        for (const [Element, Hidden] of Visibility) {
+            if (!Element) {
+                continue;
+            }
+            Element.classList.toggle(
+                "lb-cubed-page-fluff-hidden",
+                Boolean(Hidden)
+            );
+            Element.style.removeProperty("zoom");
+        }
 
-        /*
-            NYT normally centers the title bar with auto margins. CSS zoom also
-            scales the margin itself, so a fixed captured margin drifts right as
-            zoom increases. Divide the native offset by the active zoom so its
-            rendered left edge remains fixed while the region grows/shrinks only
-            to the right.
-        */
-        if (Targets.Title && NytOriginalTitleLeftOffset !== null) {
-            const NormalizedTitleScale = Clamp(
-                Number(NytTitleScale) || 0,
-                MinimumNytPageScale,
-                MaximumNytPageScale
-            );
-            const CompensatedLeftOffset = NormalizedTitleScale > 0.001
-                ? NytOriginalTitleLeftOffset / NormalizedTitleScale
-                : 0;
-
-            Targets.Title.style.setProperty(
-                "margin-left",
-                `${CompensatedLeftOffset}px`,
-                "important"
-            );
-            Targets.Title.style.setProperty(
-                "margin-right",
-                "auto",
-                "important"
-            );
+        if (Targets.Title) {
+            Targets.Title.style.removeProperty("margin-left");
+            Targets.Title.style.removeProperty("margin-right");
         }
 
         ApplyNytTitleArrangement();
 
-        /*
-            Header/title resizing moves LBC vertically without resizing the TI or
-            GB themselves, so their ResizeObserver does not fire. Re-anchor the
-            document-absolute preview controls after the browser has applied the
-            new page geometry.
-        */
         requestAnimationFrame(() => {
             PositionPreviewDebugPane();
             PositionPreviewVersionLabel();
@@ -14604,6 +14629,15 @@
 
             .lb-cubed-settings-checkbox {
                 cursor: pointer;
+            }
+
+            .lb-cubed-settings-checkbox-disabled {
+                opacity: 0.55;
+                cursor: not-allowed;
+            }
+
+            .lb-cubed-hide-settings .lb-cubed-settings-checkbox {
+                padding-left: 12px;
             }
 
             .lb-cubed-settings-checkbox input {
