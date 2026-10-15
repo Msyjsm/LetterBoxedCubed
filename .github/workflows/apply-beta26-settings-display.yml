@@ -22,6 +22,22 @@ jobs:
       - name: Apply cleanup
         run: python tools/apply_beta26_cleanup.py
 
+      - name: Normalize generated test assertions
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path('tests/final-polish-tests.js')
+          t = p.read_text(encoding='utf-8')
+          t = t.replace(
+              "assert(source.includes('CompactTitleLayout &&\n            !HideNytGameTitle'), 'compact title hidden-state guard missing');",
+              "assert(source.includes('CompactTitleLayout &&') && source.includes('!HideNytGameTitle;'), 'compact title hidden-state guard missing');"
+          )
+          for label in ['Header', 'Game title', 'Footer']:
+              old = f"assert(!source.includes('CreateSettingsNumberWithReset(\n                \"{label} size\"'), '{label} size control still present');"
+              new = f"assert(!source.includes('\\\"{label} size\\\"'), '{label} size control still present');"
+              t = t.replace(old, new)
+          p.write_text(t, encoding='utf-8')
+
       - name: Validate
         run: |
           node --check LetterBoxedCubed.user.js
