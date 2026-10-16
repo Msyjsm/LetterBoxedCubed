@@ -1,5 +1,6 @@
 name: Apply beta.28 section height
 
+# Retry after correcting the patch script's regression-test update.
 on:
   push:
     branches: [perf/drive-sync-event-driven]
