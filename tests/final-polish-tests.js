@@ -6,7 +6,7 @@ const source = fs.readFileSync(path.join(root, 'LetterBoxedCubed.user.js'), 'utf
 const preview = fs.readFileSync(path.join(root, 'tools', 'preview_runtime.js'), 'utf8');
 function assert(condition, message) { if (!condition) throw new Error(message); }
 
-assert(source.includes('// @version      1.13.1-beta.30'), 'beta.30 version missing');
+assert(source.includes('// @version      1.13.1-beta.31'), 'beta.31 version missing');
 assert(source.includes('const ExportFormatVersion = 4;'), 'backup schema v4 missing');
 assert(source.includes('const ThemeStateVersion = 2;'), 'ThemeState v2 compatibility missing');
 assert(source.includes('MergeThemeStates'), 'theme merge missing');
@@ -166,4 +166,9 @@ assert(source.includes('scrollbar-color:\n                    var(--lb-cubed-lbc
 assert(source.includes('.lb-cubed-dashboard-grid > .lb-cubed-tree[open]::details-content,'), 'top-level details-content wrapper constraint missing');
 assert(source.includes('.lb-cubed-potential-word-tree[open]::details-content {'), 'hint details-content wrapper constraint missing');
 
-console.log('PASS: beta.30 details-content scrollport fix static checks');
+
+// beta.31: nested Hints columns must stretch through the full available row height.
+assert(source.includes('.lb-cubed-hint-counter-grid {') && source.includes('height: 100%;'), 'Hints counter grid full-height stretch missing');
+assert(source.includes('.lb-cubed-potential-word-tree {') && source.includes('align-self: stretch;'), 'Hints subtrees are not stretched');
+
+console.log('PASS: beta.31 Hints full-height fill static checks');
