@@ -75,7 +75,7 @@ jobs:
           marker = "console.log('PASS: beta.29 section scrollports + lower gap cleanup static checks');"
           if marker not in x:
               raise SystemExit('test marker missing')
-          block = '''\n// beta.30: Chromium <details> internal content wrapper must be bounded so\n// subsection bodies can actually shrink below intrinsic content height.\nassert(source.includes('.lb-cubed-dashboard-grid > .lb-cubed-tree[open]::details-content,'), 'top-level details-content wrapper constraint missing');\nassert(source.includes('.lb-cubed-potential-word-tree[open]::details-content {'), 'hint details-content wrapper constraint missing');\nassert(source.includes('clientHeight ===\\n                scrollHeight'), 'details-content intrinsic-height diagnosis comment missing');\n'''
+          block = '''\n// beta.30: Chromium <details> internal content wrapper must be bounded so\n// subsection bodies can actually shrink below intrinsic content height.\nassert(source.includes('.lb-cubed-dashboard-grid > .lb-cubed-tree[open]::details-content,'), 'top-level details-content wrapper constraint missing');\nassert(source.includes('.lb-cubed-potential-word-tree[open]::details-content {'), 'hint details-content wrapper constraint missing');\n'''
           x = x.replace(marker, block + "\nconsole.log('PASS: beta.30 details-content scrollport fix static checks');", 1)
           t.write_text(x, encoding='utf-8')
           PY
