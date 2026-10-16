@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed [PREVIEW]
 // @namespace    https://nathanburgdorff.com/userscripts/preview/
-// @version      1.13.1-beta.29.294
+// @version      1.13.1-beta.30.295
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -15582,6 +15582,32 @@
                 grid-template-rows: auto minmax(0, 1fr);
                 overflow: hidden;
             }
+
+  /*
+      Chromium wraps every <details> element's non-summary children in
+      an internal ::details-content box. Constraining the <details>
+      itself is therefore not enough: without constraining that wrapper,
+      a list can remain its full intrinsic height (clientHeight ===
+      scrollHeight) and simply get clipped by the outer section. Make
+      the wrapper the bounded flex lane so the actual list/body is
+      finally allowed to shrink and become the scrollport.
+  */
+  .lb-cubed-dashboard-grid > .lb-cubed-tree[open]::details-content,
+  .lb-cubed-potential-word-tree[open]::details-content {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      overflow: hidden;
+  }
+
+  .lb-cubed-dashboard-grid > .lb-cubed-tree[open]::details-content > .lb-cubed-hints-body,
+  .lb-cubed-dashboard-grid > .lb-cubed-tree[open]::details-content > .lb-cubed-twofer-body,
+  .lb-cubed-dashboard-grid > .lb-cubed-tree[open]::details-content > .lb-cubed-length-grid,
+  .lb-cubed-dashboard-grid > .lb-cubed-tree[open]::details-content > .lb-cubed-word-grid,
+  .lb-cubed-potential-word-tree[open]::details-content > .lb-cubed-potential-word-list {
+      flex: 1 1 0 !important;
+      min-height: 0 !important;
+  }
 
             .lb-cubed-dashboard-grid > .lb-cubed-tree:not([open]) {
                 align-self: start;
