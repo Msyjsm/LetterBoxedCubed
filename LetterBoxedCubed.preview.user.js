@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed [PREVIEW]
 // @namespace    https://nathanburgdorff.com/userscripts/preview/
-// @version      1.13.1-beta.32.302
+// @version      1.13.1-beta.32.303
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -87,6 +87,8 @@
     let PreviewHistoricalInjectedWords = new Set();
     let PreviewHistoricalBaseline = null;
     let PreviewHistoricalSelectedTwoferKey = null;
+    let PreviewLongestWordsTestValue = "";
+    let PreviewTestBedsObserver = null;
     const PreviewDebugElementIds = new WeakMap();
     const PreviewDebugElementsById = new Map();
     const PreviewDebugOriginalDisplay = new WeakMap();
@@ -260,6 +262,30 @@
                 border: 1px solid #555;
                 border-radius: 4px;
                 background: #222229;
+            }
+
+            #${PreviewHistoryTestPanelId} .lbc-test-bed-section {
+                margin: 10px 0;
+                padding: 10px;
+                border: 1px solid #555;
+                border-radius: 4px;
+                background: #202027;
+            }
+
+            #${PreviewHistoryTestPanelId} .lbc-test-bed-section > h3 {
+                margin: 0 0 8px;
+                font-size: 13px;
+            }
+
+            #${PreviewHistoryTestPanelId} .lbc-longest-words-test-input {
+                width: 100%;
+                min-height: 30px;
+                padding: 4px 6px;
+                border: 1px solid #777;
+                border-radius: 3px;
+                background: #101014;
+                color: #fff;
+                font: 12px/1.3 Consolas, "Courier New", monospace;
             }
 
             #${PreviewHistoryTestPanelId} .lbc-history-test-actions {
@@ -1168,6 +1194,11 @@
             return;
         }
 
+        PreviewLongestWordsTestValue = "";
+        ApplyPreviewLongestWordsTest();
+        PreviewTestBedsObserver?.disconnect();
+        PreviewTestBedsObserver = null;
+
         RestorePreviewHistoricalBaseline();
 
         if (
@@ -1262,8 +1293,8 @@
         }
 
         Button.textContent = PreviewHistoricalTestModeActive
-            ? "History Test (ACTIVE)"
-            : "History Test";
+            ? "Test Beds (ACTIVE)"
+            : "Test Beds";
         Button.classList.toggle(
             "lbc-history-test-active",
             PreviewHistoricalTestModeActive
@@ -1280,6 +1311,13 @@
         const Panel = document.getElementById(PreviewHistoryTestPanelId);
         if (!Panel) {
             return;
+        }
+
+        const LongestWordsInput = Panel.querySelector(
+            '[data-lbc-longest-words-test="true"]'
+        );
+        if (LongestWordsInput && LongestWordsInput.value !== PreviewLongestWordsTestValue) {
+            LongestWordsInput.value = PreviewLongestWordsTestValue;
         }
 
         const AvailableTwofers =
@@ -1367,6 +1405,60 @@
         ].join("\n");
     }
 
+    function SanitizePreviewLongestWordsTestValue(Value) {
+        return String(Value ?? "")
+            .toUpperCase()
+            .replace(/[^A-Z ,]/g, "");
+    }
+
+    function ApplyPreviewLongestWordsTest() {
+        const Viewport = document.querySelector(
+            `#${PanelId} .lb-cubed-longest-ticker`
+        );
+        if (!Viewport) {
+            return;
+        }
+
+        const Desired = PreviewLongestWordsTestValue.trim();
+        const OriginalKey = "lbcPreviewLongestOriginal";
+
+        if (Desired) {
+            if (!(OriginalKey in Viewport.dataset)) {
+                Viewport.dataset[OriginalKey] = Viewport.textContent || "";
+            }
+            if (Viewport.textContent !== Desired) {
+                Viewport.textContent = Desired;
+                Viewport.scrollLeft = 0;
+            }
+            Viewport.title = Desired;
+            return;
+        }
+
+        if (OriginalKey in Viewport.dataset) {
+            const Original = Viewport.dataset[OriginalKey];
+            Viewport.textContent = Original;
+            Viewport.title = Original;
+            Viewport.scrollLeft = 0;
+            delete Viewport.dataset[OriginalKey];
+        }
+    }
+
+    function EnsurePreviewTestBedsObserver() {
+        if (PreviewTestBedsObserver) {
+            return;
+        }
+        const Panel = document.getElementById(PanelId);
+        if (!Panel) {
+            return;
+        }
+        PreviewTestBedsObserver = new MutationObserver(() => {
+            if (PreviewLongestWordsTestValue.trim()) {
+                queueMicrotask(ApplyPreviewLongestWordsTest);
+            }
+        });
+        PreviewTestBedsObserver.observe(Panel, { childList: true, subtree: true });
+    }
+
     function OpenPreviewHistoricalTestPanel() {
         if (!EnterPreviewHistoricalTestMode()) {
             return;
@@ -1385,7 +1477,7 @@
         Panel.id = PreviewHistoryTestPanelId;
 
         const Heading = document.createElement("h2");
-        Heading.textContent = "PREVIEW Historical Word Sandbox";
+        Heading.textContent = "Test Beds";
 
         const Warning = document.createElement("div");
         Warning.className = "lbc-history-test-warning";
@@ -1478,6 +1570,8 @@
         Reset.type = "button";
         Reset.textContent = "Reset sandbox";
         Reset.addEventListener("click", () => {
+            PreviewLongestWordsTestValue = "";
+            ApplyPreviewLongestWordsTest();
             RestorePreviewHistoricalBaseline({ KeepActive: true });
             RecomputePreviewHistoricalSandboxState();
             RenderPanel();
@@ -1504,14 +1598,36 @@
             Exit
         );
 
-        Panel.append(
-            Heading,
-            Warning,
-            SelectLabel,
-            Grid,
-            Status,
-            Footer
-        );
+        const HistoricalSection = document.createElement("section");
+        HistoricalSection.className = "lbc-test-bed-section";
+        const HistoricalHeading = document.createElement("h3");
+        HistoricalHeading.textContent = "Historical Word Sandbox";
+        HistoricalSection.append(HistoricalHeading, Warning, SelectLabel, Grid, Status);
+
+        const LongestSection = document.createElement("section");
+        LongestSection.className = "lbc-test-bed-section";
+        const LongestHeading = document.createElement("h3");
+        LongestHeading.textContent = "Longest Words Scrolling";
+        const LongestInput = document.createElement("input");
+        LongestInput.type = "text";
+        LongestInput.className = "lbc-longest-words-test-input";
+        LongestInput.dataset.lbcLongestWordsTest = "true";
+        LongestInput.value = PreviewLongestWordsTestValue;
+        LongestInput.placeholder = "LONGESTWORD, ANOTHERTIEDWORD";
+        LongestInput.autocomplete = "off";
+        LongestInput.spellcheck = false;
+        LongestInput.addEventListener("input", () => {
+            const Sanitized = SanitizePreviewLongestWordsTestValue(LongestInput.value);
+            if (LongestInput.value !== Sanitized) {
+                LongestInput.value = Sanitized;
+            }
+            PreviewLongestWordsTestValue = Sanitized;
+            EnsurePreviewTestBedsObserver();
+            ApplyPreviewLongestWordsTest();
+        });
+        LongestSection.append(LongestHeading, LongestInput);
+
+        Panel.append(Heading, HistoricalSection, LongestSection, Footer);
         Overlay.appendChild(Panel);
         document.body.appendChild(Overlay);
 
