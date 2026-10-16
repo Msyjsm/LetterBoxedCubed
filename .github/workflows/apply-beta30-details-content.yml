@@ -1,0 +1,106 @@
+name: Apply beta.30 details-content scroll fix
+
+on:
+  push:
+    branches: [perf/drive-sync-event-driven]
+    paths:
+      - '.github/workflows/apply-beta30-details-content.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: perf/drive-sync-event-driven
+          fetch-depth: 0
+
+      - name: Apply beta.30 fix
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path('LetterBoxedCubed.user.js')
+          s = p.read_text(encoding='utf-8')
+
+          def replace_once(old, new, label):
+              global s
+              count = s.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected 1 match, found {count}')
+              s = s.replace(old, new, 1)
+
+          replace_once('// @version      1.13.1-beta.29', '// @version      1.13.1-beta.30', 'version')
+
+          old = '''            .lb-cubed-dashboard-grid > .lb-cubed-tree[open] {
+                display: grid;
+                grid-template-rows: auto minmax(0, 1fr);
+                overflow: hidden;
+            }
+
+            .lb-cubed-dashboard-grid > .lb-cubed-tree:not([open]) {'''
+          new = '''            .lb-cubed-dashboard-grid > .lb-cubed-tree[open] {
+                display: grid;
+                grid-template-rows: auto minmax(0, 1fr);
+                overflow: hidden;
+            }
+
+            /*
+                Chromium wraps every <details> element's non-summary children in
+                an internal ::details-content box. Constraining the <details>
+                itself is therefore not enough: without constraining that wrapper,
+                a list can remain its full intrinsic height (clientHeight ===
+                scrollHeight) and simply get clipped by the outer section. Make
+                the wrapper the bounded flex lane so the actual list/body is
+                finally allowed to shrink and become the scrollport.
+            */
+            .lb-cubed-dashboard-grid > .lb-cubed-tree[open]::details-content,
+            .lb-cubed-potential-word-tree[open]::details-content {
+                display: flex;
+                flex-direction: column;
+                min-height: 0;
+                overflow: hidden;
+            }
+
+            .lb-cubed-dashboard-grid > .lb-cubed-tree[open]::details-content > .lb-cubed-hints-body,
+            .lb-cubed-dashboard-grid > .lb-cubed-tree[open]::details-content > .lb-cubed-twofer-body,
+            .lb-cubed-dashboard-grid > .lb-cubed-tree[open]::details-content > .lb-cubed-length-grid,
+            .lb-cubed-dashboard-grid > .lb-cubed-tree[open]::details-content > .lb-cubed-word-grid,
+            .lb-cubed-potential-word-tree[open]::details-content > .lb-cubed-potential-word-list {
+                flex: 1 1 0 !important;
+                min-height: 0 !important;
+            }
+
+            .lb-cubed-dashboard-grid > .lb-cubed-tree:not([open]) {'''
+          replace_once(old, new, 'details content wrapper')
+          p.write_text(s, encoding='utf-8')
+
+          t = Path('tests/final-polish-tests.js')
+          x = t.read_text(encoding='utf-8')
+          x = x.replace("assert(source.includes('// @version      1.13.1-beta.29'), 'beta.29 version missing');", "assert(source.includes('// @version      1.13.1-beta.30'), 'beta.30 version missing');", 1)
+          marker = "console.log('PASS: beta.29 section scrollports + lower gap cleanup static checks');"
+          block = '''\n// beta.30: Chromium <details> internal content wrapper must be bounded so\n// subsection bodies can actually shrink below intrinsic content height.\nassert(source.includes('.lb-cubed-dashboard-grid > .lb-cubed-tree[open]::details-content,'), 'top-level details-content wrapper constraint missing');\nassert(source.includes('.lb-cubed-potential-word-tree[open]::details-content {'), 'hint details-content wrapper constraint missing');\nassert(source.includes('clientHeight ===\\n                scrollHeight'), 'details-content intrinsic-height diagnosis comment missing');\n'''
+          if marker not in x:
+              raise SystemExit('test marker missing')
+          x = x.replace(marker, block + "\nconsole.log('PASS: beta.30 details-content scrollport fix static checks');", 1)
+          t.write_text(x, encoding='utf-8')
+          PY
+
+      - name: Validate
+        run: |
+          node --check LetterBoxedCubed.user.js
+          node --check tools/preview_runtime.js
+          node tests/merge-tests.js
+          node tests/cloud-sync-tests.js
+          node tests/final-polish-tests.js
+
+      - name: Commit beta.30
+        run: |
+          git config user.name "Nathan Burgdorff + Ari (ChatGPT)"
+          git config user.email "6709230+Msyjsm@users.noreply.github.com"
+          git add LetterBoxedCubed.user.js tests/final-polish-tests.js
+          git commit -m "Constrain details content wrappers for section scrolling"
+          git push origin HEAD:perf/drive-sync-event-driven
