@@ -249,25 +249,35 @@ replace_once(
 
 source_path.write_text(text, encoding='utf-8')
 
-# Extend static regression coverage.
+# Update/extend static regression coverage.
 test_path = Path('tests/final-polish-tests.js')
 tests = test_path.read_text(encoding='utf-8')
-marker = 'console.log("final-polish-tests: all assertions passed");'
+tests = tests.replace(
+    "assert(source.includes('// @version      1.13.1-beta.27'), 'beta.27 version missing');",
+    "assert(source.includes('// @version      1.13.1-beta.28'), 'beta.28 version missing');",
+    1
+)
+tests = tests.replace(
+    "assert(source.includes('grid-template-rows: minmax(0, 1fr);'), 'wide responsive section row is not bounded');",
+    "assert(source.includes('\\\"stats stats stats stats stats\\\"') && source.includes('\\\"hints twofers length found unfound\\\"'), 'wide responsive section rows are not bounded');",
+    1
+)
+marker = "console.log('PASS: beta.27 section scrollers + ticker + cleanup static checks');"
 if marker not in tests:
     raise SystemExit('test marker missing')
 block = r'''
 
 // beta.28: section-owned scrolling + full-height allocation.
-assert.match(Source, /@version\s+1\.13\.1-beta\.28/);
-assert.match(Source, /const GameContainerVerticalPaddingTrimPx = 30;/);
-assert.match(Source, /ApplyGameContainerVerticalPaddingTrim\(GameContainer\);/);
-assert.match(Source, /\.lb-cubed-dashboard-grid \{[\s\S]*?flex: 1 1 0;[\s\S]*?height: auto;[\s\S]*?max-height: 100%;/);
-assert.match(Source, /\.lb-cubed-dashboard-grid > \.lb-cubed-tree \{[\s\S]*?height: 100%;/);
-assert.match(Source, /\.lb-cubed-potential-word-list,[\s\S]*?\.lb-cubed-twofer-body,[\s\S]*?\.lb-cubed-length-grid,[\s\S]*?\.lb-cubed-word-grid \{[\s\S]*?overflow-y: auto !important;[\s\S]*?scrollbar-gutter: stable;/);
-assert.match(Source, /Entry\.Definition\.Selector === "\.lb-cubed-stat-grid"/);
-assert.match(Source, /lb-cubed-layout-custom \.lb-cubed-dashboard-grid \{[\s\S]*?grid-template-rows: auto;[\s\S]*?grid-auto-rows: minmax\(0, 1fr\);/);
-assert.match(Source, /lb-cubed-layout-stage-6 \.lb-cubed-dashboard-grid \{[\s\S]*?"stats stats stats stats stats"[\s\S]*?"hints twofers length found unfound"/);
+assert(source.includes('const GameContainerVerticalPaddingTrimPx = 30;'), '30px game-container padding trim missing');
+assert(source.includes('ApplyGameContainerVerticalPaddingTrim(GameContainer);'), 'game-container padding trim is not applied');
+assert(source.includes('flex: 1 1 0;\n                min-width: 0;\n                min-height: 0;\n                height: auto;\n                max-height: 100%;'), 'dashboard does not own remaining panel height');
+assert(source.includes('.lb-cubed-dashboard-grid > .lb-cubed-tree {\n                height: 100%;'), 'dashboard sections do not stretch to their grid tracks');
+assert(source.includes('flex: 1 1 0 !important;\n                min-height: 0 !important;\n                overflow-x: hidden !important;\n                overflow-y: auto !important;'), 'section scroll lanes are not explicit scrollports');
+assert(source.includes('scrollbar-gutter: stable;'), 'section scrollbar gutter missing');
+assert(source.includes('Entry.Definition.Selector === ".lb-cubed-stat-grid"'), 'Completion/Longest are not forced into the first row');
+assert(source.includes('grid-template-rows: auto;\n                grid-auto-rows: minmax(0, 1fr);'), 'custom layout does not keep row 1 static and divide later rows evenly');
+assert(source.includes('"stats stats stats stats stats"') && source.includes('"hints twofers length found unfound"'), 'wide automatic layout no longer pins stats above scrollable sections');
 '''
 if 'beta.28: section-owned scrolling' not in tests:
-    tests = tests.replace(marker, block + '\n' + marker, 1)
+    tests = tests.replace(marker, block + '\n' + "console.log('PASS: beta.28 section scrollers + full-height allocation static checks');", 1)
 test_path.write_text(tests, encoding='utf-8')
