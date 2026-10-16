@@ -6,7 +6,7 @@ const source = fs.readFileSync(path.join(root, 'LetterBoxedCubed.user.js'), 'utf
 const preview = fs.readFileSync(path.join(root, 'tools', 'preview_runtime.js'), 'utf8');
 function assert(condition, message) { if (!condition) throw new Error(message); }
 
-assert(source.includes('// @version      1.13.1-beta.27'), 'beta.27 version missing');
+assert(source.includes('// @version      1.13.1-beta.28'), 'beta.28 version missing');
 assert(source.includes('const ExportFormatVersion = 4;'), 'backup schema v4 missing');
 assert(source.includes('const ThemeStateVersion = 2;'), 'ThemeState v2 compatibility missing');
 assert(source.includes('MergeThemeStates'), 'theme merge missing');
@@ -125,6 +125,19 @@ assert(source.includes('.lb-cubed-twofer-body {\n                flex: 1 1 auto;
 assert(source.includes('.lb-cubed-length-grid {\n                display: grid;\n                flex: 1 1 auto;'), 'Words by Length fallback scroller missing');
 assert(source.includes('.lb-cubed-word-grid {\n                display: grid;\n                flex: 1 1 auto;'), 'Found/Unfound scrollers missing');
 assert(source.includes('grid-template-rows: auto repeat(5, minmax(0, 1fr));'), 'narrow responsive section rows are not bounded');
-assert(source.includes('grid-template-rows: minmax(0, 1fr);'), 'wide responsive section row is not bounded');
+assert(source.includes('\"stats stats stats stats stats\"') && source.includes('\"hints twofers length found unfound\"'), 'wide responsive section rows are not bounded');
 
-console.log('PASS: beta.27 section scrollers + ticker + cleanup static checks');
+
+
+// beta.28: section-owned scrolling + full-height allocation.
+assert(source.includes('const GameContainerVerticalPaddingTrimPx = 30;'), '30px game-container padding trim missing');
+assert(source.includes('ApplyGameContainerVerticalPaddingTrim(GameContainer);'), 'game-container padding trim is not applied');
+assert(source.includes('flex: 1 1 0;\n                min-width: 0;\n                min-height: 0;\n                height: auto;\n                max-height: 100%;'), 'dashboard does not own remaining panel height');
+assert(source.includes('.lb-cubed-dashboard-grid > .lb-cubed-tree {\n                height: 100%;'), 'dashboard sections do not stretch to their grid tracks');
+assert(source.includes('flex: 1 1 0 !important;\n                min-height: 0 !important;\n                overflow-x: hidden !important;\n                overflow-y: auto !important;'), 'section scroll lanes are not explicit scrollports');
+assert(source.includes('scrollbar-gutter: stable;'), 'section scrollbar gutter missing');
+assert(source.includes('Entry.Definition.Selector === ".lb-cubed-stat-grid"'), 'Completion/Longest are not forced into the first row');
+assert(source.includes('grid-template-rows: auto;\n                grid-auto-rows: minmax(0, 1fr);'), 'custom layout does not keep row 1 static and divide later rows evenly');
+assert(source.includes('"stats stats stats stats stats"') && source.includes('"hints twofers length found unfound"'), 'wide automatic layout no longer pins stats above scrollable sections');
+
+console.log('PASS: beta.28 section scrollers + full-height allocation static checks');
