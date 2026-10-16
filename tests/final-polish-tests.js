@@ -6,7 +6,7 @@ const source = fs.readFileSync(path.join(root, 'LetterBoxedCubed.user.js'), 'utf
 const preview = fs.readFileSync(path.join(root, 'tools', 'preview_runtime.js'), 'utf8');
 function assert(condition, message) { if (!condition) throw new Error(message); }
 
-assert(source.includes('// @version      1.13.1-beta.32'), 'beta.32 version missing');
+assert(source.includes('// @version      1.13.1-beta.33'), 'beta.33 version missing');
 assert(source.includes('const ExportFormatVersion = 4;'), 'backup schema v4 missing');
 assert(source.includes('const ThemeStateVersion = 2;'), 'ThemeState v2 compatibility missing');
 assert(source.includes('MergeThemeStates'), 'theme merge missing');
@@ -172,6 +172,16 @@ assert(source.includes('.lb-cubed-hint-counter-grid {') && source.includes('heig
 assert(source.includes('.lb-cubed-potential-word-tree {') && source.includes('align-self: stretch;'), 'Hints subtrees are not stretched');
 
 console.log('PASS: beta.31 Hints full-height fill static checks');
+
+// beta.33: Help stacking-context lift + robust ticker motion/test input.
+assert(source.includes('[class*="Game-module_toolbarContainer__"]:has(#help-dialog)'), 'Help toolbar stacking-context lift missing');
+assert(source.includes('cursor: ew-resize;'), 'Longest Found horizontal cursor missing');
+assert(source.includes('let Position = Viewport.scrollLeft;'), 'ticker floating position accumulator missing');
+assert(source.includes('Position = Next;'), 'ticker does not persist fractional progress');
+assert(preview.includes('LongestInput.setSelectionRange(SanitizedStart, SanitizedEnd);'), 'Test Beds input caret preservation missing');
+assert(preview.includes('["keydown", "keyup", "keypress", "beforeinput"]'), 'Test Beds input key propagation guard missing');
+
+console.log('PASS: beta.33 Help/ticker/Test Beds static checks');
 assert(preview.includes('? \"Test Beds (ACTIVE)\"'), 'Test Beds button missing');
 assert(preview.includes('HistoricalHeading.textContent = \"Historical Word Sandbox\";'), 'Historical section missing');
 assert(preview.includes('LongestHeading.textContent = \"Longest Words Scrolling\";'), 'Longest Words section missing');

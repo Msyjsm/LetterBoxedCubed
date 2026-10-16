@@ -1552,11 +1552,31 @@
         LongestInput.placeholder = "LONGESTWORD, ANOTHERTIEDWORD";
         LongestInput.autocomplete = "off";
         LongestInput.spellcheck = false;
-        LongestInput.addEventListener("input", () => {
-            const Sanitized = SanitizePreviewLongestWordsTestValue(LongestInput.value);
-            if (LongestInput.value !== Sanitized) {
+        ["keydown", "keyup", "keypress", "beforeinput"].forEach(Type => {
+            LongestInput.addEventListener(Type, Event => {
+                Event.stopPropagation();
+            });
+        });
+        LongestInput.addEventListener("input", Event => {
+            Event.stopPropagation();
+
+            const Raw = LongestInput.value;
+            const SelectionStart = LongestInput.selectionStart ?? Raw.length;
+            const SelectionEnd = LongestInput.selectionEnd ?? SelectionStart;
+            const Sanitized = SanitizePreviewLongestWordsTestValue(Raw);
+
+            if (Raw !== Sanitized) {
+                const SanitizedStart = SanitizePreviewLongestWordsTestValue(
+                    Raw.slice(0, SelectionStart)
+                ).length;
+                const SanitizedEnd = SanitizePreviewLongestWordsTestValue(
+                    Raw.slice(0, SelectionEnd)
+                ).length;
+
                 LongestInput.value = Sanitized;
+                LongestInput.setSelectionRange(SanitizedStart, SanitizedEnd);
             }
+
             PreviewLongestWordsTestValue = Sanitized;
             EnsurePreviewTestBedsObserver();
             ApplyPreviewLongestWordsTest();

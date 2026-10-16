@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed
 // @namespace    https://nathanburgdorff.com/userscripts/
-// @version      1.13.1-beta.32
+// @version      1.13.1-beta.33
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -11092,6 +11092,7 @@
         let Direction = 1;
         let LastTimestamp = null;
         let HoldUntil = performance.now() + 900;
+        let Position = Viewport.scrollLeft;
         const SpeedPixelsPerSecond = 16;
         const EndPauseMs = 900;
 
@@ -11100,6 +11101,7 @@
         });
         Viewport.addEventListener("pointerleave", () => {
             Paused = false;
+            Position = Viewport.scrollLeft;
             LastTimestamp = null;
         });
         Viewport.addEventListener(
@@ -11137,6 +11139,7 @@
             );
 
             if (Maximum <= 1) {
+                Position = 0;
                 Viewport.scrollLeft = 0;
                 LastTimestamp = Timestamp;
                 requestAnimationFrame(Tick);
@@ -11155,7 +11158,7 @@
             LastTimestamp = Timestamp;
 
             let Next =
-                Viewport.scrollLeft +
+                Position +
                 Direction * SpeedPixelsPerSecond * (DeltaMs / 1000);
 
             if (Next >= Maximum) {
@@ -11168,7 +11171,8 @@
                 HoldUntil = Timestamp + EndPauseMs;
             }
 
-            Viewport.scrollLeft = Next;
+            Position = Next;
+            Viewport.scrollLeft = Position;
             requestAnimationFrame(Tick);
         };
 
@@ -13273,6 +13277,7 @@
                 width: 100%;
                 min-width: 0;
                 overflow-x: auto;
+                cursor: ew-resize;
                 overflow-y: hidden;
                 white-space: nowrap;
                 overflow-wrap: normal;
@@ -14194,6 +14199,13 @@
                 background-color: var(--lb-cubed-lb-bg) !important;
                 color: var(--lb-cubed-lb-fg) !important;
                 border-color: var(--lb-cubed-lb-fg) !important;
+            }
+
+            /* The Help menu's own huge z-index is trapped inside NYT's
+             * toolbar stacking context (native z-index: 3). Lift that context
+             * above LBC only while the menu is actually open. */
+            [class*="Game-module_toolbarContainer__"]:has(#help-dialog) {
+                z-index: 100 !important;
             }
 
             #help-dialog {
