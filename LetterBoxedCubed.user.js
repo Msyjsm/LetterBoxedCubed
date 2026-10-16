@@ -11901,7 +11901,7 @@
             }
 
             .lb-game-container.lb-cubed-adjust-layout-gap > #${LayoutGapHandleId},
-            #${BottomLayoutGapHandleId} {
+            .lb-game-container.lb-cubed-adjust-layout-gap > #${BottomLayoutGapHandleId} {
                 display: block;
             }
 
