@@ -1,0 +1,244 @@
+name: Apply beta34 final scroll and placeholder polish
+
+on:
+  push:
+    branches:
+      - perf/drive-sync-event-driven
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: perf/drive-sync-event-driven
+      - name: Apply beta.34 patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source_path = Path('LetterBoxedCubed.user.js')
+          preview_path = Path('tools/preview_runtime.js')
+          tests_path = Path('tests/final-polish-tests.js')
+
+          source = source_path.read_text()
+          preview = preview_path.read_text()
+          tests = tests_path.read_text()
+
+          if '// @version      1.13.1-beta.34' in source:
+              print('beta.34 already applied')
+              raise SystemExit(0)
+
+          def replace_once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected 1 match, found {count}')
+              return text.replace(old, new, 1)
+
+          source = replace_once(
+              source,
+              '// @version      1.13.1-beta.33',
+              '// @version      1.13.1-beta.34',
+              'version'
+          )
+
+          source = replace_once(
+              source,
+              '''    function ApplyRecentHighlight(Element, MapValue, Key) {
+''',
+              '''    function QueueHighlightedElementScrollIntoView(Element) {
+        requestAnimationFrame(() => {
+            if (!(Element instanceof HTMLElement) || !Element.isConnected) {
+                return;
+            }
+
+            const ScrollHost = Element.closest(
+                ".lb-cubed-potential-word-list, " +
+                ".lb-cubed-twofer-body, " +
+                ".lb-cubed-length-grid, " +
+                ".lb-cubed-word-grid"
+            );
+
+            if (
+                !(ScrollHost instanceof HTMLElement) ||
+                ScrollHost.scrollHeight <= ScrollHost.clientHeight + 1
+            ) {
+                return;
+            }
+
+            const HostRect = ScrollHost.getBoundingClientRect();
+            const ElementRect = Element.getBoundingClientRect();
+            const Above = ElementRect.top - HostRect.top;
+            const Below = ElementRect.bottom - HostRect.bottom;
+
+            if (Above >= 0 && Below <= 0) {
+                return;
+            }
+
+            let TargetTop = ScrollHost.scrollTop;
+            if (Above < 0) {
+                TargetTop += Above;
+            } else if (Below > 0) {
+                TargetTop += Below;
+            }
+
+            const Maximum = Math.max(
+                0,
+                ScrollHost.scrollHeight - ScrollHost.clientHeight
+            );
+
+            ScrollHost.scrollTo({
+                top: Clamp(TargetTop, 0, Maximum),
+                behavior: "smooth"
+            });
+        });
+    }
+
+    function ApplyRecentHighlight(Element, MapValue, Key) {
+''',
+              'highlight auto-scroll helper'
+          )
+
+          source = replace_once(
+              source,
+              '''        Element.style.setProperty(
+            "--lb-cubed-highlight-duration",
+            `${Math.max(1, Math.round(RemainingMs))}ms`
+        );
+
+        return true;
+''',
+              '''        Element.style.setProperty(
+            "--lb-cubed-highlight-duration",
+            `${Math.max(1, Math.round(RemainingMs))}ms`
+        );
+        QueueHighlightedElementScrollIntoView(Element);
+
+        return true;
+''',
+              'direct highlight auto-scroll'
+          )
+
+          source = replace_once(
+              source,
+              '''        Element.style.setProperty(
+            "--lb-cubed-highlight-duration",
+            `${Math.max(1, Math.round(LatestExpiry - Date.now()))}ms`
+        );
+
+        if (RecentWords.length) {
+''',
+              '''        Element.style.setProperty(
+            "--lb-cubed-highlight-duration",
+            `${Math.max(1, Math.round(LatestExpiry - Date.now()))}ms`
+        );
+        QueueHighlightedElementScrollIntoView(Element);
+
+        if (RecentWords.length) {
+''',
+              'length highlight auto-scroll'
+          )
+
+          source = replace_once(
+              source,
+              '''        Element.style.setProperty(
+            "--lb-cubed-highlight-duration",
+            `${Math.max(1, Math.round(LatestExpiry - Now))}ms`
+        );
+
+        return true;
+''',
+              '''        Element.style.setProperty(
+            "--lb-cubed-highlight-duration",
+            `${Math.max(1, Math.round(LatestExpiry - Now))}ms`
+        );
+        QueueHighlightedElementScrollIntoView(Element);
+
+        return true;
+''',
+              'group highlight auto-scroll'
+          )
+
+          preview = replace_once(
+              preview,
+              '''            #${PreviewHistoryTestPanelId} .lbc-longest-words-test-input {
+                width: 100%;
+                min-height: 30px;
+                padding: 4px 6px;
+                border: 1px solid #777;
+                border-radius: 3px;
+                background: #101014;
+                color: #fff;
+                font: 12px/1.3 Consolas, "Courier New", monospace;
+            }
+''',
+              '''            #${PreviewHistoryTestPanelId} .lbc-longest-words-test-input {
+                width: 100%;
+                min-height: 30px;
+                padding: 4px 6px;
+                border: 1px solid #777;
+                border-radius: 3px;
+                background: #101014;
+                color: #fff;
+                font: 12px/1.3 Consolas, "Courier New", monospace;
+            }
+
+            #${PreviewHistoryTestPanelId} .lbc-longest-words-test-input::placeholder {
+                color: currentColor;
+                opacity: 0.55;
+                font-style: italic;
+            }
+''',
+              'test bed placeholder styling'
+          )
+
+          preview = replace_once(
+              preview,
+              '        LongestInput.placeholder = "LONGESTWORD, ANOTHERTIEDWORD";',
+              '        LongestInput.placeholder = "Enter a long string of text here";',
+              'test bed placeholder text'
+          )
+
+          tests = replace_once(
+              tests,
+              "assert(source.includes('// @version      1.13.1-beta.33'), 'beta.33 version missing');",
+              "assert(source.includes('// @version      1.13.1-beta.34'), 'beta.34 version missing');",
+              'test version'
+          )
+
+          marker = "console.log('PASS: beta.33 Help/ticker/Test Beds static checks');"
+          if marker not in tests:
+              raise SystemExit('beta.33 test marker missing')
+
+          tests = tests.replace(
+              marker,
+              marker + '''\n\n// beta.34: Test Beds placeholder polish + reveal newly highlighted rows in their owned scrollports.\nassert(source.includes('function QueueHighlightedElementScrollIntoView(Element)'), 'highlight scroll helper missing');\nassert(source.includes('ScrollHost.scrollTo({'), 'highlight scroll action missing');\nassert(source.includes('behavior: "smooth"'), 'highlight scroll should be smooth');\nassert((source.match(/QueueHighlightedElementScrollIntoView\(Element\);/g) || []).length >= 3, 'not all recent highlight paths reveal their rows');\nassert(preview.includes('LongestInput.placeholder = "Enter a long string of text here";'), 'Longest Words placeholder text missing');\nassert(preview.includes('.lbc-longest-words-test-input::placeholder'), 'Longest Words placeholder styling missing');\nassert(preview.includes('font-style: italic;'), 'Longest Words placeholder italics missing');\nassert(preview.includes('opacity: 0.55;'), 'Longest Words placeholder dimming missing');\n\nconsole.log('PASS: beta.34 final scroll/placeholder static checks');''',
+              1
+          )
+
+          source_path.write_text(source)
+          preview_path.write_text(preview)
+          tests_path.write_text(tests)
+          PY
+      - name: Validate
+        run: |
+          node --check LetterBoxedCubed.user.js
+          node --check tools/preview_runtime.js
+          node tests/merge-tests.js
+          node tests/cloud-sync-tests.js
+          node tests/final-polish-tests.js
+      - name: Commit
+        run: |
+          if git diff --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git config user.name "Nathan Burgdorff + Ari (ChatGPT)"
+          git config user.email "6709230+Msyjsm@users.noreply.github.com"
+          git add LetterBoxedCubed.user.js tools/preview_runtime.js tests/final-polish-tests.js
+          git commit -m "Reveal new highlights in subsection scrollports"
+          git push origin HEAD:perf/drive-sync-event-driven
