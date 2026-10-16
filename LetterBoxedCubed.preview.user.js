@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed [PREVIEW]
 // @namespace    https://nathanburgdorff.com/userscripts/preview/
-// @version      1.13.1-beta.31.300
+// @version      1.13.1-beta.32.301
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -15724,8 +15724,10 @@
 
             .lb-cubed-hints-body {
                 display: grid;
+                flex: 1 1 0;
                 grid-template-rows: auto minmax(0, 1fr);
                 min-height: 0;
+                height: 100%;
                 overflow: hidden;
                 padding: 5px;
             }
@@ -16581,6 +16583,33 @@
                 background-color: var(--lb-cubed-lb-bg) !important;
                 color: var(--lb-cubed-lb-fg) !important;
                 border-color: var(--lb-cubed-lb-fg) !important;
+            }
+
+            #help-dialog {
+                z-index: 100050 !important;
+            }
+
+            html.lb-cubed-native-theme #help-dialog,
+            html.lb-cubed-native-theme #help-dialog > li,
+            html.lb-cubed-native-theme #help-dialog > li > button,
+            html.lb-cubed-native-theme #help-dialog > li > a {
+                background: var(--lb-cubed-lb-bg) !important;
+                background-color: var(--lb-cubed-lb-bg) !important;
+                color: var(--lb-cubed-lb-fg) !important;
+                -webkit-text-fill-color: var(--lb-cubed-lb-fg) !important;
+                border-color: var(--lb-cubed-lb-highlight) !important;
+                --text: var(--lb-cubed-lb-fg);
+            }
+
+            html.lb-cubed-native-theme #help-dialog > li > button:hover,
+            html.lb-cubed-native-theme #help-dialog > li > a:hover {
+                background: color-mix(in srgb, var(--lb-cubed-lb-highlight) 18%, var(--lb-cubed-lb-bg)) !important;
+            }
+
+            html.lb-cubed-native-theme #help-dialog svg,
+            html.lb-cubed-native-theme #help-dialog svg path {
+                color: var(--lb-cubed-lb-fg) !important;
+                fill: var(--lb-cubed-lb-fg) !important;
             }
 
             html.lb-cubed-theme-dark button[data-testid="modal-close"] {
