@@ -172,6 +172,11 @@ assert(source.includes('.lb-cubed-hint-counter-grid {') && source.includes('heig
 assert(source.includes('.lb-cubed-potential-word-tree {') && source.includes('align-self: stretch;'), 'Hints subtrees are not stretched');
 
 console.log('PASS: beta.31 Hints full-height fill static checks');
+assert(preview.includes('? \"Test Beds (ACTIVE)\"'), 'Test Beds button missing');
+assert(preview.includes('HistoricalHeading.textContent = \"Historical Word Sandbox\";'), 'Historical section missing');
+assert(preview.includes('LongestHeading.textContent = \"Longest Words Scrolling\";'), 'Longest Words section missing');
+assert(preview.includes('.replace(/[^A-Z ,]/g, \"\")'), 'Longest Words sanitizer missing');
+
 assert(source.includes('flex: 1 1 0;\n                grid-template-rows: auto minmax(0, 1fr);'), 'Hints body flex fill missing');
 assert(source.includes('#help-dialog {\n                z-index: 100050 !important;'), 'Help dropdown layering fix missing');
 
