@@ -6,7 +6,7 @@ const source = fs.readFileSync(path.join(root, 'LetterBoxedCubed.user.js'), 'utf
 const preview = fs.readFileSync(path.join(root, 'tools', 'preview_runtime.js'), 'utf8');
 function assert(condition, message) { if (!condition) throw new Error(message); }
 
-assert(source.includes('// @version      1.13.1-beta.28'), 'beta.28 version missing');
+assert(source.includes('// @version      1.13.1-beta.29'), 'beta.29 version missing');
 assert(source.includes('const ExportFormatVersion = 4;'), 'backup schema v4 missing');
 assert(source.includes('const ThemeStateVersion = 2;'), 'ThemeState v2 compatibility missing');
 assert(source.includes('MergeThemeStates'), 'theme merge missing');
@@ -140,4 +140,24 @@ assert(source.includes('Entry.Definition.Selector === ".lb-cubed-stat-grid"'), '
 assert(source.includes('grid-template-rows: auto;\n                grid-auto-rows: minmax(0, 1fr);'), 'custom layout does not keep row 1 static and divide later rows evenly');
 assert(source.includes('"stats stats stats stats stats"') && source.includes('"hints twofers length found unfound"'), 'wide automatic layout no longer pins stats above scrollable sections');
 
-console.log('PASS: beta.28 section scrollers + full-height allocation static checks');
+
+
+// beta.29: bounded subsection scrollports, document-owned page scrolling,
+// conditional footer padding, and independently adjustable lower LB gap.
+assert(source.includes('const BottomLayoutGapHandleId = "lb-cubed-bottom-layout-gap-handle";'), 'bottom gap handle id missing');
+assert(source.includes('let BottomLayoutGapPx = 0;'), 'bottom gap state missing');
+assert(source.includes('"Set top gap"'), 'top gap label missing');
+assert(source.includes('"Set bottom gap"'), 'bottom gap label missing');
+assert(source.includes('"Enable draggable grip lines"'), 'plural grip label missing');
+assert(source.includes('GapHeading.textContent = "Letter box layout gaps";'), 'gap section label missing');
+assert(source.includes('function ApplyBottomLayoutGap(SquareContainer)'), 'bottom gap application missing');
+assert(source.includes('function HandleBottomLayoutGapPointerMove(Event)'), 'bottom gap drag behavior missing');
+assert(source.includes('NativeSquareHeight + BottomLayoutGapPx'), 'lower gap does not expand square lane');
+assert(source.includes('const BottomPadding = HideNytFooter'), 'footer-hidden zero bottom padding missing');
+assert(source.includes('function ApplyOuterPageScrollOwnership(GameContainer)'), 'outer scroll ownership helper missing');
+assert(source.includes('.lb-cubed-native-scroll-passthrough {'), 'native inner-scroll passthrough CSS missing');
+assert(source.includes('display: grid;\n                grid-template-rows: auto minmax(0, 1fr);\n                overflow: hidden;'), 'top-level details are not bounded grid scroll hosts');
+assert(source.includes('.lb-cubed-potential-word-tree[open] {\n                display: grid;'), 'hint subtrees are not bounded grid scroll hosts');
+assert(source.includes('scrollbar-color:\n                    var(--lb-cubed-lbc-text, #301818)'), 'section scrollbar colors missing');
+
+console.log('PASS: beta.29 section scrollports + lower gap cleanup static checks');

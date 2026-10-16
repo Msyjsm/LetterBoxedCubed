@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed
 // @namespace    https://nathanburgdorff.com/userscripts/
-// @version      1.13.1-beta.28
+// @version      1.13.1-beta.29
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -226,6 +226,7 @@
     const SettingsMenuId = "lb-cubed-settings-menu";
     const HistoryOverlayId = "lb-cubed-history-overlay";
     const LayoutGapHandleId = "lb-cubed-layout-gap-handle";
+    const BottomLayoutGapHandleId = "lb-cubed-bottom-layout-gap-handle";
     const NytHeaderResizeHandleId = "lb-cubed-nyt-header-resize-handle";
     const NytTitleResizeHandleId = "lb-cubed-nyt-title-resize-handle";
     const CloudSyncDebounceMs = 2500;
@@ -334,6 +335,7 @@
     let NewItemHighlightSeconds = DefaultNewItemHighlightSeconds;
     let AdjustLayoutGap = false;
     let LayoutGapPx = LeftColumnGap;
+    let BottomLayoutGapPx = 0;
     let NytHeaderScale = 1.0;
     let NytTitleScale = 1.0;
     let NytFooterScale = 1.0;
@@ -352,6 +354,7 @@
     let NytOriginalTitleLeftOffset = null;
 
     let LayoutGapResizeState = null;
+    let BottomLayoutGapResizeState = null;
     let NytPageResizeState = null;
 
     let GoogleDriveConfig = null;
@@ -505,6 +508,7 @@
             NewItemHighlightSeconds,
             AdjustLayoutGap,
             LayoutGapPx,
+            BottomLayoutGapPx,
             HideNytHeader,
             HideNytGameTitle,
             HideNytFooter,
@@ -2824,6 +2828,12 @@
             MinimumHistoryLaneHeight,
             MaximumHistoryLaneHeight
         );
+        BottomLayoutGapPx = GetFiniteGuiNumber(
+            "BottomLayoutGapPx",
+            0,
+            MinimumLayoutGap,
+            MaximumLayoutGap
+        );
 
         NytHeaderScale = GetFiniteGuiNumber(
             "NytHeaderScale",
@@ -2902,6 +2912,20 @@
         LayoutGapPx =
             MinimumHistoryLaneHeight +
             DisplayedGap;
+    }
+
+    function GetDisplayedBottomLayoutGapPx() {
+        return Math.max(
+            0,
+            Math.round(BottomLayoutGapPx)
+        );
+    }
+
+    function SetDisplayedBottomLayoutGapPx(Value) {
+        const Numeric = Number(Value);
+        BottomLayoutGapPx = Number.isFinite(Numeric)
+            ? Clamp(Numeric, MinimumLayoutGap, MaximumLayoutGap)
+            : MinimumLayoutGap;
     }
 
     function RegisterRecentHighlight(MapValue, Key) {
@@ -3784,12 +3808,12 @@
 
         const GapHeading = document.createElement("div");
         GapHeading.className = "lb-cubed-settings-subgroup-title";
-        GapHeading.textContent = "Adjust layout gap between text input and letter box:";
+        GapHeading.textContent = "Letter box layout gaps";
 
         GapGroup.append(
             GapHeading,
             CreateSettingsCheckbox(
-                "Enable draggable grip line",
+                "Enable draggable grip lines",
                 AdjustLayoutGap,
                 Checked => {
                     AdjustLayoutGap = Checked;
@@ -3797,10 +3821,10 @@
                     UpdateLayoutGapHandleVisibility();
                     PositionLayoutGapResizeHandle();
                 },
-                "Show a draggable horizontal grip that adjusts the same gap value as the manual input"
+                "Show draggable horizontal grips for the gaps above and below the letter box"
             ),
             CreateSettingsNumberWithReset(
-                "Manually set gap",
+                "Set top gap",
                 GetDisplayedLayoutGapPx(),
                 MinimumLayoutGap,
                 MaximumLayoutGap,
@@ -3811,6 +3835,21 @@
                 Value => {
                     SetDisplayedLayoutGapPx(Value);
                     SetGuiSetting("LayoutGapPx", LayoutGapPx);
+                    UpdatePanelLayout();
+                }
+            ),
+            CreateSettingsNumberWithReset(
+                "Set bottom gap",
+                GetDisplayedBottomLayoutGapPx(),
+                MinimumLayoutGap,
+                MaximumLayoutGap,
+                1,
+                "px",
+                0,
+                "BottomLayoutGapPx",
+                Value => {
+                    SetDisplayedBottomLayoutGapPx(Value);
+                    SetGuiSetting("BottomLayoutGapPx", BottomLayoutGapPx);
                     UpdatePanelLayout();
                 }
             )
@@ -3983,6 +4022,74 @@
         }
 
         ApplyNytPagePreferences();
+    }
+
+    function HandleBottomLayoutGapPointerDown(Event) {
+        if (Event.button !== 0 || !AdjustLayoutGap) {
+            return;
+        }
+
+        const Handle = Event.currentTarget;
+        BottomLayoutGapResizeState = {
+            PointerId: Event.pointerId,
+            StartY: Event.clientY,
+            StartGap: BottomLayoutGapPx,
+            Handle
+        };
+        Handle.classList.add("lb-cubed-layout-gap-handle-active");
+        Handle.setPointerCapture(Event.pointerId);
+        Event.preventDefault();
+        Event.stopPropagation();
+    }
+
+    function HandleBottomLayoutGapPointerMove(Event) {
+        if (
+            !BottomLayoutGapResizeState ||
+            Event.pointerId !== BottomLayoutGapResizeState.PointerId
+        ) {
+            return;
+        }
+
+        BottomLayoutGapPx = Clamp(
+            BottomLayoutGapResizeState.StartGap +
+            (Event.clientY - BottomLayoutGapResizeState.StartY),
+            MinimumLayoutGap,
+            MaximumLayoutGap
+        );
+
+        const Input = document.querySelector(
+            '[data-cubed-setting-input="BottomLayoutGapPx"]'
+        );
+        if (Input) {
+            Input.value = String(GetDisplayedBottomLayoutGapPx());
+        }
+
+        UpdatePanelLayout();
+        Event.preventDefault();
+    }
+
+    function EndBottomLayoutGapResize(Event) {
+        if (!BottomLayoutGapResizeState) {
+            return;
+        }
+
+        const State = BottomLayoutGapResizeState;
+        BottomLayoutGapResizeState = null;
+        State.Handle.classList.remove("lb-cubed-layout-gap-handle-active");
+
+        try {
+            State.Handle.releasePointerCapture(State.PointerId);
+        } catch {
+            // Ignore browsers that already released pointer capture.
+        }
+
+        BottomLayoutGapPx = Math.round(BottomLayoutGapPx);
+        SetGuiSetting("BottomLayoutGapPx", BottomLayoutGapPx);
+        UpdatePanelLayout();
+
+        if (Event) {
+            Event.preventDefault();
+        }
     }
 
     function StartNytPageResizeBehavior() {
@@ -4161,6 +4268,9 @@
         EnsureNytPageResizeHandles();
 
         const Targets = GetNytPageTargets();
+        ApplyGameContainerVerticalPaddingTrim(
+            document.querySelector(".lb-game-container")
+        );
         const Visibility = [
             [Targets.Header, HideNytHeader],
             [Targets.Title, HideNytGameTitle],
@@ -4193,19 +4303,41 @@
 
     function EnsureLayoutGapResizeHandle() {
         const GameContainer = document.querySelector(".lb-game-container");
-        if (!GameContainer || document.getElementById(LayoutGapHandleId)) {
+        if (!GameContainer) {
             return;
         }
 
-        const Handle = document.createElement("div");
-        Handle.id = LayoutGapHandleId;
-        Handle.className = "lb-cubed-layout-gap-handle";
-        Handle.setAttribute("role", "separator");
-        Handle.setAttribute("aria-orientation", "horizontal");
-        Handle.setAttribute("aria-label", "Adjust gap between word entry and puzzle box");
-        Handle.title = "Drag to adjust the gap between the word-entry area and puzzle box";
+        const Definitions = [
+            {
+                Id: LayoutGapHandleId,
+                Kind: "top",
+                Label: "Adjust gap above the letter box",
+                Title: "Drag to adjust the gap between the word-entry area and letter box"
+            },
+            {
+                Id: BottomLayoutGapHandleId,
+                Kind: "bottom",
+                Label: "Adjust gap below the letter box",
+                Title: "Drag to adjust the gap between the letter box and Restart/Delete/Enter buttons"
+            }
+        ];
 
-        GameContainer.appendChild(Handle);
+        for (const Definition of Definitions) {
+            if (document.getElementById(Definition.Id)) {
+                continue;
+            }
+
+            const Handle = document.createElement("div");
+            Handle.id = Definition.Id;
+            Handle.className = "lb-cubed-layout-gap-handle";
+            Handle.dataset.cubedGapKind = Definition.Kind;
+            Handle.setAttribute("role", "separator");
+            Handle.setAttribute("aria-orientation", "horizontal");
+            Handle.setAttribute("aria-label", Definition.Label);
+            Handle.title = Definition.Title;
+            GameContainer.appendChild(Handle);
+        }
+
         UpdateLayoutGapHandleVisibility();
     }
 
@@ -4217,25 +4349,70 @@
         );
     }
 
+    function GetLetterBoxControlsContainer(SquareContainer) {
+        const RestartButton = SquareContainer?.querySelector(
+            "[data-testid='restart']"
+        );
+        if (!RestartButton) {
+            return null;
+        }
+
+        let Candidate = RestartButton.parentElement;
+        while (
+            Candidate?.parentElement &&
+            Candidate.parentElement !== SquareContainer &&
+            !Candidate.parentElement.querySelector("canvas")
+        ) {
+            Candidate = Candidate.parentElement;
+        }
+        return Candidate;
+    }
+
+    function ApplyBottomLayoutGap(SquareContainer) {
+        const Controls = GetLetterBoxControlsContainer(SquareContainer);
+        if (!Controls) {
+            return;
+        }
+
+        if (!Object.prototype.hasOwnProperty.call(
+            Controls.dataset,
+            "cubedNativeMarginTop"
+        )) {
+            Controls.dataset.cubedNativeMarginTop = String(
+                Number.parseFloat(getComputedStyle(Controls).marginTop) || 0
+            );
+        }
+
+        const NativeMarginTop = Number.parseFloat(
+            Controls.dataset.cubedNativeMarginTop
+        ) || 0;
+        Controls.style.setProperty(
+            "margin-top",
+            `${NativeMarginTop + BottomLayoutGapPx}px`,
+            "important"
+        );
+    }
+
     function PositionLayoutGapResizeHandle() {
         const GameContainer = document.querySelector(".lb-game-container");
         const WordContainer = GameContainer?.querySelector(".lb-word-container");
         const SquareContainer = GameContainer?.querySelector(".lb-square-container");
-        const Handle = document.getElementById(LayoutGapHandleId);
+        const TopHandle = document.getElementById(LayoutGapHandleId);
+        const BottomHandle = document.getElementById(BottomLayoutGapHandleId);
 
-        if (!GameContainer || !WordContainer || !SquareContainer || !Handle || !AdjustLayoutGap) {
+        if (
+            !GameContainer ||
+            !WordContainer ||
+            !SquareContainer ||
+            !AdjustLayoutGap
+        ) {
             return;
         }
 
         requestAnimationFrame(() => {
-            if (!AdjustLayoutGap || !Handle.isConnected) {
-                return;
-            }
-
             const GameRect = GameContainer.getBoundingClientRect();
             const WordRect = WordContainer.getBoundingClientRect();
             const SquareRect = SquareContainer.getBoundingClientRect();
-
             const Left = Math.max(
                 0,
                 Math.min(WordRect.left, SquareRect.left) - GameRect.left
@@ -4245,33 +4422,51 @@
                 Math.max(WordRect.right, SquareRect.right) - GameRect.left
             );
 
-            /*
-                The grid reserves a gutter exactly twice the normal external
-                grip offset. Put the visible line one offset ABOVE GB, which
-                centers it between the history lane and the first GB pixels.
-            */
-            const GripLineY =
-                SquareRect.top -
-                ResizeGripLineOffset -
-                GameRect.top;
+            if (TopHandle) {
+                const GripLineY =
+                    SquareRect.top -
+                    ResizeGripLineOffset -
+                    GameRect.top;
+                TopHandle.style.left = `${Math.round(Left)}px`;
+                TopHandle.style.width = `${Math.max(24, Math.round(Right - Left))}px`;
+                TopHandle.style.top = `${Math.round(GripLineY - 5)}px`;
+            }
 
-            Handle.style.left = `${Math.round(Left)}px`;
-            Handle.style.width = `${Math.max(24, Math.round(Right - Left))}px`;
-            Handle.style.top = `${Math.round(GripLineY - 5)}px`;
+            if (BottomHandle) {
+                const Board = SquareContainer.querySelector("canvas");
+                const Controls = GetLetterBoxControlsContainer(SquareContainer);
+                if (Board && Controls) {
+                    const BoardRect = Board.getBoundingClientRect();
+                    const ControlsRect = Controls.getBoundingClientRect();
+                    const BottomGripY =
+                        ((BoardRect.bottom + ControlsRect.top) / 2) -
+                        GameRect.top;
+                    BottomHandle.style.left = `${Math.round(SquareRect.left - GameRect.left)}px`;
+                    BottomHandle.style.width = `${Math.max(24, Math.round(SquareRect.width))}px`;
+                    BottomHandle.style.top = `${Math.round(BottomGripY - 5)}px`;
+                }
+            }
         });
     }
 
     function StartLayoutGapResizeBehavior() {
         EnsureLayoutGapResizeHandle();
-        const Handle = document.getElementById(LayoutGapHandleId);
-        if (!Handle) {
-            return;
+
+        const TopHandle = document.getElementById(LayoutGapHandleId);
+        if (TopHandle) {
+            TopHandle.addEventListener("pointerdown", HandleLayoutGapPointerDown, true);
+            TopHandle.addEventListener("pointermove", HandleLayoutGapPointerMove, true);
+            TopHandle.addEventListener("pointerup", EndLayoutGapResize, true);
+            TopHandle.addEventListener("pointercancel", EndLayoutGapResize, true);
         }
 
-        Handle.addEventListener("pointerdown", HandleLayoutGapPointerDown, true);
-        Handle.addEventListener("pointermove", HandleLayoutGapPointerMove, true);
-        Handle.addEventListener("pointerup", EndLayoutGapResize, true);
-        Handle.addEventListener("pointercancel", EndLayoutGapResize, true);
+        const BottomHandle = document.getElementById(BottomLayoutGapHandleId);
+        if (BottomHandle) {
+            BottomHandle.addEventListener("pointerdown", HandleBottomLayoutGapPointerDown, true);
+            BottomHandle.addEventListener("pointermove", HandleBottomLayoutGapPointerMove, true);
+            BottomHandle.addEventListener("pointerup", EndBottomLayoutGapResize, true);
+            BottomHandle.addEventListener("pointercancel", EndBottomLayoutGapResize, true);
+        }
     }
 
     function HandleLayoutGapPointerDown(Event) {
@@ -9768,6 +9963,26 @@
         Panel.dataset.cubedLayoutStage = String(InternalPanelLayoutStage);
     }
 
+    function ApplyOuterPageScrollOwnership(GameContainer) {
+        document.querySelectorAll(".lb-cubed-native-scroll-passthrough")
+            .forEach(Element =>
+                Element.classList.remove("lb-cubed-native-scroll-passthrough")
+            );
+
+        const GameModuleContainer = GameContainer?.closest(
+            '[class*="Game-module_gameContainer__"]'
+        );
+        let Candidate = GameModuleContainer?.parentElement || null;
+        while (Candidate && Candidate !== document.body) {
+            const Style = getComputedStyle(Candidate);
+            if (/^(auto|scroll)$/.test(Style.overflowY)) {
+                Candidate.classList.add("lb-cubed-native-scroll-passthrough");
+                break;
+            }
+            Candidate = Candidate.parentElement;
+        }
+    }
+
     function ApplyGameContainerVerticalPaddingTrim(GameContainer) {
         if (!GameContainer) {
             return;
@@ -9799,9 +10014,12 @@
             `${Math.max(0, NativeTop - GameContainerVerticalPaddingTrimPx)}px`,
             "important"
         );
+        const BottomPadding = HideNytFooter
+            ? 0
+            : Math.max(0, NativeBottom - GameContainerVerticalPaddingTrimPx);
         GameContainer.style.setProperty(
             "padding-bottom",
-            `${Math.max(0, NativeBottom - GameContainerVerticalPaddingTrimPx)}px`,
+            `${BottomPadding}px`,
             "important"
         );
     }
@@ -9817,6 +10035,8 @@
         }
 
         ApplyGameContainerVerticalPaddingTrim(GameContainer);
+        ApplyOuterPageScrollOwnership(GameContainer);
+        ApplyBottomLayoutGap(SquareContainer);
 
         const MaximumSidePanelWidth = GetMaximumSidePanelWidth(GameContainer);
         let RenderedPanelWidth;
@@ -9845,6 +10065,13 @@
         PositionPreviewDebugPane();
         PositionPreviewVersionLabel();
         QueueValidWordFeedbackPlacement();
+    }
+
+    function GetEffectiveSquareHeight() {
+        return Math.max(
+            0,
+            NativeSquareHeight + BottomLayoutGapPx
+        );
     }
 
     function GetLeftColumnWidth() {
@@ -9967,7 +10194,7 @@
 
         GameContainer.style.setProperty(
             "--lb-cubed-square-height",
-            `${NativeSquareHeight}px`
+            `${GetEffectiveSquareHeight()}px`
         );
 
         GameContainer.style.setProperty(
@@ -10060,7 +10287,7 @@
 
         GameContainer.style.setProperty(
             "--lb-cubed-square-height",
-            `${NativeSquareHeight}px`
+            `${GetEffectiveSquareHeight()}px`
         );
 
         GameContainer.style.setProperty(
@@ -11662,7 +11889,8 @@
                 positioned between TI and GB by JavaScript so it follows either
                 side-by-side or stacked outer layout without becoming a grid item.
             */
-            #${LayoutGapHandleId} {
+            #${LayoutGapHandleId},
+            #${BottomLayoutGapHandleId} {
                 display: none;
                 position: absolute;
                 z-index: 45;
@@ -11672,11 +11900,13 @@
                 user-select: none;
             }
 
-            .lb-game-container.lb-cubed-adjust-layout-gap > #${LayoutGapHandleId} {
+            .lb-game-container.lb-cubed-adjust-layout-gap > #${LayoutGapHandleId},
+            #${BottomLayoutGapHandleId} {
                 display: block;
             }
 
-            #${LayoutGapHandleId}::after {
+            #${LayoutGapHandleId}::after,
+            #${BottomLayoutGapHandleId}::after {
                 content: "";
                 position: absolute;
                 left: 0;
@@ -11690,7 +11920,9 @@
             }
 
             #${LayoutGapHandleId}:hover::after,
-            #${LayoutGapHandleId}.lb-cubed-layout-gap-handle-active::after {
+            #${LayoutGapHandleId}.lb-cubed-layout-gap-handle-active::after,
+            #${BottomLayoutGapHandleId}:hover::after,
+            #${BottomLayoutGapHandleId}.lb-cubed-layout-gap-handle-active::after {
                 opacity: 1;
                 height: 3px;
             }
@@ -11787,6 +12019,15 @@
 
             .lb-cubed-original-yesterday-hidden {
                 display: none !important;
+            }
+
+            .lb-cubed-native-scroll-passthrough {
+                height: auto !important;
+                min-height: 0 !important;
+                max-height: none !important;
+                overflow: visible !important;
+                overflow-x: visible !important;
+                overflow-y: visible !important;
             }
 
             .lb-game-container.${SideModeClass} {
@@ -12948,8 +13189,8 @@
             }
 
             .lb-cubed-dashboard-grid > .lb-cubed-tree[open] {
-                display: flex;
-                flex-direction: column;
+                display: grid;
+                grid-template-rows: auto minmax(0, 1fr);
                 overflow: hidden;
             }
 
@@ -12979,6 +13220,10 @@
                 overscroll-behavior: contain;
                 scrollbar-gutter: stable;
                 scrollbar-width: thin;
+                scrollbar-color:
+                    var(--lb-cubed-lbc-text, #301818)
+                    var(--lb-cubed-lbc-bg, #D88482);
+                align-content: start;
             }
 
             .lb-cubed-stat {
@@ -13063,9 +13308,8 @@
             */
 
             .lb-cubed-hints-body {
-                display: flex;
-                flex: 1 1 auto;
-                flex-direction: column;
+                display: grid;
+                grid-template-rows: auto minmax(0, 1fr);
                 min-height: 0;
                 overflow: hidden;
                 padding: 5px;
@@ -13128,8 +13372,8 @@
             }
 
             .lb-cubed-potential-word-tree[open] {
-                display: flex;
-                flex-direction: column;
+                display: grid;
+                grid-template-rows: auto minmax(0, 1fr);
                 overflow: hidden;
             }
 
@@ -13860,6 +14104,7 @@
             }
 
             #${LayoutGapHandleId}::after,
+            #${BottomLayoutGapHandleId}::after,
             .lb-cubed-page-resize-handle::after,
             .lb-cubed-resize-handle::after {
                 background: color-mix(
@@ -13871,6 +14116,8 @@
 
             #${LayoutGapHandleId}:hover::after,
             #${LayoutGapHandleId}.lb-cubed-layout-gap-handle-active::after,
+            #${BottomLayoutGapHandleId}:hover::after,
+            #${BottomLayoutGapHandleId}.lb-cubed-layout-gap-handle-active::after,
             .lb-cubed-page-resize-handle:hover::after,
             .lb-cubed-page-resize-handle-active::after {
                 background: var(--lb-cubed-lbc-border, #4C2222) !important;
