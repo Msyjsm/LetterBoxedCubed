@@ -6,7 +6,7 @@ const source = fs.readFileSync(path.join(root, 'LetterBoxedCubed.user.js'), 'utf
 const preview = fs.readFileSync(path.join(root, 'tools', 'preview_runtime.js'), 'utf8');
 function assert(condition, message) { if (!condition) throw new Error(message); }
 
-assert(source.includes('// @version      1.13.1-beta.31'), 'beta.31 version missing');
+assert(source.includes('// @version      1.13.1-beta.32'), 'beta.32 version missing');
 assert(source.includes('const ExportFormatVersion = 4;'), 'backup schema v4 missing');
 assert(source.includes('const ThemeStateVersion = 2;'), 'ThemeState v2 compatibility missing');
 assert(source.includes('MergeThemeStates'), 'theme merge missing');
@@ -172,3 +172,6 @@ assert(source.includes('.lb-cubed-hint-counter-grid {') && source.includes('heig
 assert(source.includes('.lb-cubed-potential-word-tree {') && source.includes('align-self: stretch;'), 'Hints subtrees are not stretched');
 
 console.log('PASS: beta.31 Hints full-height fill static checks');
+assert(source.includes('flex: 1 1 0;\n                grid-template-rows: auto minmax(0, 1fr);'), 'Hints body flex fill missing');
+assert(source.includes('#help-dialog {\n                z-index: 100050 !important;'), 'Help dropdown layering fix missing');
+
