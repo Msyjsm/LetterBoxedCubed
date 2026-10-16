@@ -6,7 +6,7 @@ const source = fs.readFileSync(path.join(root, 'LetterBoxedCubed.user.js'), 'utf
 const preview = fs.readFileSync(path.join(root, 'tools', 'preview_runtime.js'), 'utf8');
 function assert(condition, message) { if (!condition) throw new Error(message); }
 
-assert(source.includes('// @version      1.13.1-beta.29'), 'beta.29 version missing');
+assert(source.includes('// @version      1.13.1-beta.30'), 'beta.30 version missing');
 assert(source.includes('const ExportFormatVersion = 4;'), 'backup schema v4 missing');
 assert(source.includes('const ThemeStateVersion = 2;'), 'ThemeState v2 compatibility missing');
 assert(source.includes('MergeThemeStates'), 'theme merge missing');
@@ -160,4 +160,10 @@ assert(source.includes('display: grid;\n                grid-template-rows: auto
 assert(source.includes('.lb-cubed-potential-word-tree[open] {\n                display: grid;'), 'hint subtrees are not bounded grid scroll hosts');
 assert(source.includes('scrollbar-color:\n                    var(--lb-cubed-lbc-text, #301818)'), 'section scrollbar colors missing');
 
-console.log('PASS: beta.29 section scrollports + lower gap cleanup static checks');
+
+// beta.30: Chromium <details> internal content wrapper must be bounded so
+// subsection bodies can actually shrink below intrinsic content height.
+assert(source.includes('.lb-cubed-dashboard-grid > .lb-cubed-tree[open]::details-content,'), 'top-level details-content wrapper constraint missing');
+assert(source.includes('.lb-cubed-potential-word-tree[open]::details-content {'), 'hint details-content wrapper constraint missing');
+
+console.log('PASS: beta.30 details-content scrollport fix static checks');
