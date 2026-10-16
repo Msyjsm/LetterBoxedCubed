@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed [PREVIEW]
 // @namespace    https://nathanburgdorff.com/userscripts/preview/
-// @version      1.13.1-beta.33.314
+// @version      1.13.1-beta.34.315
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -286,6 +286,12 @@
                 background: #101014;
                 color: #fff;
                 font: 12px/1.3 Consolas, "Courier New", monospace;
+            }
+
+            #${PreviewHistoryTestPanelId} .lbc-longest-words-test-input::placeholder {
+                color: currentColor;
+                opacity: 0.55;
+                font-style: italic;
             }
 
             #${PreviewHistoryTestPanelId} .lbc-history-test-actions {
@@ -1613,7 +1619,7 @@
         LongestInput.className = "lbc-longest-words-test-input";
         LongestInput.dataset.lbcLongestWordsTest = "true";
         LongestInput.value = PreviewLongestWordsTestValue;
-        LongestInput.placeholder = "LONGESTWORD, ANOTHERTIEDWORD";
+        LongestInput.placeholder = "Enter a long string of text here";
         LongestInput.autocomplete = "off";
         LongestInput.spellcheck = false;
         ["keydown", "keyup", "keypress", "beforeinput"].forEach(Type => {
@@ -5487,6 +5493,54 @@
         );
     }
 
+    function QueueHighlightedElementScrollIntoView(Element) {
+        requestAnimationFrame(() => {
+            if (!(Element instanceof HTMLElement) || !Element.isConnected) {
+                return;
+            }
+
+            const ScrollHost = Element.closest(
+                ".lb-cubed-potential-word-list, " +
+                ".lb-cubed-twofer-body, " +
+                ".lb-cubed-length-grid, " +
+                ".lb-cubed-word-grid"
+            );
+
+            if (
+                !(ScrollHost instanceof HTMLElement) ||
+                ScrollHost.scrollHeight <= ScrollHost.clientHeight + 1
+            ) {
+                return;
+            }
+
+            const HostRect = ScrollHost.getBoundingClientRect();
+            const ElementRect = Element.getBoundingClientRect();
+            const Above = ElementRect.top - HostRect.top;
+            const Below = ElementRect.bottom - HostRect.bottom;
+
+            if (Above >= 0 && Below <= 0) {
+                return;
+            }
+
+            let TargetTop = ScrollHost.scrollTop;
+            if (Above < 0) {
+                TargetTop += Above;
+            } else if (Below > 0) {
+                TargetTop += Below;
+            }
+
+            const Maximum = Math.max(
+                0,
+                ScrollHost.scrollHeight - ScrollHost.clientHeight
+            );
+
+            ScrollHost.scrollTo({
+                top: Clamp(TargetTop, 0, Maximum),
+                behavior: "smooth"
+            });
+        });
+    }
+
     function ApplyRecentHighlight(Element, MapValue, Key) {
         const ExpiresAt = MapValue.get(Key);
         const RemainingMs = Number(ExpiresAt) - Date.now();
@@ -5501,6 +5555,7 @@
             "--lb-cubed-highlight-duration",
             `${Math.max(1, Math.round(RemainingMs))}ms`
         );
+        QueueHighlightedElementScrollIntoView(Element);
 
         return true;
     }
@@ -5549,6 +5604,7 @@
             "--lb-cubed-highlight-duration",
             `${Math.max(1, Math.round(LatestExpiry - Date.now()))}ms`
         );
+        QueueHighlightedElementScrollIntoView(Element);
 
         if (RecentWords.length) {
             Element.title = `Recently found: ${RecentWords.sort(Alphabetically).join(", ")}`;
@@ -5579,6 +5635,7 @@
             "--lb-cubed-highlight-duration",
             `${Math.max(1, Math.round(LatestExpiry - Now))}ms`
         );
+        QueueHighlightedElementScrollIntoView(Element);
 
         return true;
     }
