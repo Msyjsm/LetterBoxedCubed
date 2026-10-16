@@ -224,6 +224,12 @@
                 font: 12px/1.3 Consolas, "Courier New", monospace;
             }
 
+            #${PreviewHistoryTestPanelId} .lbc-longest-words-test-input::placeholder {
+                color: currentColor;
+                opacity: 0.55;
+                font-style: italic;
+            }
+
             #${PreviewHistoryTestPanelId} .lbc-history-test-actions {
                 display: flex;
                 flex-wrap: wrap;
@@ -1549,7 +1555,7 @@
         LongestInput.className = "lbc-longest-words-test-input";
         LongestInput.dataset.lbcLongestWordsTest = "true";
         LongestInput.value = PreviewLongestWordsTestValue;
-        LongestInput.placeholder = "LONGESTWORD, ANOTHERTIEDWORD";
+        LongestInput.placeholder = "Enter a long string of text here";
         LongestInput.autocomplete = "off";
         LongestInput.spellcheck = false;
         ["keydown", "keyup", "keypress", "beforeinput"].forEach(Type => {

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed
 // @namespace    https://nathanburgdorff.com/userscripts/
-// @version      1.13.1-beta.33
+// @version      1.13.1-beta.34
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -2962,6 +2962,54 @@
         );
     }
 
+    function QueueHighlightedElementScrollIntoView(Element) {
+        requestAnimationFrame(() => {
+            if (!(Element instanceof HTMLElement) || !Element.isConnected) {
+                return;
+            }
+
+            const ScrollHost = Element.closest(
+                ".lb-cubed-potential-word-list, " +
+                ".lb-cubed-twofer-body, " +
+                ".lb-cubed-length-grid, " +
+                ".lb-cubed-word-grid"
+            );
+
+            if (
+                !(ScrollHost instanceof HTMLElement) ||
+                ScrollHost.scrollHeight <= ScrollHost.clientHeight + 1
+            ) {
+                return;
+            }
+
+            const HostRect = ScrollHost.getBoundingClientRect();
+            const ElementRect = Element.getBoundingClientRect();
+            const Above = ElementRect.top - HostRect.top;
+            const Below = ElementRect.bottom - HostRect.bottom;
+
+            if (Above >= 0 && Below <= 0) {
+                return;
+            }
+
+            let TargetTop = ScrollHost.scrollTop;
+            if (Above < 0) {
+                TargetTop += Above;
+            } else if (Below > 0) {
+                TargetTop += Below;
+            }
+
+            const Maximum = Math.max(
+                0,
+                ScrollHost.scrollHeight - ScrollHost.clientHeight
+            );
+
+            ScrollHost.scrollTo({
+                top: Clamp(TargetTop, 0, Maximum),
+                behavior: "smooth"
+            });
+        });
+    }
+
     function ApplyRecentHighlight(Element, MapValue, Key) {
         const ExpiresAt = MapValue.get(Key);
         const RemainingMs = Number(ExpiresAt) - Date.now();
@@ -2976,6 +3024,7 @@
             "--lb-cubed-highlight-duration",
             `${Math.max(1, Math.round(RemainingMs))}ms`
         );
+        QueueHighlightedElementScrollIntoView(Element);
 
         return true;
     }
@@ -3024,6 +3073,7 @@
             "--lb-cubed-highlight-duration",
             `${Math.max(1, Math.round(LatestExpiry - Date.now()))}ms`
         );
+        QueueHighlightedElementScrollIntoView(Element);
 
         if (RecentWords.length) {
             Element.title = `Recently found: ${RecentWords.sort(Alphabetically).join(", ")}`;
@@ -3054,6 +3104,7 @@
             "--lb-cubed-highlight-duration",
             `${Math.max(1, Math.round(LatestExpiry - Now))}ms`
         );
+        QueueHighlightedElementScrollIntoView(Element);
 
         return true;
     }

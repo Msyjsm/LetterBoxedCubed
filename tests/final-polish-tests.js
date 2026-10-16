@@ -6,7 +6,7 @@ const source = fs.readFileSync(path.join(root, 'LetterBoxedCubed.user.js'), 'utf
 const preview = fs.readFileSync(path.join(root, 'tools', 'preview_runtime.js'), 'utf8');
 function assert(condition, message) { if (!condition) throw new Error(message); }
 
-assert(source.includes('// @version      1.13.1-beta.33'), 'beta.33 version missing');
+assert(source.includes('// @version      1.13.1-beta.34'), 'beta.34 version missing');
 assert(source.includes('const ExportFormatVersion = 4;'), 'backup schema v4 missing');
 assert(source.includes('const ThemeStateVersion = 2;'), 'ThemeState v2 compatibility missing');
 assert(source.includes('MergeThemeStates'), 'theme merge missing');
@@ -182,6 +182,18 @@ assert(preview.includes('LongestInput.setSelectionRange(SanitizedStart, Sanitize
 assert(preview.includes('["keydown", "keyup", "keypress", "beforeinput"]'), 'Test Beds input key propagation guard missing');
 
 console.log('PASS: beta.33 Help/ticker/Test Beds static checks');
+
+// beta.34: Test Beds placeholder polish + reveal newly highlighted rows in their owned scrollports.
+assert(source.includes('function QueueHighlightedElementScrollIntoView(Element)'), 'highlight scroll helper missing');
+assert(source.includes('ScrollHost.scrollTo({'), 'highlight scroll action missing');
+assert(source.includes('behavior: "smooth"'), 'highlight scroll should be smooth');
+assert((source.match(/QueueHighlightedElementScrollIntoView\(Element\);/g) || []).length >= 3, 'not all recent highlight paths reveal their rows');
+assert(preview.includes('LongestInput.placeholder = "Enter a long string of text here";'), 'Longest Words placeholder text missing');
+assert(preview.includes('.lbc-longest-words-test-input::placeholder'), 'Longest Words placeholder styling missing');
+assert(preview.includes('font-style: italic;'), 'Longest Words placeholder italics missing');
+assert(preview.includes('opacity: 0.55;'), 'Longest Words placeholder dimming missing');
+
+console.log('PASS: beta.34 final scroll/placeholder static checks');
 assert(preview.includes('? \"Test Beds (ACTIVE)\"'), 'Test Beds button missing');
 assert(preview.includes('HistoricalHeading.textContent = \"Historical Word Sandbox\";'), 'Historical section missing');
 assert(preview.includes('LongestHeading.textContent = \"Longest Words Scrolling\";'), 'Longest Words section missing');
