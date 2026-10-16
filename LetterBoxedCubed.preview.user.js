@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed [PREVIEW]
 // @namespace    https://nathanburgdorff.com/userscripts/preview/
-// @version      1.13.1-beta.32.308
+// @version      1.13.1-beta.33.309
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -1616,11 +1616,31 @@
         LongestInput.placeholder = "LONGESTWORD, ANOTHERTIEDWORD";
         LongestInput.autocomplete = "off";
         LongestInput.spellcheck = false;
-        LongestInput.addEventListener("input", () => {
-            const Sanitized = SanitizePreviewLongestWordsTestValue(LongestInput.value);
-            if (LongestInput.value !== Sanitized) {
+        ["keydown", "keyup", "keypress", "beforeinput"].forEach(Type => {
+            LongestInput.addEventListener(Type, Event => {
+                Event.stopPropagation();
+            });
+        });
+        LongestInput.addEventListener("input", Event => {
+            Event.stopPropagation();
+
+            const Raw = LongestInput.value;
+            const SelectionStart = LongestInput.selectionStart ?? Raw.length;
+            const SelectionEnd = LongestInput.selectionEnd ?? SelectionStart;
+            const Sanitized = SanitizePreviewLongestWordsTestValue(Raw);
+
+            if (Raw !== Sanitized) {
+                const SanitizedStart = SanitizePreviewLongestWordsTestValue(
+                    Raw.slice(0, SelectionStart)
+                ).length;
+                const SanitizedEnd = SanitizePreviewLongestWordsTestValue(
+                    Raw.slice(0, SelectionEnd)
+                ).length;
+
                 LongestInput.value = Sanitized;
+                LongestInput.setSelectionRange(SanitizedStart, SanitizedEnd);
             }
+
             PreviewLongestWordsTestValue = Sanitized;
             EnsurePreviewTestBedsObserver();
             ApplyPreviewLongestWordsTest();
@@ -13597,6 +13617,7 @@
         let Direction = 1;
         let LastTimestamp = null;
         let HoldUntil = performance.now() + 900;
+        let Position = Viewport.scrollLeft;
         const SpeedPixelsPerSecond = 16;
         const EndPauseMs = 900;
 
@@ -13605,6 +13626,7 @@
         });
         Viewport.addEventListener("pointerleave", () => {
             Paused = false;
+            Position = Viewport.scrollLeft;
             LastTimestamp = null;
         });
         Viewport.addEventListener(
@@ -13642,6 +13664,7 @@
             );
 
             if (Maximum <= 1) {
+                Position = 0;
                 Viewport.scrollLeft = 0;
                 LastTimestamp = Timestamp;
                 requestAnimationFrame(Tick);
@@ -13660,7 +13683,7 @@
             LastTimestamp = Timestamp;
 
             let Next =
-                Viewport.scrollLeft +
+                Position +
                 Direction * SpeedPixelsPerSecond * (DeltaMs / 1000);
 
             if (Next >= Maximum) {
@@ -13673,7 +13696,8 @@
                 HoldUntil = Timestamp + EndPauseMs;
             }
 
-            Viewport.scrollLeft = Next;
+            Position = Next;
+            Viewport.scrollLeft = Position;
             requestAnimationFrame(Tick);
         };
 
@@ -15778,6 +15802,7 @@
                 width: 100%;
                 min-width: 0;
                 overflow-x: auto;
+                cursor: ew-resize;
                 overflow-y: hidden;
                 white-space: nowrap;
                 overflow-wrap: normal;
@@ -16699,6 +16724,13 @@
                 background-color: var(--lb-cubed-lb-bg) !important;
                 color: var(--lb-cubed-lb-fg) !important;
                 border-color: var(--lb-cubed-lb-fg) !important;
+            }
+
+            /* The Help menu's own huge z-index is trapped inside NYT's
+             * toolbar stacking context (native z-index: 3). Lift that context
+             * above LBC only while the menu is actually open. */
+            [class*="Game-module_toolbarContainer__"]:has(#help-dialog) {
+                z-index: 100 !important;
             }
 
             #help-dialog {
