@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed [PREVIEW]
 // @namespace    https://nathanburgdorff.com/userscripts/preview/
-// @version      1.13.1-beta.34.318
+// @version      1.13.1-beta.35.319
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -95,6 +95,8 @@
     const PreviewDebugOverriddenElements = new Set();
     const PreviewDebugMutationLog = [];
     const PreviewTransientTrace = [];
+    const PreviewHighlightTrace = [];
+    let PreviewHighlightTraceStart = performance.now();
     const PreviewTransientTraceSignatures = new Map();
     let PreviewTransientObserver = null;
     let PreviewTransientAnimationHandler = null;
@@ -155,6 +157,216 @@
                 `#${PreviewDebugPanelId}, #${PreviewHistoryTestOverlayId}`
             )
         );
+    }
+
+
+    // ---------------------------------------------------------
+    // Preview-only highlight continuity diagnostics (bug #39).
+    // Passive, bounded logging: intentionally does not change
+    // core highlight timing or the stored found-word data.
+    // ---------------------------------------------------------
+
+    function RecordPreviewHighlightTrace(Type, Details = {}) {
+        const Entry = {
+            At: new Date().toISOString(),
+            ElapsedMs: Math.round((performance.now() - PreviewHighlightTraceStart) * 10) / 10,
+            Type,
+            ...Details
+        };
+        PreviewHighlightTrace.push(Entry);
+        if (PreviewHighlightTrace.length > 1200) {
+            PreviewHighlightTrace.splice(0, PreviewHighlightTrace.length - 1200);
+        }
+        return Entry;
+    }
+
+    function DescribePreviewHighlightNode(Node) {
+        if (!(Node instanceof Element)) {
+            return null;
+        }
+
+        const Animation = typeof Node.getAnimations === "function"
+            ? Node.getAnimations().find(Item =>
+                String(Item.animationName || "").includes("lb-cubed-new-highlight")
+            )
+            : null;
+
+        const Timing = Animation?.effect?.getTiming?.() || null;
+        return {
+            Word: Node.dataset.cubedWord || null,
+            Twofer: Node.dataset.cubedTwofer || null,
+            Text: (Node.textContent || "").trim().slice(0, 90),
+            ClassName: String(Node.className || "").slice(0, 180),
+            DurationCss: Node.style.getPropertyValue("--lb-cubed-highlight-duration") || null,
+            AnimationName: Animation?.animationName || null,
+            AnimationCurrentMs: typeof Animation?.currentTime === "number"
+                ? Math.round(Animation.currentTime) : null,
+            AnimationStartMs: typeof Animation?.startTime === "number"
+                ? Math.round(Animation.startTime) : null,
+            AnimationDurationMs: Timing?.duration ?? null,
+            AnimationDelayMs: Timing?.delay ?? null,
+            AnimationState: Animation?.playState || null
+        };
+    }
+
+    function SnapshotPreviewHighlights() {
+        const Nodes = [...document.querySelectorAll(
+            "#" + PanelId + " .lb-cubed-new-highlight"
+        )];
+        return {
+            ActiveNodeCount: Nodes.length,
+            Sample: Nodes.slice(0, 16).map(DescribePreviewHighlightNode)
+        };
+    }
+
+    function GetPreviewHighlightTraceJson() {
+        return JSON.stringify({
+            Version: "1.13.1-beta.35",
+            CapturedAt: new Date().toISOString(),
+            Bug: "https://github.com/Msyjsm/LetterBoxedCubed/issues/39",
+            RecentWords: [...RecentWordHighlights].map(([Key, Expiry]) => ({
+                Word: Key,
+                RemainingMs: Math.max(0, Expiry - Date.now())
+            })),
+            RecentTwofers: [...RecentTwoferHighlights].map(([Key, Expiry]) => ({
+                Twofer: Key,
+                RemainingMs: Math.max(0, Expiry - Date.now())
+            })),
+            Trace: PreviewHighlightTrace
+        }, null, 2);
+    }
+
+    function ResetPreviewNewWordHighlights() {
+        const ClearedWords = [...RecentWordHighlights.keys()];
+        const ClearedTwofers = [...RecentTwoferHighlights.keys()];
+        PreviewHighlightTrace.length = 0;
+        PreviewHighlightTraceStart = performance.now();
+        RecentWordHighlights.clear();
+        RecentTwoferHighlights.clear();
+        RecordPreviewHighlightTrace("reset-active-highlights", {
+            ClearedWords, ClearedTwofers,
+            Note: "Only live highlight animations were reset. No stored words or NYT data were cleared."
+        });
+        RenderPanel();
+        QueuePanelLayoutUpdate();
+        const Status = document.querySelector(".lbc-highlight-test-status");
+        if (Status) {
+            Status.textContent = "Highlight animations reset; trace recording (0s). Now submit words normally, then copy the trace.";
+        }
+    }
+
+    async function CopyPreviewHighlightTrace() {
+        const Json = GetPreviewHighlightTraceJson();
+        const Status = document.querySelector(".lbc-highlight-test-status");
+        try {
+            await navigator.clipboard.writeText(Json);
+            if (Status) {
+                Status.textContent = "Copied " + PreviewHighlightTrace.length + " trace entries to clipboard.";
+            }
+        } catch (ErrorValue) {
+            console.info("[Letter Boxed Cubed][highlight trace] Clipboard unavailable; use DevTools:", Json);
+            if (Status) {
+                Status.textContent = "Clipboard unavailable. In DevTools Console run: copy(window.__LetterBoxedCubedGetHighlightTrace())";
+            }
+        }
+    }
+
+    function InstallPreviewHighlightDiagnostics() {
+        try {
+            PageWindow.__LetterBoxedCubedGetHighlightTrace = GetPreviewHighlightTraceJson;
+        } catch {}
+
+        document.addEventListener("animationstart", Event => {
+            if (!String(Event.animationName).includes("lb-cubed-new-highlight") ||
+                !Event.target?.closest?.("#" + PanelId)) {
+                return;
+            }
+            RecordPreviewHighlightTrace("animation-start", {
+                ElapsedAnimationSeconds: Event.elapsedTime,
+                Node: DescribePreviewHighlightNode(Event.target)
+            });
+        }, true);
+
+        for (const [EventType, Label] of [
+            ["animationcancel", "animation-cancel"],
+            ["animationend", "animation-end"]
+        ]) {
+            document.addEventListener(EventType, Event => {
+                if (!String(Event.animationName).includes("lb-cubed-new-highlight") ||
+                    !Event.target?.closest?.("#" + PanelId)) {
+                    return;
+                }
+                RecordPreviewHighlightTrace(Label, {
+                    ElapsedAnimationSeconds: Event.elapsedTime,
+                    Node: DescribePreviewHighlightNode(Event.target)
+                });
+            }, true);
+        }
+
+        const OriginalRegisterHighlight = RegisterRecentHighlight;
+        RegisterRecentHighlight = function (MapValue, Key, ...Args) {
+            const PreviousExpiry = MapValue.get(Key) ?? null;
+            const Result = OriginalRegisterHighlight(MapValue, Key, ...Args);
+            RecordPreviewHighlightTrace("highlight-registered", {
+                Kind: MapValue === RecentWordHighlights ? "word" :
+                    MapValue === RecentTwoferHighlights ? "twofer" : "other",
+                Key,
+                PreviousExpiry,
+                ExpiresAt: MapValue.get(Key) ?? null,
+                DurationMs: (MapValue.get(Key) ?? Date.now()) - Date.now()
+            });
+            return Result;
+        };
+
+        const OriginalRender = RenderPanel;
+        let RenderSequence = 0;
+        RenderPanel = function (...Args) {
+            RenderSequence++;
+            RecordPreviewHighlightTrace("render-start", {
+                RenderSequence,
+                Before: SnapshotPreviewHighlights()
+            });
+            const Result = OriginalRender(...Args);
+            RecordPreviewHighlightTrace("render-end", {
+                RenderSequence,
+                After: SnapshotPreviewHighlights()
+            });
+            return Result;
+        };
+
+        const OriginalSubmissionAttempt = HandleSubmissionAttempt;
+        HandleSubmissionAttempt = function (...Args) {
+            const Word = ReadCurrentInputWord();
+            const Chain = ReadCurrentChain();
+            RecordPreviewHighlightTrace("submission-attempt", {
+                Word,
+                Chain,
+                AlreadyFound: FoundWords.has(Word),
+                PotentialTwofer: Chain.length === 1
+                    ? MakeTwoferKey(Chain[0], Word)
+                    : null,
+                PotentialTwoferAlreadyFound: Chain.length === 1
+                    ? FoundTwofers.has(MakeTwoferKey(Chain[0], Word))
+                    : null
+            });
+            return OriginalSubmissionAttempt(...Args);
+        };
+
+        const OriginalMarkTwofer = MarkTwoferFound;
+        MarkTwoferFound = function (First, Second, ...Args) {
+            const Key = MakeTwoferKey(NormalizeWord(First), NormalizeWord(Second));
+            const PreviouslyFound = FoundTwofers.has(Key);
+            const FirstAlreadyFound = FoundWords.has(NormalizeWord(First));
+            const SecondAlreadyFound = FoundWords.has(NormalizeWord(Second));
+            const Result = OriginalMarkTwofer(First, Second, ...Args);
+            RecordPreviewHighlightTrace("twofer-check", {
+                Key, PreviouslyFound, FirstAlreadyFound, SecondAlreadyFound,
+                NewlyRegistered: Boolean(Result)
+            });
+            return Result;
+        };
+
+        RecordPreviewHighlightTrace("diagnostics-installed");
     }
 
     // -------------------------------------------------------------------------
@@ -1358,7 +1570,10 @@
         }
 
         for (const Button of Panel.querySelectorAll("button")) {
-            if (Button.dataset.lbcHistoryTestExit === "true") {
+            if (
+                Button.dataset.lbcHistoryTestExit === "true" ||
+                Button.dataset.lbcHighlightTestAction === "true"
+            ) {
                 Button.disabled = false;
                 continue;
             }
@@ -1653,7 +1868,45 @@
         });
         LongestSection.append(LongestHeading, LongestInput);
 
-        Panel.append(Heading, HistoricalSection, LongestSection, Footer);
+        const HighlightSection = document.createElement("section");
+        HighlightSection.className = "lbc-test-bed-section";
+        const HighlightHeading = document.createElement("h3");
+        HighlightHeading.textContent = "New Word Highlights";
+        const HighlightNote = document.createElement("p");
+        HighlightNote.textContent =
+            "Reset active fades and clear the trace, then enter words normally. " +
+            "This does not erase found words or NYT progress. " +
+            "The trace records registrations, submissions, twofer checks, " +
+            "dashboard redraws, and CSS animation start/cancel/end.";
+        const HighlightActions = document.createElement("div");
+        HighlightActions.className = "lbc-history-test-actions";
+
+        const HighlightReset = document.createElement("button");
+        HighlightReset.type = "button";
+        HighlightReset.dataset.lbcHighlightTestAction = "true";
+        HighlightReset.textContent = "Reset new-word highlights + trace";
+        HighlightReset.addEventListener("click", ResetPreviewNewWordHighlights);
+
+        const HighlightCopy = document.createElement("button");
+        HighlightCopy.type = "button";
+        HighlightCopy.dataset.lbcHighlightTestAction = "true";
+        HighlightCopy.textContent = "Copy highlight trace";
+        HighlightCopy.addEventListener("click", CopyPreviewHighlightTrace);
+
+        const HighlightStatus = document.createElement("div");
+        HighlightStatus.className = "lbc-highlight-test-status";
+        HighlightStatus.textContent =
+            "Ready. Reset first, then hide Test Beds and submit words. " +
+            "Reopen Test Beds to copy the trace.";
+
+        HighlightActions.append(HighlightReset, HighlightCopy);
+        HighlightSection.append(
+            HighlightHeading, HighlightNote, HighlightActions, HighlightStatus
+        );
+
+        Panel.append(
+            Heading, HistoricalSection, LongestSection, HighlightSection, Footer
+        );
         Overlay.appendChild(Panel);
         document.body.appendChild(Overlay);
 
@@ -2588,6 +2841,7 @@
     }
 
     InstallPreviewHistoricalSandboxGuards();
+    InstallPreviewHighlightDiagnostics();
 
     const LogoPngBase64 =
         "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";
