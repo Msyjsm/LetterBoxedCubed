@@ -6,7 +6,7 @@ const source = fs.readFileSync(path.join(root, 'LetterBoxedCubed.user.js'), 'utf
 const preview = fs.readFileSync(path.join(root, 'tools', 'preview_runtime.js'), 'utf8');
 function assert(condition, message) { if (!condition) throw new Error(message); }
 
-assert(source.includes('// @version      1.13.1-beta.34'), 'beta.34 version missing');
+assert(source.includes('// @version      1.13.1-beta.35'), 'beta.35 version missing');
 assert(source.includes('const ExportFormatVersion = 4;'), 'backup schema v4 missing');
 assert(source.includes('const ThemeStateVersion = 2;'), 'ThemeState v2 compatibility missing');
 assert(source.includes('MergeThemeStates'), 'theme merge missing');
@@ -202,3 +202,18 @@ assert(preview.includes('.replace(/[^A-Z ,]/g, \"\")'), 'Longest Words sanitizer
 assert(source.includes('flex: 1 1 0;\n                grid-template-rows: auto minmax(0, 1fr);'), 'Hints body flex fill missing');
 assert(source.includes('#help-dialog {\n                z-index: 100050 !important;'), 'Help dropdown layering fix missing');
 
+
+
+// beta.35: Preview-only, non-destructive highlight-continuity Test Bed and trace.
+assert(preview.includes('HighlightHeading.textContent = "New Word Highlights"'), 'new highlights Test Bed missing');
+assert(preview.includes('function ResetPreviewNewWordHighlights()'), 'highlight reset missing');
+assert(preview.includes('RecentWordHighlights.clear();'), 'word highlight reset missing');
+assert(preview.includes('RecentTwoferHighlights.clear();'), 'twofer highlight reset missing');
+assert(preview.includes('function CopyPreviewHighlightTrace()'), 'highlight trace copy missing');
+assert(preview.includes('["animationcancel", "animation-cancel"]'), 'CSS cancel trace missing');
+assert(preview.includes('"animation-start"'), 'CSS animation start trace missing');
+assert(preview.includes('"render-start"'), 'redraw trace missing');
+assert(preview.includes('"submission-attempt"'), 'submission trace missing');
+assert(preview.includes('"twofer-check"'), 'twofer trace missing');
+assert(preview.includes('InstallPreviewHighlightDiagnostics();'), 'diagnostics not installed');
+console.log('PASS: beta.35 highlight-continuity diagnostic checks');
