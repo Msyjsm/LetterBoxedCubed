@@ -161,7 +161,7 @@
 
     function GetPreviewHighlightTraceJson() {
         return JSON.stringify({
-            Version: "1.13.1-beta.35",
+            Version: GetRunningUserscriptVersion(),
             CapturedAt: new Date().toISOString(),
             Bug: "https://github.com/Msyjsm/LetterBoxedCubed/issues/39",
             RecentWords: [...RecentWordHighlights].map(([Key, Expiry]) => ({
@@ -342,6 +342,8 @@
                 Word,
                 Chain,
                 AlreadyFound: FoundWords.has(Word),
+                PreviouslyFound: PreviouslyFoundWordsForPuzzle.has(Word),
+                AlreadyKnownInUi: KnownWordsForPuzzle.has(Word),
                 PotentialTwofer: Chain.length === 1
                     ? MakeTwoferKey(Chain[0], Word)
                     : null,
