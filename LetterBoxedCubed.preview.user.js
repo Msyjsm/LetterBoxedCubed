@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed [PREVIEW]
 // @namespace    https://nathanburgdorff.com/userscripts/preview/
-// @version      1.13.1-beta.36.326
+// @version      1.13.1-beta.37.330
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -87,6 +87,7 @@
     let PreviewHistoricalBedActive = false;
     let PreviewHighlightTestActive = false;
     let PreviewHighlightObservedChain = [];
+    let PreviewHighlightSeenWords = new Set();
     let PreviewHistoricalInjectedWords = new Set();
     let PreviewHistoricalBaseline = null;
     let PreviewHistoricalSelectedTwoferKey = null;
@@ -235,12 +236,14 @@
                 Twofer: Key,
                 RemainingMs: Math.max(0, Expiry - Date.now())
             })),
+            TestSessionSeenWords: [...PreviewHighlightSeenWords],
             Trace: PreviewHighlightTrace
         }, null, 2);
     }
 
     function ResetPreviewNewWordHighlights() {
         PreviewHighlightTestActive = true;
+        PreviewHighlightSeenWords = new Set();
         PreviewHighlightObservedChain = ReadCurrentChain();
         const ClearedWords = [...RecentWordHighlights.keys()];
         const ClearedTwofers = [...RecentTwoferHighlights.keys()];
@@ -250,7 +253,7 @@
         RecentTwoferHighlights.clear();
         RecordPreviewHighlightTrace("reset-active-highlights", {
             ClearedWords, ClearedTwofers,
-            Note: "Only live highlight animations were reset. No stored words or NYT data were cleared."
+            Note: "Highlight testing now starts with zero session-seen words. Each accepted word highlights only the first time since reset; stored words and NYT data remain unchanged."
         });
         RenderPanel();
         QueuePanelLayoutUpdate();
@@ -258,7 +261,7 @@
         RenderPreviewHistoricalTestPanel();
         const Status = document.querySelector(".lbc-highlight-test-status");
         if (Status) {
-            Status.textContent = "Highlights reset; replay armed. Accepted already-known words can highlight again. Submit normally, then copy trace.";
+            Status.textContent = "Session reset: each accepted word is NEW once; subsequent uses are OLD. Stored puzzle progress is unchanged. Submit normally, then copy trace.";
         }
     }
 
@@ -340,11 +343,31 @@
                         PreviousCounts.set(Word, Count - 1);
                         continue;
                     }
-                    if ((FoundWords.has(Word) || PreviouslyFoundWordsForPuzzle.has(Word)) &&
-                        !RecentWordHighlights.has(Word)) {
+                    if (PreviewHighlightSeenWords.has(Word)) {
+                        RecordPreviewHighlightTrace(
+                            "preview-repeat-word-submission",
+                            { Word, NewInTestSession: false }
+                        );
+                        continue;
+                    }
+
+                    PreviewHighlightSeenWords.add(Word);
+                    if (FoundWords.has(Word) || PreviouslyFoundWordsForPuzzle.has(Word)) {
+                        // Recreate the FIRST new-word animation for any word
+                        // LBC already knew. Later submissions remain OLD,
+                        // even after that first animation expires.
                         MarkWordForHighlight(Word);
-                        RecordPreviewHighlightTrace("preview-known-word-replay", { Word });
+                        RecordPreviewHighlightTrace(
+                            "preview-first-word-submission",
+                            { Word, NewInTestSession: true, AlreadyKnownToLbc: true }
+                        );
                         DidReplay = true;
+                    } else {
+                        // Core ScanGameState registers truly new discoveries.
+                        RecordPreviewHighlightTrace(
+                            "preview-first-word-submission",
+                            { Word, NewInTestSession: true, AlreadyKnownToLbc: false }
+                        );
                     }
                 }
                 PreviewHighlightObservedChain = [...CurrentChain];
@@ -1442,6 +1465,7 @@
             PreviewHistoricalBedActive = false;
             PreviewHighlightTestActive = false;
             PreviewHighlightObservedChain = [];
+            PreviewHighlightSeenWords = new Set();
             PreviewHistoricalBaseline = null;
         }
 
@@ -1553,6 +1577,7 @@
         PreviewHistoricalBedActive = false;
         PreviewHighlightTestActive = false;
         PreviewHighlightObservedChain = [];
+        PreviewHighlightSeenWords = new Set();
         RestorePreviewHistoricalBaseline({ KeepActive: true });
         RecentWordHighlights.clear();
         RecentTwoferHighlights.clear();
@@ -2034,8 +2059,8 @@
         const HighlightNote = document.createElement("p");
         HighlightNote.textContent =
             "Reset active fades and clear the trace, then enter words normally. " +
-            "Accepted already-known words can replay their highlight in Preview " +
-            "without erasing found words or NYT progress. " +
+            "Each accepted word highlights once per reset, then becomes OLD " +
+            "for the rest of the test session. Stored words and NYT progress remain unchanged. " +
             "The trace records registrations, submissions, twofer checks, " +
             "dashboard redraws, and CSS animation start/cancel/end.";
         const HighlightActions = document.createElement("div");
@@ -3291,6 +3316,13 @@
 
     const RecentWordHighlights = new Map();
     const RecentTwoferHighlights = new Map();
+    // Track discovery order separately from expiration so two discoveries in
+    // the same millisecond still have an unambiguous scroll priority.
+    const RecentHighlightScrollOrders = new WeakMap();
+    let NextRecentHighlightScrollOrder = 0;
+    const PendingHighlightScrollRequests = [];
+    let HighlightScrollFrameScheduled = false;
+    const LastRevealedHighlightOrderBySection = new Map();
     const NytOriginalHeights = {
         Header: null,
         Title: null
@@ -5885,6 +5917,13 @@
         const ExpiresAt = Date.now() + DurationMs;
         MapValue.set(Key, ExpiresAt);
 
+        let Orders = RecentHighlightScrollOrders.get(MapValue);
+        if (!Orders) {
+            Orders = new Map();
+            RecentHighlightScrollOrders.set(MapValue, Orders);
+        }
+        Orders.set(Key, ++NextRecentHighlightScrollOrder);
+
         setTimeout(() => {
             if (MapValue.get(Key) === ExpiresAt) {
                 MapValue.delete(Key);
@@ -5906,51 +5945,86 @@
         );
     }
 
-    function QueueHighlightedElementScrollIntoView(Element) {
+    function GetRecentHighlightScrollOrder(MapValue, Key) {
+        return RecentHighlightScrollOrders.get(MapValue)?.get(Key) || 0;
+    }
+
+    function QueueHighlightedElementScrollIntoView(Element, Priority = 0) {
+        // During render, nodes are not yet in the document. Gather candidates
+        // and resolve their owning scroll sections AFTER DOM attachment.
+        if (!Priority) {
+            return;
+        }
+
+        PendingHighlightScrollRequests.push({ Element, Priority });
+        if (HighlightScrollFrameScheduled) {
+            return;
+        }
+
+        HighlightScrollFrameScheduled = true;
         requestAnimationFrame(() => {
-            if (!(Element instanceof HTMLElement) || !Element.isConnected) {
-                return;
+            HighlightScrollFrameScheduled = false;
+            const Requests = PendingHighlightScrollRequests.splice(0);
+            const SelectedBySection = new Map();
+
+            for (const Request of Requests) {
+                const Node = Request.Element;
+                if (!(Node instanceof HTMLElement) || !Node.isConnected) {
+                    continue;
+                }
+
+                const Host = Node.closest(
+                    ".lb-cubed-potential-word-list, " +
+                    ".lb-cubed-twofer-body, " +
+                    ".lb-cubed-length-grid, " +
+                    ".lb-cubed-word-grid"
+                );
+                if (!(Host instanceof HTMLElement)) {
+                    continue;
+                }
+
+                const Section = Host.dataset.cubedScrollKey;
+                if (!Section || Host.scrollHeight <= Host.clientHeight + 1 ||
+                    Host.getBoundingClientRect().height < 1) {
+                    continue;
+                }
+
+                const Existing = SelectedBySection.get(Section);
+                if (!Existing || Request.Priority > Existing.Priority) {
+                    SelectedBySection.set(Section, {
+                        Element: Node, Host, Priority: Request.Priority
+                    });
+                }
             }
 
-            const ScrollHost = Element.closest(
-                ".lb-cubed-potential-word-list, " +
-                ".lb-cubed-twofer-body, " +
-                ".lb-cubed-length-grid, " +
-                ".lb-cubed-word-grid"
-            );
+            for (const [Section, Selection] of SelectedBySection) {
+                if (Selection.Priority <=
+                    (LastRevealedHighlightOrderBySection.get(Section) || 0)) {
+                    continue;
+                }
 
-            if (
-                !(ScrollHost instanceof HTMLElement) ||
-                ScrollHost.scrollHeight <= ScrollHost.clientHeight + 1
-            ) {
-                return;
+                LastRevealedHighlightOrderBySection.set(
+                    Section, Selection.Priority
+                );
+
+                const Host = Selection.Host;
+                const HostRect = Host.getBoundingClientRect();
+                const ElementRect = Selection.Element.getBoundingClientRect();
+                const Above = ElementRect.top - HostRect.top;
+                const Below = ElementRect.bottom - HostRect.bottom;
+
+                if (Above >= 0 && Below <= 0) {
+                    continue;
+                }
+
+                const Maximum = Math.max(0, Host.scrollHeight - Host.clientHeight);
+                const TargetTop = Clamp(
+                    Host.scrollTop + (Above < 0 ? Above : Below),
+                    0, Maximum
+                );
+                // A later discovery supersedes any in-flight smooth scroll.
+                Host.scrollTo({ top: TargetTop, behavior: "smooth" });
             }
-
-            const HostRect = ScrollHost.getBoundingClientRect();
-            const ElementRect = Element.getBoundingClientRect();
-            const Above = ElementRect.top - HostRect.top;
-            const Below = ElementRect.bottom - HostRect.bottom;
-
-            if (Above >= 0 && Below <= 0) {
-                return;
-            }
-
-            let TargetTop = ScrollHost.scrollTop;
-            if (Above < 0) {
-                TargetTop += Above;
-            } else if (Below > 0) {
-                TargetTop += Below;
-            }
-
-            const Maximum = Math.max(
-                0,
-                ScrollHost.scrollHeight - ScrollHost.clientHeight
-            );
-
-            ScrollHost.scrollTo({
-                top: Clamp(TargetTop, 0, Maximum),
-                behavior: "smooth"
-            });
         });
     }
 
@@ -5968,7 +6042,9 @@
             "--lb-cubed-highlight-duration",
             `${Math.max(1, Math.round(RemainingMs))}ms`
         );
-        QueueHighlightedElementScrollIntoView(Element);
+        QueueHighlightedElementScrollIntoView(
+            Element, GetRecentHighlightScrollOrder(MapValue, Key)
+        );
 
         return true;
     }
@@ -5994,6 +6070,7 @@
 
     function ApplyRecentLengthHighlight(Element, Bucket) {
         let LatestExpiry = 0;
+        let LatestOrder = 0;
         const RecentWords = [];
 
         for (const [Word, ExpiresAt] of RecentWordHighlights) {
@@ -6004,6 +6081,10 @@
 
             if (GetLengthBucket(Word.length) === Bucket) {
                 LatestExpiry = Math.max(LatestExpiry, ExpiresAt);
+                LatestOrder = Math.max(
+                    LatestOrder,
+                    GetRecentHighlightScrollOrder(RecentWordHighlights, Word)
+                );
                 RecentWords.push(Word);
             }
         }
@@ -6017,7 +6098,7 @@
             "--lb-cubed-highlight-duration",
             `${Math.max(1, Math.round(LatestExpiry - Date.now()))}ms`
         );
-        QueueHighlightedElementScrollIntoView(Element);
+        QueueHighlightedElementScrollIntoView(Element, LatestOrder);
 
         if (RecentWords.length) {
             Element.title = `Recently found: ${RecentWords.sort(Alphabetically).join(", ")}`;
@@ -6026,6 +6107,7 @@
 
     function ApplyRecentWordGroupHighlight(Element, Predicate) {
         let LatestExpiry = 0;
+        let LatestOrder = 0;
         const Now = Date.now();
 
         for (const [Word, ExpiresAt] of RecentWordHighlights) {
@@ -6036,6 +6118,10 @@
 
             if (Predicate(Word)) {
                 LatestExpiry = Math.max(LatestExpiry, ExpiresAt);
+                LatestOrder = Math.max(
+                    LatestOrder,
+                    GetRecentHighlightScrollOrder(RecentWordHighlights, Word)
+                );
             }
         }
 
@@ -6048,7 +6134,7 @@
             "--lb-cubed-highlight-duration",
             `${Math.max(1, Math.round(LatestExpiry - Now))}ms`
         );
-        QueueHighlightedElementScrollIntoView(Element);
+        QueueHighlightedElementScrollIntoView(Element, LatestOrder);
 
         return true;
     }
