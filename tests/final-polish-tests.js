@@ -184,10 +184,10 @@ assert(preview.includes('["keydown", "keyup", "keypress", "beforeinput"]'), 'Tes
 console.log('PASS: beta.33 Help/ticker/Test Beds static checks');
 
 // beta.34: Test Beds placeholder polish + reveal newly highlighted rows in their owned scrollports.
-assert(source.includes('function QueueHighlightedElementScrollIntoView(Element)'), 'highlight scroll helper missing');
-assert(source.includes('ScrollHost.scrollTo({'), 'highlight scroll action missing');
+assert(source.includes('function QueueHighlightedElementScrollIntoView(Element, Priority = 0)'), 'priority-aware highlight scroll helper missing');
+assert(source.includes('Host.scrollTo({'), 'highlight scroll action missing');
 assert(source.includes('behavior: "smooth"'), 'highlight scroll should be smooth');
-assert((source.match(/QueueHighlightedElementScrollIntoView\(Element\);/g) || []).length >= 3, 'not all recent highlight paths reveal their rows');
+assert((source.match(/QueueHighlightedElementScrollIntoView\(/g) || []).length >= 4, 'not all recent highlight paths reveal their rows');
 assert(preview.includes('LongestInput.placeholder = "Enter a long string of text here";'), 'Longest Words placeholder text missing');
 assert(preview.includes('.lbc-longest-words-test-input::placeholder'), 'Longest Words placeholder styling missing');
 assert(preview.includes('font-style: italic;'), 'Longest Words placeholder italics missing');
