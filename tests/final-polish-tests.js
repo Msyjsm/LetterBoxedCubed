@@ -6,7 +6,7 @@ const source = fs.readFileSync(path.join(root, 'LetterBoxedCubed.user.js'), 'utf
 const preview = fs.readFileSync(path.join(root, 'tools', 'preview_runtime.js'), 'utf8');
 function assert(condition, message) { if (!condition) throw new Error(message); }
 
-assert(source.includes('// @version      1.13.1-beta.36'), 'beta.36 version missing');
+assert(source.includes('// @version      1.13.1-beta.37'), 'beta.37 version missing');
 assert(source.includes('const ExportFormatVersion = 4;'), 'backup schema v4 missing');
 assert(source.includes('const ThemeStateVersion = 2;'), 'ThemeState v2 compatibility missing');
 assert(source.includes('MergeThemeStates'), 'theme merge missing');
@@ -234,6 +234,26 @@ assert(preview.includes('Button.disabled = !AnyActive;'), 'footer buttons still 
 assert(preview.includes('PreviewHighlightTestActive = true;'), 'highlight reset does not arm replay');
 assert(preview.includes('const OriginalScanGameState = ScanGameState'), 'accepted-word replay missing');
 assert(preview.includes('PreviouslyFoundWordsForPuzzle.has(Word)'), 'historically known replay missing');
-assert(preview.includes('"preview-known-word-replay"'), 'known-word trace missing');
+assert(preview.includes('"preview-first-word-submission"'), 'first-word trace missing');
 assert(preview.includes('PreviewLongestWordsTestValue = "";\n        ApplyPreviewLongestWordsTest();'), 'reset does not clear Longest mock');
 console.log('PASS: beta.36 Test Bed state, footer, reset and replay checks');
+
+
+// beta.37: once-per-session highlight testing and ordered list auto-scroll.
+assert(preview.includes('let PreviewHighlightSeenWords = new Set();'), 'sandbox newness set missing');
+assert(preview.includes('if (PreviewHighlightSeenWords.has(Word))'), 'repeated sandbox word must not rehighlight');
+assert(preview.includes('PreviewHighlightSeenWords.add(Word);'), 'first sandbox word must become OLD');
+assert(preview.includes('PreviewHighlightSeenWords = new Set();'), 'sandbox reset must clear session newness');
+assert(preview.includes('"preview-repeat-word-submission"'), 'repeated word trace missing');
+assert(preview.includes('"preview-first-word-submission"'), 'first word trace missing');
+assert(preview.includes('TestSessionSeenWords: [...PreviewHighlightSeenWords]'), 'seen history missing from trace');
+
+assert(source.includes('const RecentHighlightScrollOrders = new WeakMap();'), 'new highlight scroll order map missing');
+assert(source.includes('Orders.set(Key, ++NextRecentHighlightScrollOrder);'), 'monotonic discovery priority missing');
+assert(source.includes('const SelectedBySection = new Map();'), 'per-section priority coalescing missing');
+assert(source.includes('Request.Priority > Existing.Priority'), 'newest highlight must win per section');
+assert(source.includes('LastRevealedHighlightOrderBySection.set('), 'repeated render should not auto-scroll old highlight');
+assert(source.includes('Host.scrollTo({ top: TargetTop, behavior: "smooth" });'), 'scroll retarget missing');
+assert(source.includes('QueueHighlightedElementScrollIntoView(Element, LatestOrder);'), 'group/length priority missing');
+assert(source.includes('GetRecentHighlightScrollOrder(MapValue, Key)'), 'word/twofer priority missing');
+console.log('PASS: beta.37 session-aware newness and latest-priority scroll checks');
