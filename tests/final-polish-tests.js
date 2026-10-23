@@ -6,7 +6,7 @@ const source = fs.readFileSync(path.join(root, 'LetterBoxedCubed.user.js'), 'utf
 const preview = fs.readFileSync(path.join(root, 'tools', 'preview_runtime.js'), 'utf8');
 function assert(condition, message) { if (!condition) throw new Error(message); }
 
-assert(source.includes('// @version      1.13.1-beta.37'), 'beta.37 version missing');
+assert(source.includes('// @version      1.13.1-beta.38'), 'beta.38 version missing');
 assert(source.includes('const ExportFormatVersion = 4;'), 'backup schema v4 missing');
 assert(source.includes('const ThemeStateVersion = 2;'), 'ThemeState v2 compatibility missing');
 assert(source.includes('MergeThemeStates'), 'theme merge missing');
@@ -257,3 +257,135 @@ assert(source.includes('Host.scrollTo({ top: TargetTop, behavior: "smooth" });')
 assert(source.includes('QueueHighlightedElementScrollIntoView(Element, LatestOrder);'), 'group/length priority missing');
 assert(source.includes('GetRecentHighlightScrollOrder(MapValue, Key)'), 'word/twofer priority missing');
 console.log('PASS: beta.37 session-aware newness and latest-priority scroll checks');
+
+
+// beta.38: a new word keeps its original animation timeline through DOM rebuilds.
+assert(source.includes('const RecentHighlightAnimationTimings = new WeakMap();'), 'fade timing map missing');
+assert(source.includes('Timings.set(Key, { ExpiresAt, DurationMs });'), 'original fade duration missing');
+assert(source.includes('--lb-cubed-highlight-delay'), 'fade negative-delay variable missing');
+assert(source.includes('var(--lb-cubed-highlight-delay, 0ms)'), 'CSS animation must consume negative delay');
+assert(source.includes('SetRecentHighlightAnimationTimeline('), 'highlight timeline helper missing');
+assert(source.includes('let VisibleWordsChanged = false;'), 'visible-change guard missing');
+assert(source.includes('if (!KnownWordsForPuzzle.has(Word))'), 'historical words should not change displayed known words');
+assert(source.includes('if (VisibleWordsChanged || TwoferChanged || ForceRender) {'), 'historical-only submission should not redraw');
+assert(preview.includes('PreviouslyFound: PreviouslyFoundWordsForPuzzle.has(Word)'), 'trace historical status missing');
+assert(preview.includes('Version: GetRunningUserscriptVersion()'), 'trace should use real version');
+
+// Behavioral tests execute exact source functions in a controlled VM.
+{
+    const Vm = require('node:vm');
+
+    function FunctionChunk(Start, End) {
+        const From = source.indexOf(Start);
+        const To = source.indexOf(End, From + Start.length);
+        assert(From >= 0 && To > From, 'missing tested source function: ' + Start);
+        return source.slice(From, To);
+    }
+
+    let Clock = 1000;
+    let RenderCount = 0;
+    let SaveCount = 0;
+    let HighlightCount = 0;
+    const Sandbox = {
+        Date: { now: () => Clock },
+        Map,
+        WeakMap,
+        Math,
+        Number,
+        String,
+        NewItemHighlightSeconds: 10,
+        RecentHighlightAnimationTimings: new WeakMap(),
+        RecentHighlightScrollOrders: new WeakMap(),
+        NextRecentHighlightScrollOrder: 0,
+        setTimeout: () => 1,
+        Clamp: (Value, Minimum, Maximum) =>
+            Math.max(Minimum, Math.min(Maximum, Value)),
+        QueueHighlightedElementScrollIntoView: () => {},
+        GetRecentHighlightScrollOrder: () => 1,
+        GetLengthBucket: Length => String(Length),
+        Alphabetically: (A, B) => A.localeCompare(B),
+        NormalizeWord: Word => Word,
+        CurrentChain: [],
+        FoundWords: new Set(),
+        KnownWordsForPuzzle: new Set(['EAT']),
+        RecentWordHighlights: new Map(),
+        FoundTwofers: new Set(),
+        ReadCurrentChain: () => Sandbox.CurrentChain,
+        ShouldHighlightWordDiscovery: Word => Word !== 'EAT',
+        MarkWordForHighlight: () => { HighlightCount++; },
+        SaveFoundWords: () => { SaveCount++; },
+        MarkTwoferFound: () => false,
+        RenderPanel: () => { RenderCount++; },
+        console: {log: () => {}}
+    };
+
+    const Code = [
+        FunctionChunk('    function RegisterRecentHighlight(', '    function MarkWordForHighlight('),
+        FunctionChunk('    function SetRecentHighlightAnimationTimeline(', '    function ApplyRecentWordHighlight('),
+        FunctionChunk('    function ApplyRecentLengthHighlight(', '    function CreateSettingsSection('),
+        FunctionChunk('    function ScanGameState(', '    function ReadCurrentChain()'),
+        'globalThis.TestFunctions = { RegisterRecentHighlight, ApplyRecentHighlight, ' +
+            'ApplyRecentLengthHighlight, ApplyRecentWordGroupHighlight, ScanGameState };'
+    ].join('\n');
+    Vm.runInNewContext(Code, Sandbox);
+    const Hooks = Sandbox.TestFunctions;
+
+    const MakeElement = () => {
+        const Properties = new Map();
+        return {
+            Properties,
+            classList: { add: Value => Properties.set('class', Value) },
+            style: { setProperty: (Name, Value) => Properties.set(Name, Value) }
+        };
+    };
+
+    const HighlightMap = new Map();
+    Hooks.RegisterRecentHighlight(HighlightMap, 'CURIE');
+    assert(HighlightMap.get('CURIE') === 11000, 'original deadline wrong');
+
+    Clock = 3000;
+    const BeforeRedraw = MakeElement();
+    assert(Hooks.ApplyRecentHighlight(BeforeRedraw, HighlightMap, 'CURIE'), 'first highlight inactive');
+    assert(BeforeRedraw.Properties.get('--lb-cubed-highlight-duration') === '10000ms', 'original duration changed');
+    assert(BeforeRedraw.Properties.get('--lb-cubed-highlight-delay') === '-2000ms', 'elapsed time not consumed by negative delay');
+
+    Clock = 5000;
+    const AfterRedraw = MakeElement();
+    assert(Hooks.ApplyRecentHighlight(AfterRedraw, HighlightMap, 'CURIE'), 'redrawn highlight inactive');
+    assert(AfterRedraw.Properties.get('--lb-cubed-highlight-duration') === '10000ms', 'redraw compressed remaining duration');
+    assert(AfterRedraw.Properties.get('--lb-cubed-highlight-delay') === '-4000ms', 'redraw restarted fade from zero');
+
+    // Two new words in the same bucket: shared highlight uses the newest
+    // registration's full timeline, not a shortened leftover fade.
+    Hooks.RegisterRecentHighlight(HighlightMap, 'APPLE');
+    Clock = 6000;
+    const LengthRow = MakeElement();
+    Hooks.ApplyRecentLengthHighlight(LengthRow, '5');
+    assert(LengthRow.Properties.get('--lb-cubed-highlight-duration') === '10000ms', 'length stat fade duration');
+    assert(LengthRow.Properties.get('--lb-cubed-highlight-delay') === '-1000ms', 'length stat elapsed progress');
+    const CompletionRow = MakeElement();
+    Hooks.ApplyRecentWordGroupHighlight(CompletionRow, () => true);
+    assert(CompletionRow.Properties.get('--lb-cubed-highlight-delay') === '-1000ms', 'completion fade elapsed progress');
+
+    Clock = 11001;
+    assert(!Hooks.ApplyRecentHighlight(MakeElement(), HighlightMap, 'CURIE'), 'expired highlight still active');
+    Hooks.RegisterRecentHighlight(HighlightMap, 'CURIE');
+    const FreshReusedWord = MakeElement();
+    assert(Hooks.ApplyRecentHighlight(FreshReusedWord, HighlightMap, 'CURIE'), 'fresh registration inactive');
+    assert(FreshReusedWord.Properties.get('--lb-cubed-highlight-delay') === '-0ms', 'genuine new registration should restart from beginning');
+
+    // Already-known word submitted on today's puzzle: store provenance but
+    // leave the unchanged visible union alone (unless a twofer is solved).
+    Sandbox.CurrentChain = ['EAT'];
+    Hooks.ScanGameState();
+    assert(SaveCount === 1, 'historically known submission should save puzzle provenance');
+    assert(RenderCount === 0, 'historically known submission redrew unchanged dashboard');
+    assert(HighlightCount === 0, 'historically known submission gained artificial highlight');
+
+    Sandbox.CurrentChain = ['EAT', 'CURIE'];
+    Hooks.ScanGameState();
+    assert(SaveCount === 2, 'genuinely new word was not saved');
+    assert(RenderCount === 1, 'genuinely new word must redraw');
+    assert(HighlightCount === 1, 'genuinely new word must highlight');
+}
+console.log('PASS: beta.38 original-timeline fade continuity and historical-word redraw behavior');
