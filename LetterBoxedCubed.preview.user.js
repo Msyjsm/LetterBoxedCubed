@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed [PREVIEW]
 // @namespace    https://nathanburgdorff.com/userscripts/preview/
-// @version      1.13.1-beta.35.322
+// @version      1.13.1-beta.36.326
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -340,7 +340,8 @@
                         PreviousCounts.set(Word, Count - 1);
                         continue;
                     }
-                    if (FoundWords.has(Word) && !RecentWordHighlights.has(Word)) {
+                    if ((FoundWords.has(Word) || PreviouslyFoundWordsForPuzzle.has(Word)) &&
+                        !RecentWordHighlights.has(Word)) {
                         MarkWordForHighlight(Word);
                         RecordPreviewHighlightTrace("preview-known-word-replay", { Word });
                         DidReplay = true;
@@ -1940,50 +1941,50 @@
         Status.className = "lbc-history-test-status";
 
         const Footer = document.createElement("div");
-        Footer.className = "lbc-history-test-actions";
+        Footer.className = "lbc-test-bed-footer";
 
         const Reset = document.createElement("button");
         Reset.type = "button";
-        Reset.textContent = "Reset sandbox";
-        Reset.addEventListener("click", () => {
-            PreviewLongestWordsTestValue = "";
-            ApplyPreviewLongestWordsTest();
-            RestorePreviewHistoricalBaseline({ KeepActive: true });
-            RecomputePreviewHistoricalSandboxState();
-            RenderPanel();
-            RenderPreviewHistoricalTestPanel();
-        });
+        Reset.textContent = "Reset test beds";
+        Reset.dataset.lbcTestFooter = "reset";
+        Reset.addEventListener("click", ResetAllPreviewTestBeds);
 
         const Close = document.createElement("button");
         Close.type = "button";
-        Close.textContent = "Hide panel (keep sandbox active)";
+        Close.textContent = "Hide panel (keep tests active)";
+        Close.dataset.lbcTestFooter = "hide";
         Close.addEventListener("click", () => Overlay.remove());
 
         const Exit = document.createElement("button");
         Exit.type = "button";
         Exit.dataset.lbcHistoryTestExit = "true";
-        Exit.textContent = "EXIT TEST MODE + restore real state";
+        Exit.textContent = "EXIT TEST MODE (restore true state)";
         Exit.addEventListener("click", () => {
             Overlay.remove();
             ExitPreviewHistoricalTestMode();
         });
 
-        Footer.append(
-            Reset,
-            Close,
-            Exit
-        );
+        const HideRow = document.createElement("div");
+        HideRow.className = "lbc-test-bed-footer-hide";
+        HideRow.appendChild(Close);
+
+        const BottomRow = document.createElement("div");
+        BottomRow.className = "lbc-test-bed-footer-bottom";
+        BottomRow.append(Reset, Exit);
+        Footer.append(HideRow, BottomRow);
 
         const HistoricalSection = document.createElement("section");
         HistoricalSection.className = "lbc-test-bed-section";
-        const HistoricalHeading = document.createElement("h3");
-        HistoricalHeading.textContent = "Historical Word Sandbox";
+        const HistoricalHeading = CreatePreviewTestBedTitle(
+            "Historical Word Sandbox", "Historical"
+        );
         HistoricalSection.append(HistoricalHeading, Warning, SelectLabel, Grid, Status);
 
         const LongestSection = document.createElement("section");
         LongestSection.className = "lbc-test-bed-section";
-        const LongestHeading = document.createElement("h3");
-        LongestHeading.textContent = "Longest Words Scrolling";
+        const LongestHeading = CreatePreviewTestBedTitle(
+            "Longest Words Scrolling", "Longest"
+        );
         const LongestInput = document.createElement("input");
         LongestInput.type = "text";
         LongestInput.className = "lbc-longest-words-test-input";
@@ -2020,17 +2021,21 @@
             PreviewLongestWordsTestValue = Sanitized;
             EnsurePreviewTestBedsObserver();
             ApplyPreviewLongestWordsTest();
+            UpdatePreviewHistoricalTestButton();
+            RenderPreviewHistoricalTestPanel();
         });
         LongestSection.append(LongestHeading, LongestInput);
 
         const HighlightSection = document.createElement("section");
         HighlightSection.className = "lbc-test-bed-section";
-        const HighlightHeading = document.createElement("h3");
-        HighlightHeading.textContent = "New Word Highlights";
+        const HighlightHeading = CreatePreviewTestBedTitle(
+            "New Word Highlights", "Highlights"
+        );
         const HighlightNote = document.createElement("p");
         HighlightNote.textContent =
             "Reset active fades and clear the trace, then enter words normally. " +
-            "This does not erase found words or NYT progress. " +
+            "Accepted already-known words can replay their highlight in Preview " +
+            "without erasing found words or NYT progress. " +
             "The trace records registrations, submissions, twofer checks, " +
             "dashboard redraws, and CSS animation start/cancel/end.";
         const HighlightActions = document.createElement("div");
@@ -2051,8 +2056,7 @@
         const HighlightStatus = document.createElement("div");
         HighlightStatus.className = "lbc-highlight-test-status";
         HighlightStatus.textContent =
-            "Ready. Reset first, then hide Test Beds and submit words. " +
-            "Reopen Test Beds to copy the trace.";
+            "inactive — reset highlights to arm replay and begin a fresh trace.";
 
         HighlightActions.append(HighlightReset, HighlightCopy);
         HighlightSection.append(
