@@ -6,7 +6,7 @@ const source = fs.readFileSync(path.join(root, 'LetterBoxedCubed.user.js'), 'utf
 const preview = fs.readFileSync(path.join(root, 'tools', 'preview_runtime.js'), 'utf8');
 function assert(condition, message) { if (!condition) throw new Error(message); }
 
-assert(source.includes('// @version      1.13.1-beta.35'), 'beta.35 version missing');
+assert(source.includes('// @version      1.13.1-beta.36'), 'beta.36 version missing');
 assert(source.includes('const ExportFormatVersion = 4;'), 'backup schema v4 missing');
 assert(source.includes('const ThemeStateVersion = 2;'), 'ThemeState v2 compatibility missing');
 assert(source.includes('MergeThemeStates'), 'theme merge missing');
@@ -195,8 +195,8 @@ assert(preview.includes('opacity: 0.55;'), 'Longest Words placeholder dimming mi
 
 console.log('PASS: beta.34 final scroll/placeholder static checks');
 assert(preview.includes('? \"Test Beds (ACTIVE)\"'), 'Test Beds button missing');
-assert(preview.includes('HistoricalHeading.textContent = \"Historical Word Sandbox\";'), 'Historical section missing');
-assert(preview.includes('LongestHeading.textContent = \"Longest Words Scrolling\";'), 'Longest Words section missing');
+assert(preview.includes('CreatePreviewTestBedTitle(\n            "Historical Word Sandbox", "Historical"'), 'Historical section missing');
+assert(preview.includes('CreatePreviewTestBedTitle(\n            "Longest Words Scrolling", "Longest"'), 'Longest Words section missing');
 assert(preview.includes('.replace(/[^A-Z ,]/g, \"\")'), 'Longest Words sanitizer missing');
 
 assert(source.includes('flex: 1 1 0;\n                grid-template-rows: auto minmax(0, 1fr);'), 'Hints body flex fill missing');
@@ -205,7 +205,7 @@ assert(source.includes('#help-dialog {\n                z-index: 100050 !importa
 
 
 // beta.35: Preview-only, non-destructive highlight-continuity Test Bed and trace.
-assert(preview.includes('HighlightHeading.textContent = "New Word Highlights"'), 'new highlights Test Bed missing');
+assert(preview.includes('CreatePreviewTestBedTitle(\n            "New Word Highlights", "Highlights"'), 'new highlights Test Bed missing');
 assert(preview.includes('function ResetPreviewNewWordHighlights()'), 'highlight reset missing');
 assert(preview.includes('RecentWordHighlights.clear();'), 'word highlight reset missing');
 assert(preview.includes('RecentTwoferHighlights.clear();'), 'twofer highlight reset missing');
@@ -217,3 +217,23 @@ assert(preview.includes('"submission-attempt"'), 'submission trace missing');
 assert(preview.includes('"twofer-check"'), 'twofer trace missing');
 assert(preview.includes('InstallPreviewHighlightDiagnostics();'), 'diagnostics not installed');
 console.log('PASS: beta.35 highlight-continuity diagnostic checks');
+
+
+// beta.36: independent Preview Test Bed states and non-destructive replay.
+assert(preview.includes('function GetPreviewTestBedStates()'), 'independent Test Bed states missing');
+assert(preview.includes('function ResetAllPreviewTestBeds()'), 'all-Test-Bed reset missing');
+assert(preview.includes('function ActivatePreviewHistoricalBed()'), 'lazy historical activation missing');
+assert(preview.includes('function CreatePreviewTestBedTitle(TitleText, Key)'), 'status indicators missing');
+assert(preview.includes('var(--lb-cubed-lbc-text, #f4f4f4)'), 'inactive label not themed');
+assert(preview.includes('var(--lb-cubed-new-highlight, #7fff00)'), 'ACTIVE label not themed');
+assert(preview.includes('Footer.append(HideRow, BottomRow)'), 'footer row layout missing');
+assert(preview.includes('Reset.textContent = "Reset test beds"'), 'reset button label missing');
+assert(preview.includes('Close.textContent = "Hide panel (keep tests active)"'), 'hide button label missing');
+assert(preview.includes('Exit.textContent = "EXIT TEST MODE (restore true state)"'), 'exit button label missing');
+assert(preview.includes('Button.disabled = !AnyActive;'), 'footer buttons still depend on Twofers');
+assert(preview.includes('PreviewHighlightTestActive = true;'), 'highlight reset does not arm replay');
+assert(preview.includes('const OriginalScanGameState = ScanGameState'), 'accepted-word replay missing');
+assert(preview.includes('PreviouslyFoundWordsForPuzzle.has(Word)'), 'historically known replay missing');
+assert(preview.includes('"preview-known-word-replay"'), 'known-word trace missing');
+assert(preview.includes('PreviewLongestWordsTestValue = "";\n        ApplyPreviewLongestWordsTest();'), 'reset does not clear Longest mock');
+console.log('PASS: beta.36 Test Bed state, footer, reset and replay checks');
