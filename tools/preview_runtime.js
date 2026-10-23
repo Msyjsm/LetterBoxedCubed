@@ -23,6 +23,7 @@
     let PreviewHistoricalBedActive = false;
     let PreviewHighlightTestActive = false;
     let PreviewHighlightObservedChain = [];
+    let PreviewHighlightSeenWords = new Set();
     let PreviewHistoricalInjectedWords = new Set();
     let PreviewHistoricalBaseline = null;
     let PreviewHistoricalSelectedTwoferKey = null;
@@ -171,12 +172,14 @@
                 Twofer: Key,
                 RemainingMs: Math.max(0, Expiry - Date.now())
             })),
+            TestSessionSeenWords: [...PreviewHighlightSeenWords],
             Trace: PreviewHighlightTrace
         }, null, 2);
     }
 
     function ResetPreviewNewWordHighlights() {
         PreviewHighlightTestActive = true;
+        PreviewHighlightSeenWords = new Set();
         PreviewHighlightObservedChain = ReadCurrentChain();
         const ClearedWords = [...RecentWordHighlights.keys()];
         const ClearedTwofers = [...RecentTwoferHighlights.keys()];
@@ -186,7 +189,7 @@
         RecentTwoferHighlights.clear();
         RecordPreviewHighlightTrace("reset-active-highlights", {
             ClearedWords, ClearedTwofers,
-            Note: "Only live highlight animations were reset. No stored words or NYT data were cleared."
+            Note: "Highlight testing now starts with zero session-seen words. Each accepted word highlights only the first time since reset; stored words and NYT data remain unchanged."
         });
         RenderPanel();
         QueuePanelLayoutUpdate();
@@ -194,7 +197,7 @@
         RenderPreviewHistoricalTestPanel();
         const Status = document.querySelector(".lbc-highlight-test-status");
         if (Status) {
-            Status.textContent = "Highlights reset; replay armed. Accepted already-known words can highlight again. Submit normally, then copy trace.";
+            Status.textContent = "Session reset: each accepted word is NEW once; subsequent uses are OLD. Stored puzzle progress is unchanged. Submit normally, then copy trace.";
         }
     }
 
@@ -276,11 +279,31 @@
                         PreviousCounts.set(Word, Count - 1);
                         continue;
                     }
-                    if ((FoundWords.has(Word) || PreviouslyFoundWordsForPuzzle.has(Word)) &&
-                        !RecentWordHighlights.has(Word)) {
+                    if (PreviewHighlightSeenWords.has(Word)) {
+                        RecordPreviewHighlightTrace(
+                            "preview-repeat-word-submission",
+                            { Word, NewInTestSession: false }
+                        );
+                        continue;
+                    }
+
+                    PreviewHighlightSeenWords.add(Word);
+                    if (FoundWords.has(Word) || PreviouslyFoundWordsForPuzzle.has(Word)) {
+                        // Recreate the FIRST new-word animation for any word
+                        // LBC already knew. Later submissions remain OLD,
+                        // even after that first animation expires.
                         MarkWordForHighlight(Word);
-                        RecordPreviewHighlightTrace("preview-known-word-replay", { Word });
+                        RecordPreviewHighlightTrace(
+                            "preview-first-word-submission",
+                            { Word, NewInTestSession: true, AlreadyKnownToLbc: true }
+                        );
                         DidReplay = true;
+                    } else {
+                        // Core ScanGameState registers truly new discoveries.
+                        RecordPreviewHighlightTrace(
+                            "preview-first-word-submission",
+                            { Word, NewInTestSession: true, AlreadyKnownToLbc: false }
+                        );
                     }
                 }
                 PreviewHighlightObservedChain = [...CurrentChain];
@@ -1378,6 +1401,7 @@
             PreviewHistoricalBedActive = false;
             PreviewHighlightTestActive = false;
             PreviewHighlightObservedChain = [];
+            PreviewHighlightSeenWords = new Set();
             PreviewHistoricalBaseline = null;
         }
 
@@ -1489,6 +1513,7 @@
         PreviewHistoricalBedActive = false;
         PreviewHighlightTestActive = false;
         PreviewHighlightObservedChain = [];
+        PreviewHighlightSeenWords = new Set();
         RestorePreviewHistoricalBaseline({ KeepActive: true });
         RecentWordHighlights.clear();
         RecentTwoferHighlights.clear();
@@ -1970,8 +1995,8 @@
         const HighlightNote = document.createElement("p");
         HighlightNote.textContent =
             "Reset active fades and clear the trace, then enter words normally. " +
-            "Accepted already-known words can replay their highlight in Preview " +
-            "without erasing found words or NYT progress. " +
+            "Each accepted word highlights once per reset, then becomes OLD " +
+            "for the rest of the test session. Stored words and NYT progress remain unchanged. " +
             "The trace records registrations, submissions, twofer checks, " +
             "dashboard redraws, and CSS animation start/cancel/end.";
         const HighlightActions = document.createElement("div");
