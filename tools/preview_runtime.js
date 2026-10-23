@@ -1360,7 +1360,7 @@
 
         PreviewHistoricalInjectedWords = new Set();
 
-        if (KeepActive) {
+        if (KeepActive && PreviewHistoricalBedActive) {
             const SelectedTwofer =
                 GetPreviewHistoricalSelectedTwofer();
 
@@ -1372,8 +1372,11 @@
                 RecentWordHighlights.delete(SelectedTwofer.Second);
                 RecentTwoferHighlights.delete(SelectedTwofer.Key);
             }
-        } else {
+        } else if (!KeepActive) {
             PreviewHistoricalTestModeActive = false;
+            PreviewHistoricalBedActive = false;
+            PreviewHighlightTestActive = false;
+            PreviewHighlightObservedChain = [];
             PreviewHistoricalBaseline = null;
         }
 
@@ -1407,10 +1410,9 @@
 
         SnapshotPreviewHistoricalBaseline();
         PreviewHistoricalTestModeActive = true;
+        PreviewHistoricalBedActive = false;
         PreviewHistoricalInjectedWords = new Set();
         ChoosePreviewHistoricalDefaultTwofer();
-        RestorePreviewHistoricalBaseline({ KeepActive: true });
-        RecomputePreviewHistoricalSandboxState();
         UpdatePreviewHistoricalTestButton();
 
         console.info(
@@ -1447,6 +1449,61 @@
         );
     }
 
+    function ActivatePreviewHistoricalBed() {
+        if (!PreviewHistoricalTestModeActive || PreviewHistoricalBedActive) {
+            return;
+        }
+        PreviewHistoricalBedActive = true;
+        RestorePreviewHistoricalBaseline({ KeepActive: true });
+    }
+
+    function GetPreviewTestBedStates() {
+        return {
+            Historical: PreviewHistoricalBedActive,
+            Longest: Boolean(PreviewLongestWordsTestValue.trim()),
+            Highlights: PreviewHighlightTestActive
+        };
+    }
+
+    function HasActivePreviewTestBed() {
+        return Object.values(GetPreviewTestBedStates()).some(Boolean);
+    }
+
+    function CreatePreviewTestBedTitle(TitleText, Key) {
+        const Row = document.createElement("div");
+        Row.className = "lbc-test-bed-title-row";
+        const Heading = document.createElement("h3");
+        Heading.textContent = TitleText;
+        const Status = document.createElement("span");
+        Status.className = "lbc-test-bed-status";
+        Status.dataset.lbcTestBedStatus = Key;
+        Status.textContent = "inactive";
+        Row.append(Heading, Status);
+        return Row;
+    }
+
+    function ResetAllPreviewTestBeds() {
+        PreviewLongestWordsTestValue = "";
+        ApplyPreviewLongestWordsTest();
+        PreviewHistoricalBedActive = false;
+        PreviewHighlightTestActive = false;
+        PreviewHighlightObservedChain = [];
+        RestorePreviewHistoricalBaseline({ KeepActive: true });
+        RecentWordHighlights.clear();
+        RecentTwoferHighlights.clear();
+        PreviewHighlightTrace.length = 0;
+        PreviewHighlightTraceStart = performance.now();
+        RecordPreviewHighlightTrace("reset-all-test-beds");
+        RenderPanel();
+        QueuePanelLayoutUpdate();
+        UpdatePreviewHistoricalTestButton();
+        RenderPreviewHistoricalTestPanel();
+        const Status = document.querySelector(".lbc-highlight-test-status");
+        if (Status) {
+            Status.textContent = "inactive — reset highlights to arm replay and begin a fresh trace.";
+        }
+    }
+
     function SetPreviewHistoricalInjection(Mode) {
         if (!EnterPreviewHistoricalTestMode()) {
             return;
@@ -1457,6 +1514,7 @@
             return;
         }
 
+        ActivatePreviewHistoricalBed();
         PreviewHistoricalInjectedWords = new Set();
 
         if (Mode === "First" || Mode === "Both") {
@@ -1481,6 +1539,10 @@
         const Word = Position === "Second"
             ? Twofer?.Second
             : Twofer?.First;
+
+        if (Word) {
+            ActivatePreviewHistoricalBed();
+        }
 
         if (!Word || FoundWords.has(Word)) {
             RenderPreviewHistoricalTestPanel();
@@ -1510,6 +1572,7 @@
             return;
         }
 
+        ActivatePreviewHistoricalBed();
         MarkTwoferFound(Twofer.First, Twofer.Second);
         RecomputePreviewHistoricalSandboxState();
         RenderPanel();
@@ -1523,16 +1586,13 @@
             return;
         }
 
-        Button.textContent = PreviewHistoricalTestModeActive
-            ? "Test Beds (ACTIVE)"
-            : "Test Beds";
-        Button.classList.toggle(
-            "lbc-history-test-active",
-            PreviewHistoricalTestModeActive
-        );
+        const AnyActive = HasActivePreviewTestBed();
+        Button.textContent = AnyActive ? "Test Beds (ACTIVE)" : "Test Beds";
+        Button.classList.toggle("lbc-history-test-active", AnyActive);
         Button.title = PreviewHistoricalTestModeActive
-            ? "Historical-word sandbox is active. Google Drive sync and LBC progress writes are paused."
-            : "Open preview-only historical-word/twofer sandbox";
+            ? "Preview test session open; progress writes and Drive sync paused. " +
+                (AnyActive ? "One or more test beds active." : "All test beds inactive.")
+            : "Open Preview-only test beds";
 
         /* Keep the Debug button anchored; the longer ACTIVE label grows left. */
         PositionPreviewDebugPane();
@@ -1582,16 +1642,32 @@
             Select.disabled = !HasTestableTwofer;
         }
 
+        const TestStates = GetPreviewTestBedStates();
+        const AnyActive = HasActivePreviewTestBed();
+
+        for (const [Name, Active] of Object.entries(TestStates)) {
+            const Indicator = Panel.querySelector(
+                '[data-lbc-test-bed-status="' + Name + '"]'
+            );
+            if (Indicator) {
+                Indicator.textContent = Active ? "ACTIVE" : "inactive";
+                Indicator.classList.toggle("lbc-test-bed-is-active", Active);
+            }
+        }
+
         for (const Button of Panel.querySelectorAll("button")) {
-            if (
+            if (Button.dataset.lbcTestFooter === "reset" ||
+                Button.dataset.lbcTestFooter === "hide") {
+                Button.disabled = !AnyActive;
+            } else if (
                 Button.dataset.lbcHistoryTestExit === "true" ||
                 Button.dataset.lbcHighlightTestAction === "true"
             ) {
+                // Never trap the user in a session with paused Drive syncing.
                 Button.disabled = false;
-                continue;
+            } else {
+                Button.disabled = !HasTestableTwofer;
             }
-
-            Button.disabled = !HasTestableTwofer;
         }
 
         const Status = Panel.querySelector(".lbc-history-test-status");
@@ -1603,8 +1679,8 @@
 
         if (!Twofer) {
             Status.textContent =
-                "No twofers found today are available for safe testing. " +
-                "Solve a twofer normally, then reopen History Test.";
+                "Historical sandbox unavailable until a Twofer is found. " +
+                "Longest Words and New Word Highlights work independently.";
             return;
         }
 
@@ -1628,7 +1704,7 @@
         };
 
         Status.textContent = [
-            `Mode: ${PreviewHistoricalTestModeActive ? "ACTIVE - persistence/sync paused" : "inactive"}`,
+            `Historical test: ${PreviewHistoricalBedActive ? "ACTIVE" : "inactive"} (Preview persistence/sync paused)`,
             DescribeWord(Twofer.First),
             DescribeWord(Twofer.Second),
             `Twofer category: ${Category}`,
@@ -1725,10 +1801,12 @@
         Select.dataset.lbcHistoryTestTwofer = "true";
         Select.addEventListener("change", () => {
             PreviewHistoricalSelectedTwoferKey = Select.value;
-            RestorePreviewHistoricalBaseline({ KeepActive: true });
-            RecomputePreviewHistoricalSandboxState();
+            if (PreviewHistoricalBedActive) {
+                RestorePreviewHistoricalBaseline({ KeepActive: true });
+            }
             RenderPanel();
             RenderPreviewHistoricalTestPanel();
+            UpdatePreviewHistoricalTestButton();
         });
         SelectLabel.appendChild(Select);
 
