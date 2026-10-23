@@ -276,7 +276,8 @@
                         PreviousCounts.set(Word, Count - 1);
                         continue;
                     }
-                    if (FoundWords.has(Word) && !RecentWordHighlights.has(Word)) {
+                    if ((FoundWords.has(Word) || PreviouslyFoundWordsForPuzzle.has(Word)) &&
+                        !RecentWordHighlights.has(Word)) {
                         MarkWordForHighlight(Word);
                         RecordPreviewHighlightTrace("preview-known-word-replay", { Word });
                         DidReplay = true;
