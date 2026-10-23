@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed [PREVIEW]
 // @namespace    https://nathanburgdorff.com/userscripts/preview/
-// @version      1.13.1-beta.37.330
+// @version      1.13.1-beta.38.334
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -225,7 +225,7 @@
 
     function GetPreviewHighlightTraceJson() {
         return JSON.stringify({
-            Version: "1.13.1-beta.35",
+            Version: GetRunningUserscriptVersion(),
             CapturedAt: new Date().toISOString(),
             Bug: "https://github.com/Msyjsm/LetterBoxedCubed/issues/39",
             RecentWords: [...RecentWordHighlights].map(([Key, Expiry]) => ({
@@ -406,6 +406,8 @@
                 Word,
                 Chain,
                 AlreadyFound: FoundWords.has(Word),
+                PreviouslyFound: PreviouslyFoundWordsForPuzzle.has(Word),
+                AlreadyKnownInUi: KnownWordsForPuzzle.has(Word),
                 PotentialTwofer: Chain.length === 1
                     ? MakeTwoferKey(Chain[0], Word)
                     : null,
@@ -3316,6 +3318,10 @@
 
     const RecentWordHighlights = new Map();
     const RecentTwoferHighlights = new Map();
+    // Expiry alone determines when the fade ends, not how far through its
+    // original easing curve the browser should already be after a re-render.
+    // Keep the original duration for every transient highlight registration.
+    const RecentHighlightAnimationTimings = new WeakMap();
     // Track discovery order separately from expiration so two discoveries in
     // the same millisecond still have an unambiguous scroll priority.
     const RecentHighlightScrollOrders = new WeakMap();
@@ -5917,6 +5923,13 @@
         const ExpiresAt = Date.now() + DurationMs;
         MapValue.set(Key, ExpiresAt);
 
+        let Timings = RecentHighlightAnimationTimings.get(MapValue);
+        if (!Timings) {
+            Timings = new Map();
+            RecentHighlightAnimationTimings.set(MapValue, Timings);
+        }
+        Timings.set(Key, { ExpiresAt, DurationMs });
+
         let Orders = RecentHighlightScrollOrders.get(MapValue);
         if (!Orders) {
             Orders = new Map();
@@ -5927,6 +5940,7 @@
         setTimeout(() => {
             if (MapValue.get(Key) === ExpiresAt) {
                 MapValue.delete(Key);
+                Timings.delete(Key);
             }
         }, DurationMs + 75);
     }
@@ -6028,6 +6042,29 @@
         });
     }
 
+    function SetRecentHighlightAnimationTimeline(Element, MapValue, Key, ExpiresAt) {
+        const Record = RecentHighlightAnimationTimings.get(MapValue)?.get(Key);
+        const RemainingMs = Math.max(0, Number(ExpiresAt) - Date.now());
+        // Fallback supports older/restored Preview snapshots without a
+        // matching transient registration. The normal path uses the recorded
+        // duration, including if the user changes settings mid-animation.
+        const DurationMs =
+            Record?.ExpiresAt === ExpiresAt
+                ? Record.DurationMs
+                : Math.max(1, Math.round(NewItemHighlightSeconds * 1000));
+        const ElapsedMs = Clamp(DurationMs - RemainingMs, 0, DurationMs);
+
+        Element.classList.add("lb-cubed-new-highlight");
+        Element.style.setProperty(
+            "--lb-cubed-highlight-duration",
+            `${Math.round(DurationMs)}ms`
+        );
+        Element.style.setProperty(
+            "--lb-cubed-highlight-delay",
+            `-${Math.round(ElapsedMs)}ms`
+        );
+    }
+
     function ApplyRecentHighlight(Element, MapValue, Key) {
         const ExpiresAt = MapValue.get(Key);
         const RemainingMs = Number(ExpiresAt) - Date.now();
@@ -6037,11 +6074,7 @@
             return false;
         }
 
-        Element.classList.add("lb-cubed-new-highlight");
-        Element.style.setProperty(
-            "--lb-cubed-highlight-duration",
-            `${Math.max(1, Math.round(RemainingMs))}ms`
-        );
+        SetRecentHighlightAnimationTimeline(Element, MapValue, Key, ExpiresAt);
         QueueHighlightedElementScrollIntoView(
             Element, GetRecentHighlightScrollOrder(MapValue, Key)
         );
@@ -6071,6 +6104,7 @@
     function ApplyRecentLengthHighlight(Element, Bucket) {
         let LatestExpiry = 0;
         let LatestOrder = 0;
+        let LatestWord = null;
         const RecentWords = [];
 
         for (const [Word, ExpiresAt] of RecentWordHighlights) {
@@ -6080,11 +6114,15 @@
             }
 
             if (GetLengthBucket(Word.length) === Bucket) {
-                LatestExpiry = Math.max(LatestExpiry, ExpiresAt);
-                LatestOrder = Math.max(
-                    LatestOrder,
-                    GetRecentHighlightScrollOrder(RecentWordHighlights, Word)
+                const Order = GetRecentHighlightScrollOrder(
+                    RecentWordHighlights, Word
                 );
+                if (ExpiresAt > LatestExpiry ||
+                    (ExpiresAt === LatestExpiry && Order > LatestOrder)) {
+                    LatestExpiry = ExpiresAt;
+                    LatestWord = Word;
+                }
+                LatestOrder = Math.max(LatestOrder, Order);
                 RecentWords.push(Word);
             }
         }
@@ -6093,10 +6131,8 @@
             return;
         }
 
-        Element.classList.add("lb-cubed-new-highlight");
-        Element.style.setProperty(
-            "--lb-cubed-highlight-duration",
-            `${Math.max(1, Math.round(LatestExpiry - Date.now()))}ms`
+        SetRecentHighlightAnimationTimeline(
+            Element, RecentWordHighlights, LatestWord, LatestExpiry
         );
         QueueHighlightedElementScrollIntoView(Element, LatestOrder);
 
@@ -6108,6 +6144,7 @@
     function ApplyRecentWordGroupHighlight(Element, Predicate) {
         let LatestExpiry = 0;
         let LatestOrder = 0;
+        let LatestWord = null;
         const Now = Date.now();
 
         for (const [Word, ExpiresAt] of RecentWordHighlights) {
@@ -6117,11 +6154,15 @@
             }
 
             if (Predicate(Word)) {
-                LatestExpiry = Math.max(LatestExpiry, ExpiresAt);
-                LatestOrder = Math.max(
-                    LatestOrder,
-                    GetRecentHighlightScrollOrder(RecentWordHighlights, Word)
+                const Order = GetRecentHighlightScrollOrder(
+                    RecentWordHighlights, Word
                 );
+                if (ExpiresAt > LatestExpiry ||
+                    (ExpiresAt === LatestExpiry && Order > LatestOrder)) {
+                    LatestExpiry = ExpiresAt;
+                    LatestWord = Word;
+                }
+                LatestOrder = Math.max(LatestOrder, Order);
             }
         }
 
@@ -6129,10 +6170,8 @@
             return false;
         }
 
-        Element.classList.add("lb-cubed-new-highlight");
-        Element.style.setProperty(
-            "--lb-cubed-highlight-duration",
-            `${Math.max(1, Math.round(LatestExpiry - Now))}ms`
+        SetRecentHighlightAnimationTimeline(
+            Element, RecentWordHighlights, LatestWord, LatestExpiry
         );
         QueueHighlightedElementScrollIntoView(Element, LatestOrder);
 
@@ -12498,10 +12537,17 @@
     function ScanGameState(ForceRender = false) {
         const CurrentChain = ReadCurrentChain();
         let FoundWordsChanged = false;
+        let VisibleWordsChanged = false;
 
         for (const Word of CurrentChain) {
             if (!FoundWords.has(Word)) {
                 const ShouldHighlight = ShouldHighlightWordDiscovery(Word);
+                // A globally known word may be new to today's submission
+                // history while already visible in every LBC word list.
+                // Record that provenance, but don't redraw solely for it.
+                if (!KnownWordsForPuzzle.has(Word)) {
+                    VisibleWordsChanged = true;
+                }
                 FoundWords.add(Word);
 
                 if (ShouldHighlight) {
@@ -12527,7 +12573,7 @@
             );
         }
 
-        if (FoundWordsChanged || TwoferChanged || ForceRender) {
+        if (VisibleWordsChanged || TwoferChanged || ForceRender) {
             RenderPanel();
         }
     }
@@ -16842,6 +16888,7 @@
                     lb-cubed-new-highlight-fade
                     var(--lb-cubed-highlight-duration, 1000ms)
                     ease-out
+                    var(--lb-cubed-highlight-delay, 0ms)
                     1;
             }
 
