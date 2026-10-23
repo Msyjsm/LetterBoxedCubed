@@ -339,7 +339,7 @@ assert(preview.includes('Version: GetRunningUserscriptVersion()'), 'trace should
         };
     };
 
-    const HighlightMap = new Map();
+    const HighlightMap = Sandbox.RecentWordHighlights;
     Hooks.RegisterRecentHighlight(HighlightMap, 'CURIE');
     assert(HighlightMap.get('CURIE') === 11000, 'original deadline wrong');
 
