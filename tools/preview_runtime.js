@@ -20,6 +20,9 @@
     let PreviewDebugNextElementId = 1;
     let PreviewDebugPaneVisible = false;
     let PreviewHistoricalTestModeActive = false;
+    let PreviewHistoricalBedActive = false;
+    let PreviewHighlightTestActive = false;
+    let PreviewHighlightObservedChain = [];
     let PreviewHistoricalInjectedWords = new Set();
     let PreviewHistoricalBaseline = null;
     let PreviewHistoricalSelectedTwoferKey = null;
@@ -173,6 +176,8 @@
     }
 
     function ResetPreviewNewWordHighlights() {
+        PreviewHighlightTestActive = true;
+        PreviewHighlightObservedChain = ReadCurrentChain();
         const ClearedWords = [...RecentWordHighlights.keys()];
         const ClearedTwofers = [...RecentTwoferHighlights.keys()];
         PreviewHighlightTrace.length = 0;
@@ -185,9 +190,11 @@
         });
         RenderPanel();
         QueuePanelLayoutUpdate();
+        UpdatePreviewHistoricalTestButton();
+        RenderPreviewHistoricalTestPanel();
         const Status = document.querySelector(".lbc-highlight-test-status");
         if (Status) {
-            Status.textContent = "Highlight animations reset; trace recording (0s). Now submit words normally, then copy the trace.";
+            Status.textContent = "Highlights reset; replay armed. Accepted already-known words can highlight again. Submit normally, then copy trace.";
         }
     }
 
@@ -251,6 +258,39 @@
                 ExpiresAt: MapValue.get(Key) ?? null,
                 DurationMs: (MapValue.get(Key) ?? Date.now()) - Date.now()
             });
+            return Result;
+        };
+
+        const OriginalScanGameState = ScanGameState;
+        ScanGameState = function (...Args) {
+            let DidReplay = false;
+            const CurrentChain = ReadCurrentChain();
+            if (PreviewHighlightTestActive) {
+                const PreviousCounts = new Map();
+                for (const Word of PreviewHighlightObservedChain) {
+                    PreviousCounts.set(Word, (PreviousCounts.get(Word) || 0) + 1);
+                }
+                for (const Word of CurrentChain) {
+                    const Count = PreviousCounts.get(Word) || 0;
+                    if (Count > 0) {
+                        PreviousCounts.set(Word, Count - 1);
+                        continue;
+                    }
+                    if (FoundWords.has(Word) && !RecentWordHighlights.has(Word)) {
+                        MarkWordForHighlight(Word);
+                        RecordPreviewHighlightTrace("preview-known-word-replay", { Word });
+                        DidReplay = true;
+                    }
+                }
+                PreviewHighlightObservedChain = [...CurrentChain];
+            }
+            const FoundCount = FoundWords.size;
+            const TwoferCount = FoundTwofers.size;
+            const Result = OriginalScanGameState(...Args);
+            if (DidReplay && FoundWords.size === FoundCount &&
+                FoundTwofers.size === TwoferCount && !Args[0]) {
+                RenderPanel();
+            }
             return Result;
         };
 
@@ -421,8 +461,45 @@
             }
 
             #${PreviewHistoryTestPanelId} .lbc-test-bed-section > h3 {
-                margin: 0 0 8px;
+                margin: 0;
                 font-size: 13px;
+            }
+            #${PreviewHistoryTestPanelId} .lbc-test-bed-title-row {
+                display: flex;
+                flex-wrap: wrap;
+                align-items: baseline;
+                gap: 9px;
+                margin: 0 0 8px;
+            }
+            #${PreviewHistoryTestPanelId} .lbc-test-bed-status {
+                color: var(--lb-cubed-lbc-text, #f4f4f4);
+                opacity: 0.6;
+                font-size: 11px;
+                font-style: italic;
+                font-weight: 400;
+            }
+            #${PreviewHistoryTestPanelId} .lbc-test-bed-status.lbc-test-bed-is-active {
+                color: var(--lb-cubed-new-highlight, #7fff00);
+                opacity: 1;
+                font-style: normal;
+                font-weight: 700;
+            }
+            #${PreviewHistoryTestPanelId} .lbc-test-bed-footer {
+                display: flex;
+                flex-direction: column;
+                gap: 7px;
+                margin-top: 9px;
+            }
+            #${PreviewHistoryTestPanelId} .lbc-test-bed-footer-hide {
+                display: flex;
+                justify-content: flex-end;
+            }
+            #${PreviewHistoryTestPanelId} .lbc-test-bed-footer-bottom {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                flex-wrap: wrap;
+                gap: 8px;
             }
 
             #${PreviewHistoryTestPanelId} .lbc-longest-words-test-input {
