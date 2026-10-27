@@ -161,3 +161,58 @@ Assert(Lbc.includes("MergeBackupIntoStorage(Backup, {"),
         "Explicit migration creates separate new folder and file");
 }
 console.log("PASS: narrow Drive bridge protocol and safe migration mock integration checks");
+
+
+// Verify the extra browser backup contains only word-related records, never
+// cloud credentials, and restores via a merge instead of replacing state.
+{
+    const Start = Lbc.indexOf('    const LocalRecoveryKey = "LetterBoxedCubed_WordsRecovery_v1";');
+    const End = Lbc.indexOf('    function GetHistoricalProjectionForExport(', Start);
+    Assert(Start >= 0 && End > Start, "local recovery helpers unavailable");
+    const Storage = new Map();
+    let Merged = null;
+    let Reloads = 0;
+    const Browser = {
+        Date, JSON, Object, String, Number, Math,
+        localStorage: {
+            setItem: (Key, Value) => Storage.set(Key, Value),
+            getItem: Key => Storage.get(Key) || null
+        },
+        BuildStorageSnapshot: () => ({
+            LetterBoxedTracker_123: ["CURIE"],
+            LetterBoxedCubed_FoundTwofers_123: ["CURIE\u001fEAT"],
+            LetterBoxedCubed_CustomWords_123: ["EXAMPLE"],
+            LBC_SYNC_SECRET: "MUST_NOT_APPEAR",
+            "LetterBoxedCubed_Drive_Config": { Secret: "MUST_NOT_APPEAR" }
+        }),
+        CustomWordsPrefix: "LetterBoxedCubed_CustomWords_",
+        CustomDictionaryStorageKey: "LetterBoxedCubed_CustomDictionary",
+        GlobalWordHistoryStorageKey: "LetterBoxedCubed_GlobalWordHistory",
+        ExportFormatName: "LetterBoxedCubedBackup",
+        ExportFormatVersion: 4,
+        MigrateBackupToCurrent: X => X,
+        MergeBackupIntoStorage: X => { Merged = X; return { ChangedKeys: 3 }; },
+        confirm: () => true,
+        alert: () => {},
+        location: {reload: () => { Reloads++; }},
+        clearTimeout: () => {},
+        setTimeout: () => 1,
+        console: {log: () => {}, warn: () => {}, error: () => {}}
+    };
+    Vm.createContext(Browser);
+    Vm.runInContext(
+        Lbc.slice(Start, End) +
+        '\nglobalThis.LocalRecoveryHooks = {' +
+        'WriteLocalRecoveryBackup, RecoverLocalBackup};',
+        Browser
+    );
+    Assert(Browser.LocalRecoveryHooks.WriteLocalRecoveryBackup(), "mirror should write");
+    const Saved = Storage.get("LetterBoxedCubed_WordsRecovery_v1");
+    Assert(Saved && Saved.includes("CURIE"), "word data must be mirrored");
+    Assert(!Saved.includes("MUST_NOT_APPEAR"), "sync credentials must never enter localStorage");
+    Browser.LocalRecoveryHooks.RecoverLocalBackup();
+    Assert(Merged && Merged.StorageSnapshot.LetterBoxedTracker_123,
+        "local recovery must merge word snapshot");
+    Assert.equal(Reloads, 1, "successful merge reloads once");
+}
+console.log("PASS: localStorage credential exclusion and explicit recovery merge");
