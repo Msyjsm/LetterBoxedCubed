@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed [PREVIEW]
 // @namespace    https://nathanburgdorff.com/userscripts/preview/
-// @version      1.13.1-beta.39.342
+// @version      1.13.1-beta.39.343
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -3452,6 +3452,9 @@
         StartLayoutGapResizeBehavior();
         StartNytPageResizeBehavior();
         ScanGameState(true);
+        // Back up existing GM word history on load even if the player has
+        // disabled Drive and does not submit any new words this session.
+        QueueLocalRecoveryBackup();
         StartGameObserver();
         StartSquareFeedbackObserver();
         StartSubmissionHooks();
@@ -7991,6 +7994,9 @@
     }
 
     function WriteLocalRecoveryBackup() {
+        if (typeof localStorage === "undefined") {
+            return false;
+        }
         try {
             const Json = JSON.stringify(BuildLocalRecoveryBackup());
             if (Json.length > LocalRecoveryMaximumChars) {
