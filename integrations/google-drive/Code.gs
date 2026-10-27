@@ -8,6 +8,11 @@
  *   - Executes as: Me
  *   - Who has access: Anyone
  *
+ * Required appsscript.json scopes: drive.file and script.external_request.
+ * Required advanced service: Drive API v3. The script can only manage Drive
+ * files created by this OAuth application (or explicitly opened with it).
+ * Do not use DriveApp: it requires a much broader Drive authorization.
+ *
  * The public endpoint is protected by a high-entropy shared secret generated
  * by Setup(). The secret is never stored in Letter Boxed Cubed exports.
  */
@@ -17,6 +22,7 @@ const BackupFolderName = "Letter Boxed Cubed";
 const BackupFileName = "LetterBoxedCubedCloudBackup.json";
 const SecretProperty = "LBC_SYNC_SECRET";
 const BackupFileIdProperty = "LBC_BACKUP_FILE_ID";
+const BackupFolderIdProperty = "LBC_BACKUP_FOLDER_ID";
 
 function Setup() {
   const Properties = PropertiesService.getScriptProperties();
@@ -31,7 +37,8 @@ function Setup() {
 
   console.log("Letter Boxed Cubed Google Drive bridge is ready.");
   console.log("Sync secret: " + Secret);
-  console.log("Backup file: " + File.getUrl());
+  console.log("Backup file: " + (File.webViewLink ||
+    "https://drive.google.com/file/d/" + File.id + "/view"));
   console.log("After deployment, copy the Web App /exec URL into LBC's Drive setup dialog.");
 
   return Secret;
@@ -97,7 +104,7 @@ function ValidateRequest_(Request) {
 
 function ReadEnvelope_() {
   const File = GetOrCreateBackupFile_();
-  const Contents = File.getBlob().getDataAsString("UTF-8").trim();
+  const Contents = ReadBackupText_(File.id).trim();
 
   if (!Contents) {
     return EmptyEnvelope_();
@@ -199,7 +206,12 @@ function WriteEnvelope_(Request) {
     };
 
     const File = GetOrCreateBackupFile_();
-    File.setContent(JSON.stringify(Next));
+    Drive.Files.update(
+      {},
+      File.id,
+      Utilities.newBlob(JSON.stringify(Next), "text/plain", BackupFileName),
+      { fields: "id" }
+    );
 
     console.log(
       `LBC Drive write committed: revision ${Next.Revision}, write ${WriteId || "(legacy)"}`
@@ -230,46 +242,110 @@ function EmptyEnvelope_() {
   };
 }
 
+/**
+ * Apps Script's Advanced Drive.Files.get({alt:'media'}) does not reliably
+ * return raw text. Google's documented Apps Script download method uses
+ * UrlFetchApp with the same restricted script OAuth token instead.
+ * The only outbound destination used here is the Google Drive API.
+ */
+function ReadBackupText_(FileId) {
+  const Response = UrlFetchApp.fetch(
+    "https://www.googleapis.com/drive/v3/files/" +
+      encodeURIComponent(FileId) + "?alt=media",
+    {
+      method: "get",
+      headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
+      muteHttpExceptions: true
+    }
+  );
+  const Code = Response.getResponseCode();
+  if (Code < 200 || Code >= 300) {
+    throw new Error("Drive backup download failed (HTTP " + Code + ").");
+  }
+  return Response.getContentText("UTF-8");
+}
+
+/**
+ * Only reuse an ID that this app can already access. Never silently replace
+ * an inaccessible legacy backup with a blank new file: that could make
+ * LBC think remote history has disappeared.
+ */
 function GetOrCreateBackupFile_() {
   const Properties = PropertiesService.getScriptProperties();
   const SavedFileId = Properties.getProperty(BackupFileIdProperty);
-
   if (SavedFileId) {
     try {
-      return DriveApp.getFileById(SavedFileId);
+      const File = Drive.Files.get(SavedFileId, {
+        fields: "id,name,mimeType,trashed,webViewLink"
+      });
+      if (File.trashed) {
+        throw new Error("Backup file is in Drive trash.");
+      }
+      return File;
     } catch (Error) {
-      Properties.deleteProperty(BackupFileIdProperty);
+      throw new Error(
+        "The previous backup is not accessible under the narrower drive.file " +
+        "permission. Your existing Drive file has NOT been modified. " +
+        "First export a full backup from LBC, then run " +
+        "StartFreshLimitedScopeBackupAfterExport() in this Apps Script " +
+        "project to create a new private backup. Original problem: " +
+        String(Error.message || Error)
+      );
     }
   }
 
-  let Folder;
-  const Folders = DriveApp.getFoldersByName(BackupFolderName);
-
-  if (Folders.hasNext()) {
-    Folder = Folders.next();
+  let FolderId = Properties.getProperty(BackupFolderIdProperty);
+  if (FolderId) {
+    try {
+      const Folder = Drive.Files.get(FolderId, {
+        fields: "id,mimeType,trashed"
+      });
+      if (Folder.trashed) {
+        throw new Error("Folder was trashed.");
+      }
+    } catch (Error) {
+      throw new Error(
+        "The stored folder is inaccessible under drive.file. " +
+        "Run StartFreshLimitedScopeBackupAfterExport() after exporting " +
+        "your current LBC data."
+      );
+    }
   } else {
-    Folder = DriveApp.createFolder(BackupFolderName);
+    const Folder = Drive.Files.create({
+      name: BackupFolderName,
+      mimeType: "application/vnd.google-apps.folder"
+    }, null, {fields: "id"});
+    FolderId = Folder.id;
+    Properties.setProperty(BackupFolderIdProperty, FolderId);
   }
 
-  let File;
-  const Files = Folder.getFilesByName(BackupFileName);
-
-  if (Files.hasNext()) {
-    File = Files.next();
-  } else {
-    File = Folder.createFile(
-      BackupFileName,
-      "",
-      MimeType.PLAIN_TEXT
-    );
-  }
-
-  Properties.setProperty(
-    BackupFileIdProperty,
-    File.getId()
+  const File = Drive.Files.create(
+    {
+      name: BackupFileName,
+      mimeType: "text/plain",
+      parents: [FolderId]
+    },
+    Utilities.newBlob("", "text/plain", BackupFileName),
+    {fields: "id,name,webViewLink"}
   );
-
+  Properties.setProperty(BackupFileIdProperty, File.id);
   return File;
+}
+
+/**
+ * Explicit migration for older bridge installations only. Export from LBC
+ * first, and keep the original Drive backup; this never deletes anything.
+ * After running Setup() again, LBC will merge its locally stored history
+ * into a fresh, limited-scope cloud backup on first synchronization.
+ */
+function StartFreshLimitedScopeBackupAfterExport() {
+  const Properties = PropertiesService.getScriptProperties();
+  Properties.deleteProperty(BackupFileIdProperty);
+  Properties.deleteProperty(BackupFolderIdProperty);
+  console.log(
+    "Previous Drive files were left untouched. " +
+    "Now run Setup(), then reconnect/sync LBC to seed the new backup."
+  );
 }
 
 function JsonResponse_(Value) {
