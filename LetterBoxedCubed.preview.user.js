@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed [PREVIEW]
 // @namespace    https://nathanburgdorff.com/userscripts/preview/
-// @version      1.13.1-beta.38.336
+// @version      1.13.1-beta.39.341
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -6978,6 +6978,21 @@
         DisplaySection.appendChild(GapGroup);
 
         const SyncSection = CreateSettingsSection("Sync");
+        const SyncSetupNote = document.createElement("p");
+        SyncSetupNote.className = "lb-cubed-sync-setup-note";
+        SyncSetupNote.append(
+            document.createTextNode(
+                "Enabling Google Drive sync requires additional setup. "
+            )
+        );
+        const SyncSetupHelp = document.createElement("a");
+        SyncSetupHelp.href = "https://nathanburgdorff.com/lbc/google-drive-sync/";
+        SyncSetupHelp.target = "_blank";
+        SyncSetupHelp.rel = "noopener noreferrer";
+        SyncSetupHelp.textContent = "Click here for instructions";
+        SyncSetupNote.append(SyncSetupHelp, document.createTextNode("."));
+        SyncSetupNote.hidden = Boolean(GoogleDriveConfig?.Enabled);
+
         const DriveRow = document.createElement("div");
         DriveRow.className = "lb-cubed-settings-action-row";
 
@@ -7029,7 +7044,20 @@
         });
 
         SyncButtons.append(ExportButton, ImportButton);
-        SyncSection.append(DriveRow, SyncButtons);
+
+        const RecoverLocalButton = document.createElement("button");
+        RecoverLocalButton.type = "button";
+        RecoverLocalButton.className = "lb-cubed-header-button";
+        RecoverLocalButton.textContent = "Recover Local Backup";
+        RecoverLocalButton.title =
+            "Merge the browser's independent localStorage puzzle backup into Tampermonkey storage";
+        RecoverLocalButton.addEventListener("click", Event => {
+            Event.preventDefault();
+            Event.stopPropagation();
+            RecoverLocalBackup();
+        });
+        SyncButtons.appendChild(RecoverLocalButton);
+        SyncSection.append(SyncSetupNote, DriveRow, SyncButtons);
 
         Menu.append(
             AnimationSection,
@@ -7929,6 +7957,108 @@
         }
 
         return StorageSnapshot;
+    }
+
+
+    // Independent, best-effort recovery mirror. This lives on the NYT page's
+    // origin (not in Tampermonkey storage), so ONLY puzzle vocabulary is
+    // copied. Never include a Drive URL/secret or other authentication data.
+    const LocalRecoveryKey = "LetterBoxedCubed_WordsRecovery_v1";
+    const LocalRecoveryMaximumChars = 1800000;
+    let LocalRecoveryTimer = null;
+
+    function BuildLocalRecoveryBackup() {
+        const Snapshot = BuildStorageSnapshot({ IncludeDeviceState: false });
+        const WordsOnly = {};
+        for (const [Key, Value] of Object.entries(Snapshot)) {
+            if (
+                Key.startsWith("LetterBoxedTracker_") ||
+                Key.startsWith("LetterBoxedCubed_FoundTwofers_") ||
+                Key.startsWith(CustomWordsPrefix) ||
+                Key === CustomDictionaryStorageKey ||
+                Key === GlobalWordHistoryStorageKey
+            ) {
+                WordsOnly[Key] = Value;
+            }
+        }
+
+        return {
+            Format: ExportFormatName,
+            FormatVersion: ExportFormatVersion,
+            ExportedAt: new Date().toISOString(),
+            StorageSnapshot: WordsOnly
+        };
+    }
+
+    function WriteLocalRecoveryBackup() {
+        try {
+            const Json = JSON.stringify(BuildLocalRecoveryBackup());
+            if (Json.length > LocalRecoveryMaximumChars) {
+                console.warn(
+                    "[Letter Boxed Cubed] Independent localStorage backup is " +
+                    "too large; previous recovery copy was retained. " +
+                    "Use Settings > Sync > Export for a full disaster-recovery file."
+                );
+                return false;
+            }
+            localStorage.setItem(LocalRecoveryKey, Json);
+            return true;
+        } catch (ErrorValue) {
+            console.warn(
+                "[Letter Boxed Cubed] Independent local recovery copy was " +
+                "not updated. Primary Tampermonkey storage is unaffected.",
+                ErrorValue
+            );
+            return false;
+        }
+    }
+
+    function QueueLocalRecoveryBackup(DelayMs = 1700) {
+        clearTimeout(LocalRecoveryTimer);
+        LocalRecoveryTimer = setTimeout(() => {
+            LocalRecoveryTimer = null;
+            WriteLocalRecoveryBackup();
+        }, Math.max(0, DelayMs));
+    }
+
+    function RecoverLocalBackup() {
+        try {
+            const Raw = localStorage.getItem(LocalRecoveryKey);
+            if (!Raw) {
+                alert(
+                    "No independent local recovery copy was found in this " +
+                    "browser. LBC still uses Tampermonkey storage normally. " +
+                    "You can also restore a manually exported backup."
+                );
+                return;
+            }
+            const Backup = MigrateBackupToCurrent(JSON.parse(Raw));
+            const Count = Object.keys(Backup.StorageSnapshot || {}).length;
+            if (!Count) {
+                alert("This browser's local recovery copy contains no word records.");
+                return;
+            }
+            if (!confirm(
+                "Merge " + Count.toLocaleString() +
+                " puzzle-word recovery records from " +
+                (Backup.ExportedAt || "an earlier session") + "?\\n\\n" +
+                "Existing discoveries will be kept; words and Twofers are unioned."
+            )) {
+                return;
+            }
+            const Result = MergeBackupIntoStorage(Backup, {
+                IncludeDeviceState: false
+            });
+            alert(
+                "Local recovery complete. " +
+                Result.ChangedKeys.toLocaleString() +
+                " record(s) merged. LBC will reload."
+            );
+            location.reload();
+        } catch (ErrorValue) {
+            console.error("[Letter Boxed Cubed] Local recovery failed.", ErrorValue);
+            alert("Unable to recover the local backup. No existing data was erased.");
+        }
     }
 
     function GetHistoricalProjectionForExport(StorageSnapshot) {
@@ -9614,7 +9744,8 @@
         const ExistingEndpoint = GoogleDriveConfig?.Endpoint || "";
         const EndpointInput = prompt(
             "Google Drive sync uses a small Google Apps Script bridge that you own.\n\n" +
-            "Paste its deployed Web App URL (/exec) here. Leave this blank to disconnect Drive sync.",
+            "Paste its deployed Web App URL (/exec) here. Leave this blank to disconnect Drive sync.\n\n" +
+            "Don't have this? See nathanburgdorff.com/lbc/google-drive-sync for instructions.",
             ExistingEndpoint
         );
 
@@ -9730,6 +9861,9 @@
     }
 
     function ScheduleCloudSync(DelayMs = CloudSyncDebounceMs) {
+        // Keep a second puzzle-only local copy even when Drive is disabled.
+        // Test Beds intercept this function, so simulated discoveries aren't saved.
+        QueueLocalRecoveryBackup();
         if (!GoogleDriveConfig?.Enabled) {
             return;
         }
@@ -10323,6 +10457,9 @@
             UpdateGoogleDriveButton();
 
             if (SyncSucceeded) {
+                // Capture the merged local state on initial reconciliation,
+                // manual sync and successful automatic cloud pushes.
+                QueueLocalRecoveryBackup(0);
                 console.info(
                     "[Letter Boxed Cubed] Google Drive sync complete.",
                     {
@@ -10369,6 +10506,10 @@
     function UpdateGoogleDriveButton() {
         const Button = document.getElementById(GoogleDriveButtonId);
         const Status = document.getElementById(GoogleDriveStatusId);
+        const SetupHelp = document.querySelector(".lb-cubed-sync-setup-note");
+        if (SetupHelp) {
+            SetupHelp.hidden = Boolean(GoogleDriveConfig?.Enabled);
+        }
 
         const StatusParts = [];
 
