@@ -6,7 +6,7 @@ const source = fs.readFileSync(path.join(root, 'LetterBoxedCubed.user.js'), 'utf
 const preview = fs.readFileSync(path.join(root, 'tools', 'preview_runtime.js'), 'utf8');
 function assert(condition, message) { if (!condition) throw new Error(message); }
 
-assert(source.includes('// @version      1.13.1-beta.38'), 'beta.38 version missing');
+assert(source.includes('// @version      1.13.1-beta.39'), 'beta.39 version missing');
 assert(source.includes('const ExportFormatVersion = 4;'), 'backup schema v4 missing');
 assert(source.includes('const ThemeStateVersion = 2;'), 'ThemeState v2 compatibility missing');
 assert(source.includes('MergeThemeStates'), 'theme merge missing');
@@ -389,3 +389,6 @@ assert(preview.includes('Version: GetRunningUserscriptVersion()'), 'trace should
     assert(HighlightCount === 1, 'genuinely new word must highlight');
 }
 console.log('PASS: beta.38 original-timeline fade continuity and historical-word redraw behavior');
+
+// beta.39 release readiness: restricted Google Drive bridge and independent puzzle backups.
+require("./release-prep-tests.js");
