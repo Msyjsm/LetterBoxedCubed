@@ -4988,6 +4988,108 @@
         return StorageSnapshot;
     }
 
+
+    // Independent, best-effort recovery mirror. This lives on the NYT page's
+    // origin (not in Tampermonkey storage), so ONLY puzzle vocabulary is
+    // copied. Never include a Drive URL/secret or other authentication data.
+    const LocalRecoveryKey = "LetterBoxedCubed_WordsRecovery_v1";
+    const LocalRecoveryMaximumChars = 1800000;
+    let LocalRecoveryTimer = null;
+
+    function BuildLocalRecoveryBackup() {
+        const Snapshot = BuildStorageSnapshot({ IncludeDeviceState: false });
+        const WordsOnly = {};
+        for (const [Key, Value] of Object.entries(Snapshot)) {
+            if (
+                Key.startsWith("LetterBoxedTracker_") ||
+                Key.startsWith("LetterBoxedCubed_FoundTwofers_") ||
+                Key.startsWith(CustomWordsPrefix) ||
+                Key === CustomDictionaryStorageKey ||
+                Key === GlobalWordHistoryStorageKey
+            ) {
+                WordsOnly[Key] = Value;
+            }
+        }
+
+        return {
+            Format: ExportFormatName,
+            FormatVersion: ExportFormatVersion,
+            ExportedAt: new Date().toISOString(),
+            StorageSnapshot: WordsOnly
+        };
+    }
+
+    function WriteLocalRecoveryBackup() {
+        try {
+            const Json = JSON.stringify(BuildLocalRecoveryBackup());
+            if (Json.length > LocalRecoveryMaximumChars) {
+                console.warn(
+                    "[Letter Boxed Cubed] Independent localStorage backup is " +
+                    "too large; previous recovery copy was retained. " +
+                    "Use Settings > Sync > Export for a full disaster-recovery file."
+                );
+                return false;
+            }
+            localStorage.setItem(LocalRecoveryKey, Json);
+            return true;
+        } catch (ErrorValue) {
+            console.warn(
+                "[Letter Boxed Cubed] Independent local recovery copy was " +
+                "not updated. Primary Tampermonkey storage is unaffected.",
+                ErrorValue
+            );
+            return false;
+        }
+    }
+
+    function QueueLocalRecoveryBackup(DelayMs = 1700) {
+        clearTimeout(LocalRecoveryTimer);
+        LocalRecoveryTimer = setTimeout(() => {
+            LocalRecoveryTimer = null;
+            WriteLocalRecoveryBackup();
+        }, Math.max(0, DelayMs));
+    }
+
+    function RecoverLocalBackup() {
+        try {
+            const Raw = localStorage.getItem(LocalRecoveryKey);
+            if (!Raw) {
+                alert(
+                    "No independent local recovery copy was found in this " +
+                    "browser. LBC still uses Tampermonkey storage normally. " +
+                    "You can also restore a manually exported backup."
+                );
+                return;
+            }
+            const Backup = MigrateBackupToCurrent(JSON.parse(Raw));
+            const Count = Object.keys(Backup.StorageSnapshot || {}).length;
+            if (!Count) {
+                alert("This browser's local recovery copy contains no word records.");
+                return;
+            }
+            if (!confirm(
+                "Merge " + Count.toLocaleString() +
+                " puzzle-word recovery records from " +
+                (Backup.ExportedAt || "an earlier session") + "?\\n\\n" +
+                "Existing discoveries will be kept; words and Twofers are unioned."
+            )) {
+                return;
+            }
+            const Result = MergeBackupIntoStorage(Backup, {
+                IncludeDeviceState: false
+            });
+            alert(
+                "Local recovery complete. " +
+                Result.ChangedKeys.toLocaleString() +
+                " record(s) merged. LBC will reload."
+            );
+            location.reload();
+        } catch (ErrorValue) {
+            console.error("[Letter Boxed Cubed] Local recovery failed.", ErrorValue);
+            alert("Unable to recover the local backup. No existing data was erased.");
+        }
+    }
+
     function GetHistoricalProjectionForExport(StorageSnapshot) {
         if (
             HistoricalWordProjection?.Version ===
@@ -6788,6 +6890,9 @@
     }
 
     function ScheduleCloudSync(DelayMs = CloudSyncDebounceMs) {
+        // Keep a second puzzle-only local copy even when Drive is disabled.
+        // Test Beds intercept this function, so simulated discoveries aren't saved.
+        QueueLocalRecoveryBackup();
         if (!GoogleDriveConfig?.Enabled) {
             return;
         }
@@ -7381,6 +7486,9 @@
             UpdateGoogleDriveButton();
 
             if (SyncSucceeded) {
+                // Capture the merged local state on initial reconciliation,
+                // manual sync and successful automatic cloud pushes.
+                QueueLocalRecoveryBackup(0);
                 console.info(
                     "[Letter Boxed Cubed] Google Drive sync complete.",
                     {
