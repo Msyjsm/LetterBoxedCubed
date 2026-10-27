@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Letter Boxed Cubed
 // @namespace    https://nathanburgdorff.com/userscripts/
-// @version      1.13.1-beta.38
+// @version      1.13.1-beta.39
 // @description  Tracks Letter Boxed discoveries, twofers, hints, statistics, found words, and spoiler-redacted unfound words.
 // @author       Nathan Burgdorff + Ari (ChatGPT)
 // @match        https://www.nytimes.com/puzzles/letter-boxed*
@@ -4007,6 +4007,21 @@
         DisplaySection.appendChild(GapGroup);
 
         const SyncSection = CreateSettingsSection("Sync");
+        const SyncSetupNote = document.createElement("p");
+        SyncSetupNote.className = "lb-cubed-sync-setup-note";
+        SyncSetupNote.append(
+            document.createTextNode(
+                "Enabling Google Drive sync requires additional setup. "
+            )
+        );
+        const SyncSetupHelp = document.createElement("a");
+        SyncSetupHelp.href = "https://nathanburgdorff.com/lbc/google-drive-sync/";
+        SyncSetupHelp.target = "_blank";
+        SyncSetupHelp.rel = "noopener noreferrer";
+        SyncSetupHelp.textContent = "Click here for instructions";
+        SyncSetupNote.append(SyncSetupHelp, document.createTextNode("."));
+        SyncSetupNote.hidden = Boolean(GoogleDriveConfig?.Enabled);
+
         const DriveRow = document.createElement("div");
         DriveRow.className = "lb-cubed-settings-action-row";
 
@@ -4058,7 +4073,20 @@
         });
 
         SyncButtons.append(ExportButton, ImportButton);
-        SyncSection.append(DriveRow, SyncButtons);
+
+        const RecoverLocalButton = document.createElement("button");
+        RecoverLocalButton.type = "button";
+        RecoverLocalButton.className = "lb-cubed-header-button";
+        RecoverLocalButton.textContent = "Recover Local Backup";
+        RecoverLocalButton.title =
+            "Merge the browser's independent localStorage puzzle backup into Tampermonkey storage";
+        RecoverLocalButton.addEventListener("click", Event => {
+            Event.preventDefault();
+            Event.stopPropagation();
+            RecoverLocalBackup();
+        });
+        SyncButtons.appendChild(RecoverLocalButton);
+        SyncSection.append(SyncSetupNote, DriveRow, SyncButtons);
 
         Menu.append(
             AnimationSection,
@@ -6643,7 +6671,8 @@
         const ExistingEndpoint = GoogleDriveConfig?.Endpoint || "";
         const EndpointInput = prompt(
             "Google Drive sync uses a small Google Apps Script bridge that you own.\n\n" +
-            "Paste its deployed Web App URL (/exec) here. Leave this blank to disconnect Drive sync.",
+            "Paste its deployed Web App URL (/exec) here. Leave this blank to disconnect Drive sync.\n\n" +
+            "Don't have this? See nathanburgdorff.com/lbc/google-drive-sync for instructions.",
             ExistingEndpoint
         );
 
@@ -7398,6 +7427,10 @@
     function UpdateGoogleDriveButton() {
         const Button = document.getElementById(GoogleDriveButtonId);
         const Status = document.getElementById(GoogleDriveStatusId);
+        const SetupHelp = document.querySelector(".lb-cubed-sync-setup-note");
+        if (SetupHelp) {
+            SetupHelp.hidden = Boolean(GoogleDriveConfig?.Enabled);
+        }
 
         const StatusParts = [];
 
