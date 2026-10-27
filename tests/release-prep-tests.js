@@ -172,19 +172,28 @@ console.log("PASS: narrow Drive bridge protocol and safe migration mock integrat
     const Storage = new Map();
     let Merged = null;
     let Reloads = 0;
+    let PrimaryRecords = {
+        LetterBoxedTracker_123: ["CURIE"],
+        LetterBoxedCubed_FoundTwofers_123: ["CURIE\u001fEAT"],
+        LetterBoxedCubed_CustomWords_123: ["EXAMPLE"],
+        LBC_SYNC_SECRET: "MUST_NOT_APPEAR",
+        "LetterBoxedCubed_Drive_Config": { Secret: "MUST_NOT_APPEAR" }
+    };
     const Browser = {
         Date, JSON, Object, String, Number, Math,
         localStorage: {
             setItem: (Key, Value) => Storage.set(Key, Value),
             getItem: Key => Storage.get(Key) || null
         },
-        BuildStorageSnapshot: () => ({
-            LetterBoxedTracker_123: ["CURIE"],
-            LetterBoxedCubed_FoundTwofers_123: ["CURIE\u001fEAT"],
-            LetterBoxedCubed_CustomWords_123: ["EXAMPLE"],
-            LBC_SYNC_SECRET: "MUST_NOT_APPEAR",
-            "LetterBoxedCubed_Drive_Config": { Secret: "MUST_NOT_APPEAR" }
-        }),
+        BuildStorageSnapshot: () => PrimaryRecords,
+        MergeStorageValue: (Key, Local, Remote) => {
+            if (!Local) return Remote;
+            if (!Remote) return Local;
+            if (Array.isArray(Local) && Array.isArray(Remote)) {
+                return [...new Set([...Local, ...Remote])];
+            }
+            return Local;
+        },
         CustomWordsPrefix: "LetterBoxedCubed_CustomWords_",
         CustomDictionaryStorageKey: "LetterBoxedCubed_CustomDictionary",
         GlobalWordHistoryStorageKey: "LetterBoxedCubed_GlobalWordHistory",
@@ -210,6 +219,16 @@ console.log("PASS: narrow Drive bridge protocol and safe migration mock integrat
     const Saved = Storage.get("LetterBoxedCubed_WordsRecovery_v1");
     Assert(Saved && Saved.includes("CURIE"), "word data must be mirrored");
     Assert(!Saved.includes("MUST_NOT_APPEAR"), "sync credentials must never enter localStorage");
+    // Simulate catastrophic loss of all GM records before the next startup.
+    // A blank new GM snapshot must not replace the surviving recovery data.
+    PrimaryRecords = {};
+    Assert(Browser.LocalRecoveryHooks.WriteLocalRecoveryBackup(),
+        "empty primary storage must not erase recovery mirror");
+    Assert.equal(
+        JSON.parse(Storage.get("LetterBoxedCubed_WordsRecovery_v1"))
+            .StorageSnapshot.LetterBoxedTracker_123[0], "CURIE",
+        "catastrophic GM wipe erased surviving recovery history"
+    );
     Browser.LocalRecoveryHooks.RecoverLocalBackup();
     Assert(Merged && Merged.StorageSnapshot.LetterBoxedTracker_123,
         "local recovery must merge word snapshot");
