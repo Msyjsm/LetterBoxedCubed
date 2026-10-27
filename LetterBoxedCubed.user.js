@@ -4999,17 +4999,21 @@
     const LocalRecoveryMaximumChars = 1800000;
     let LocalRecoveryTimer = null;
 
+    function IsLocalRecoveryWordKey(Key) {
+        return (
+            Key.startsWith("LetterBoxedTracker_") ||
+            Key.startsWith("LetterBoxedCubed_FoundTwofers_") ||
+            Key.startsWith(CustomWordsPrefix) ||
+            Key === CustomDictionaryStorageKey ||
+            Key === GlobalWordHistoryStorageKey
+        );
+    }
+
     function BuildLocalRecoveryBackup() {
         const Snapshot = BuildStorageSnapshot({ IncludeDeviceState: false });
         const WordsOnly = {};
         for (const [Key, Value] of Object.entries(Snapshot)) {
-            if (
-                Key.startsWith("LetterBoxedTracker_") ||
-                Key.startsWith("LetterBoxedCubed_FoundTwofers_") ||
-                Key.startsWith(CustomWordsPrefix) ||
-                Key === CustomDictionaryStorageKey ||
-                Key === GlobalWordHistoryStorageKey
-            ) {
+            if (IsLocalRecoveryWordKey(Key)) {
                 WordsOnly[Key] = Value;
             }
         }
@@ -5027,7 +5031,41 @@
             return false;
         }
         try {
-            const Json = JSON.stringify(BuildLocalRecoveryBackup());
+            const Candidate = BuildLocalRecoveryBackup();
+            const OldJson = localStorage.getItem(LocalRecoveryKey);
+            if (OldJson) {
+                // A browser refresh after GM data loss must not overwrite
+                // the only surviving backup with an empty/partial snapshot.
+                // Keep the union of all prior word discoveries, just as Drive
+                // and manual Imports do. Never merge non-word credentials.
+                try {
+                    const Old = JSON.parse(OldJson);
+                    if (Old?.Format === ExportFormatName &&
+                        Old.StorageSnapshot &&
+                        typeof Old.StorageSnapshot === "object" &&
+                        !Array.isArray(Old.StorageSnapshot)) {
+                        for (const [Key, Value] of Object.entries(Old.StorageSnapshot)) {
+                            if (!IsLocalRecoveryWordKey(Key)) {
+                                continue;
+                            }
+                            Candidate.StorageSnapshot[Key] = MergeStorageValue(
+                                Key,
+                                Candidate.StorageSnapshot[Key] ?? null,
+                                Value
+                            );
+                        }
+                    }
+                } catch (ErrorValue) {
+                    console.warn(
+                        "[Letter Boxed Cubed] Existing local recovery copy " +
+                        "could not be merged; it will be replaced with the " +
+                        "current validated puzzle-word snapshot.",
+                        ErrorValue
+                    );
+                }
+            }
+
+            const Json = JSON.stringify(Candidate);
             if (Json.length > LocalRecoveryMaximumChars) {
                 console.warn(
                     "[Letter Boxed Cubed] Independent localStorage backup is " +
