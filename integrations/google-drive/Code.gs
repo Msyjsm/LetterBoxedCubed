@@ -303,7 +303,7 @@ function GetOrCreateBackupFile_() {
       if (Folder.trashed) {
         throw new Error("Folder was trashed.");
       }
-    } catch (Error) {
+    } catch (ErrorValue) {
       throw new Error(
         "The stored folder is inaccessible under drive.file. " +
         "Run StartFreshLimitedScopeBackupAfterExport() after exporting " +
