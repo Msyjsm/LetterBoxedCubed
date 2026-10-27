@@ -481,6 +481,9 @@
         StartLayoutGapResizeBehavior();
         StartNytPageResizeBehavior();
         ScanGameState(true);
+        // Back up existing GM word history on load even if the player has
+        // disabled Drive and does not submit any new words this session.
+        QueueLocalRecoveryBackup();
         StartGameObserver();
         StartSquareFeedbackObserver();
         StartSubmissionHooks();
@@ -5020,6 +5023,9 @@
     }
 
     function WriteLocalRecoveryBackup() {
+        if (typeof localStorage === "undefined") {
+            return false;
+        }
         try {
             const Json = JSON.stringify(BuildLocalRecoveryBackup());
             if (Json.length > LocalRecoveryMaximumChars) {
