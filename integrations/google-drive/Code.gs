@@ -282,14 +282,14 @@ function GetOrCreateBackupFile_() {
         throw new Error("Backup file is in Drive trash.");
       }
       return File;
-    } catch (Error) {
+    } catch (ErrorValue) {
       throw new Error(
         "The previous backup is not accessible under the narrower drive.file " +
         "permission. Your existing Drive file has NOT been modified. " +
         "First export a full backup from LBC, then run " +
         "StartFreshLimitedScopeBackupAfterExport() in this Apps Script " +
         "project to create a new private backup. Original problem: " +
-        String(Error.message || Error)
+        String(ErrorValue.message || ErrorValue)
       );
     }
   }
